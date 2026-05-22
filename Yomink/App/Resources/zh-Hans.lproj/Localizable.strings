@@ -3,9 +3,7 @@
 "library.search.open" = "搜索";
 "library.add.open" = "添加";
 "library.empty.title" = "还没有导入书籍";
-"library.empty.message" = "Phase 0 已完成工程初始化。下一阶段会接入文件导入、编码识别和书架数据。";
-
-"reader.placeholder.open" = "打开阅读器占位页";
+"library.empty.message" = "从本地文件导入 TXT，Yomink 会复制原文并生成 UTF-8 阅读缓存。";
 
 "search.title" = "搜索";
 "search.placeholder.message" = "Phase 4 将实现书名模糊搜索和历史搜索气泡。";
@@ -13,6 +11,7 @@
 "bootstrap.error.message" = "初始化失败：%@";
 
 "common.close" = "关闭";
+"common.ok" = "好";
 
 "add.title" = "添加";
 "add.import.file" = "从文件导入";
@@ -27,3 +26,13 @@
 
 "reader.placeholder.title" = "阅读器核心容器";
 "reader.placeholder.message" = "UIKit 阅读器占位页已接入。\n\nPhase 2 会在这里实现高性能文本渲染、分页、手势热区和阅读进度恢复。";
+"reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@\n\nPhase 2 会在这里接入正文渲染和进度恢复。";
+
+"book.untitled" = "未命名书籍";
+
+"import.progress.message" = "正在导入并生成阅读缓存...";
+"import.error.title" = "导入失败";
+"import.error.unsupportedFileType" = "请选择 TXT 文本文件。";
+"import.error.unsupportedEncoding" = "暂不支持这个文件的编码。请使用 UTF-8、GBK 或 GB2312 TXT。";
+"import.error.cannotReadFile" = "无法读取或复制这个文件。";
+"import.error.cannotWriteUTF8Cache" = "无法生成 UTF-8 阅读缓存。";

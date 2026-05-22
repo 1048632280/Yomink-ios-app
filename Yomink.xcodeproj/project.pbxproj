@@ -12,6 +12,7 @@
 		1355AB9E42B44F6C84F4A101 /* LibraryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1355AB9E42B44F6C84F4A100 /* LibraryRepository.swift */; };
 		146E7E1DD3A2418F88177901 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146E7E1DD3A2418F88177900 /* AppDatabase.swift */; };
 		19DE8485AE524998BBFE7B01 /* ReaderHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DE8485AE524998BBFE7B00 /* ReaderHostView.swift */; };
+		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
 		25FE22A19C594380B5A78901 /* BookRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25FE22A19C594380B5A78900 /* BookRecord.swift */; };
 		2C799D6D40B44D20B3E2A901 /* DatabaseDateFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C799D6D40B44D20B3E2A900 /* DatabaseDateFormatter.swift */; };
 		34EF6FA4C7EA4BC4A7FC0101 /* AppServices.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34EF6FA4C7EA4BC4A7FC0100 /* AppServices.swift */; };
@@ -21,12 +22,14 @@
 		30D7C7B0C8EF4E1BAA23AC01 /* ReadingProgressRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D7C7B0C8EF4E1BAA23AC00 /* ReadingProgressRecord.swift */; };
 		44F43894BCA349048B94BE01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44F43894BCA349048B94BE00 /* Assets.xcassets */; };
 		5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5687B1CC7E93495893E4D400 /* ReadingProgress.swift */; };
+		5C91D62936DB4A23B5099401 /* ImportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C91D62936DB4A23B5099400 /* ImportService.swift */; };
 		6FBC8473B6E3435693B97401 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 6FBC8473B6E3435693B97400 /* GRDB */; };
 		85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F65F2A56AB45299E94D800 /* AddBookSidebarView.swift */; };
 		8B07D4912F7D4B7F919E3E01 /* AppFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B07D4912F7D4B7F919E3E00 /* AppFileStore.swift */; };
 		A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F4202A2F3446629FBC1E00 /* LibrarySidebarView.swift */; };
 		B606D742219548DD8E4D7D01 /* Book.swift in Sources */ = {isa = PBXBuildFile; fileRef = B606D742219548DD8E4D7D00 /* Book.swift */; };
 		C4F0DD38C39448AE8E0BA101 /* BookGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */; };
+		D2F4B31F390D4524B2507901 /* ImportedBookDraft.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F4B31F390D4524B2507900 /* ImportedBookDraft.swift */; };
 		E1350E99DB3744C987F0F001 /* YominkApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1350E99DB3744C987F0F000 /* YominkApp.swift */; };
 		F6D9017460644F18AA576C01 /* BookGroupRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6D9017460644F18AA576C00 /* BookGroupRecord.swift */; };
 /* End PBXBuildFile section */
@@ -37,6 +40,7 @@
 		1355AB9E42B44F6C84F4A100 /* LibraryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryRepository.swift; sourceTree = "<group>"; };
 		146E7E1DD3A2418F88177900 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		19DE8485AE524998BBFE7B00 /* ReaderHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderHostView.swift; sourceTree = "<group>"; };
+		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
 		20DCC8B06C9E4D1D8E57414F /* Yomink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yomink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		25FE22A19C594380B5A78900 /* BookRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookRecord.swift; sourceTree = "<group>"; };
 		2C799D6D40B44D20B3E2A900 /* DatabaseDateFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DatabaseDateFormatter.swift; sourceTree = "<group>"; };
@@ -47,11 +51,13 @@
 		30D7C7B0C8EF4E1BAA23AC00 /* ReadingProgressRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgressRecord.swift; sourceTree = "<group>"; };
 		44F43894BCA349048B94BE00 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5687B1CC7E93495893E4D400 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
+		5C91D62936DB4A23B5099400 /* ImportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportService.swift; sourceTree = "<group>"; };
 		85F65F2A56AB45299E94D800 /* AddBookSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddBookSidebarView.swift; sourceTree = "<group>"; };
 		8B07D4912F7D4B7F919E3E00 /* AppFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFileStore.swift; sourceTree = "<group>"; };
 		A1F4202A2F3446629FBC1E00 /* LibrarySidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySidebarView.swift; sourceTree = "<group>"; };
 		B606D742219548DD8E4D7D00 /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
 		C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookGroup.swift; sourceTree = "<group>"; };
+		D2F4B31F390D4524B2507900 /* ImportedBookDraft.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportedBookDraft.swift; sourceTree = "<group>"; };
 		D4DFEFA8E01247F58D8C2100 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		E1350E99DB3744C987F0F000 /* YominkApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = YominkApp.swift; sourceTree = "<group>"; };
 		F6D9017460644F18AA576C00 /* BookGroupRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookGroupRecord.swift; sourceTree = "<group>"; };
@@ -160,6 +166,7 @@
 			isa = PBXGroup;
 			children = (
 				1355AB9E42B44F6C84F4A100 /* LibraryRepository.swift */,
+				5C91D62936DB4A23B5099400 /* ImportService.swift */,
 				4806C13B25E04C80AFA20100 /* PreviewLibraryRepository.swift */,
 			);
 			path = Services;
@@ -179,6 +186,7 @@
 				B606D742219548DD8E4D7D00 /* Book.swift */,
 				C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */,
 				5687B1CC7E93495893E4D400 /* ReadingProgress.swift */,
+				D2F4B31F390D4524B2507900 /* ImportedBookDraft.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -198,8 +206,17 @@
 			children = (
 				7AE5D9C12D9F46C7977DE900 /* Database */,
 				E672CA21514847D994DC3C00 /* FileStore */,
+				F316BDBBE57441A2A8CB1200 /* TextDecoder */,
 			);
 			path = Data;
+			sourceTree = "<group>";
+		};
+		F316BDBBE57441A2A8CB1200 /* TextDecoder */ = {
+			isa = PBXGroup;
+			children = (
+				1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */,
+			);
+			path = TextDecoder;
 			sourceTree = "<group>";
 		};
 		FAEC7698DC6F4CE98147CB00 /* Reader */ = {
@@ -255,6 +272,7 @@
 			knownRegions = (
 				en,
 				Base,
+				"zh-Hans",
 			);
 			mainGroup = 9DC2AB50558D43BFAC66F900;
 			packageReferences = (
@@ -299,8 +317,11 @@
 				B606D742219548DD8E4D7D01 /* Book.swift in Sources */,
 				C4F0DD38C39448AE8E0BA101 /* BookGroup.swift in Sources */,
 				5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */,
+				D2F4B31F390D4524B2507901 /* ImportedBookDraft.swift in Sources */,
 				1355AB9E42B44F6C84F4A101 /* LibraryRepository.swift in Sources */,
+				5C91D62936DB4A23B5099401 /* ImportService.swift in Sources */,
 				4806C13B25E04C80AFA20101 /* PreviewLibraryRepository.swift in Sources */,
+				1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */,
 				0CC7AEF4199B48E0A7B02401 /* LibraryView.swift in Sources */,
 				A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */,
 				85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */,

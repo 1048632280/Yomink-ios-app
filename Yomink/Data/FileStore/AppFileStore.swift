@@ -3,11 +3,14 @@ import Foundation
 final class AppFileStore {
     enum StoreError: LocalizedError {
         case missingSystemDirectory(FileManager.SearchPathDirectory)
+        case invalidRelativePath(String)
 
         var errorDescription: String? {
             switch self {
             case let .missingSystemDirectory(directory):
                 return "Missing system directory: \(directory)"
+            case let .invalidRelativePath(path):
+                return "Invalid relative path: \(path)"
             }
         }
     }
@@ -81,5 +84,42 @@ final class AppFileStore {
 
     func bookDirectoryURL(for bookID: UUID) -> URL {
         booksURL.appendingPathComponent(bookID.uuidString.lowercased(), isDirectory: true)
+    }
+
+    func sourceURL(for bookID: UUID) -> URL {
+        bookDirectoryURL(for: bookID)
+            .appendingPathComponent("source.txt", isDirectory: false)
+    }
+
+    func normalizedURL(for bookID: UUID) -> URL {
+        bookDirectoryURL(for: bookID)
+            .appendingPathComponent("normalized.txt", isDirectory: false)
+    }
+
+    func relativePath(for url: URL) throws -> String {
+        let rootURL = documentsURL.standardizedFileURL
+        let targetURL = url.standardizedFileURL
+        let rootPath = rootURL.path
+        let targetPath = targetURL.path
+
+        guard targetPath == rootPath || targetPath.hasPrefix(rootPath + "/") else {
+            throw StoreError.invalidRelativePath(targetPath)
+        }
+
+        let relativePath = String(targetPath.dropFirst(rootPath.count))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+        return relativePath
+    }
+
+    func url(forRelativePath relativePath: String) throws -> URL {
+        let pathComponents = relativePath.split(separator: "/")
+        guard !relativePath.isEmpty,
+              !relativePath.hasPrefix("/"),
+              !pathComponents.contains("..")
+        else {
+            throw StoreError.invalidRelativePath(relativePath)
+        }
+
+        return documentsURL.appendingPathComponent(relativePath, isDirectory: false)
     }
 }

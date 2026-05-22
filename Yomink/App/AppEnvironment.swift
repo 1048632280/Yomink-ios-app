@@ -23,10 +23,15 @@ final class AppEnvironment: ObservableObject {
         do {
             let fileStore = try AppFileStore()
             let database = try AppDatabase(fileStore: fileStore)
+            let repository = GRDBLibraryRepository(database: database)
             let services = AppServices(
                 fileStore: fileStore,
                 database: database,
-                libraryRepository: GRDBLibraryRepository(database: database)
+                libraryRepository: repository,
+                importService: ImportService(
+                    fileStore: fileStore,
+                    libraryRepository: repository
+                )
             )
             logger.info("Bootstrap completed")
             return AppEnvironment(
@@ -44,10 +49,15 @@ final class AppEnvironment: ObservableObject {
         do {
             let fileStore = try AppFileStore.preview()
             let database = try AppDatabase.inMemory()
+            let repository = PreviewLibraryRepository()
             let services = AppServices(
                 fileStore: fileStore,
                 database: database,
-                libraryRepository: PreviewLibraryRepository()
+                libraryRepository: repository,
+                importService: ImportService(
+                    fileStore: fileStore,
+                    libraryRepository: repository
+                )
             )
             return AppEnvironment(bootstrapState: .ready(services))
         } catch {
