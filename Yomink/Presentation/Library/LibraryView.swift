@@ -69,7 +69,7 @@ struct LibraryView: View {
             .background {
                 DocumentPickerPresenter(
                     isPresented: $isImportPickerPresented,
-                    allowedContentTypes: [.item]
+                    allowedContentTypes: [Self.txtContentType]
                 ) { result in
                     guard case let .ready(services) = environment.bootstrapState else {
                         return
@@ -221,11 +221,15 @@ struct LibraryView: View {
             return
         }
         shouldOpenImportPickerAfterSheetDismisses = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
             isImportPickerPresented = true
         }
     }
 
+    private static let txtContentType = UTType(
+        filenameExtension: "txt",
+        conformingTo: .plainText
+    ) ?? .plainText
 }
 
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {
@@ -257,18 +261,24 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
     final class Coordinator: NSObject, UIDocumentPickerDelegate {
         var parent: DocumentPickerPresenter
         private weak var picker: UIDocumentPickerViewController?
+        private var retryCount = 0
 
         init(parent: DocumentPickerPresenter) {
             self.parent = parent
         }
 
         func presentPickerIfNeeded(from viewController: UIViewController) {
-            guard picker == nil,
-                  viewController.presentedViewController == nil,
-                  viewController.view.window != nil
-            else {
+            guard picker == nil else {
                 return
             }
+            guard viewController.presentedViewController == nil,
+                  viewController.view.window != nil
+            else {
+                schedulePresentationRetry(from: viewController)
+                return
+            }
+
+            retryCount = 0
 
             let picker = UIDocumentPickerViewController(
                 forOpeningContentTypes: parent.allowedContentTypes,
@@ -281,6 +291,7 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
         }
 
         func dismissPickerIfNeeded() {
+            retryCount = 0
             picker?.dismiss(animated: true)
             picker = nil
         }
@@ -297,6 +308,25 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             picker = nil
             parent.isPresented = false
+        }
+
+        private func schedulePresentationRetry(from viewController: UIViewController) {
+            guard retryCount < 10 else {
+                retryCount = 0
+                parent.isPresented = false
+                return
+            }
+
+            retryCount += 1
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak viewController] in
+                guard let self,
+                      self.parent.isPresented,
+                      let viewController
+                else {
+                    return
+                }
+                self.presentPickerIfNeeded(from: viewController)
+            }
         }
     }
 }
