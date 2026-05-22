@@ -67,7 +67,7 @@ struct LibraryView: View {
             }
             .fileImporter(
                 isPresented: $isImportPickerPresented,
-                allowedContentTypes: [Self.txtContentType],
+                allowedContentTypes: [.item],
                 allowsMultipleSelection: false
             ) { result in
                 guard case let .ready(services) = environment.bootstrapState else {
@@ -215,10 +215,6 @@ struct LibraryView: View {
         }
     }
 
-    private static let txtContentType = UTType(
-        filenameExtension: "txt",
-        conformingTo: .plainText
-    ) ?? .plainText
 }
 
 @MainActor
