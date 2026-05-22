@@ -1,0 +1,69 @@
+name: Build Unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - "codex/**"
+    paths:
+      - "Yomink/**"
+      - "Yomink.xcodeproj/**"
+      - ".github/workflows/build-unsigned-ipa.yml"
+
+jobs:
+  build:
+    name: Build unsigned IPA
+    runs-on: macos-15
+
+    env:
+      PROJECT: Yomink.xcodeproj
+      SCHEME: Yomink
+      CONFIGURATION: Release
+      ARCHIVE_PATH: build/Yomink.xcarchive
+      IPA_PATH: build/Yomink-unsigned.ipa
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project "$PROJECT" \
+            -scheme "$SCHEME"
+
+      - name: Archive without code signing
+        run: |
+          xcodebuild archive \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration "$CONFIGURATION" \
+            -destination "generic/platform=iOS" \
+            -archivePath "$ARCHIVE_PATH" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=NO
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="$ARCHIVE_PATH/Products/Applications/Yomink.app"
+          test -d "$APP_PATH"
+          rm -rf build/Payload
+          mkdir -p build/Payload
+          cp -R "$APP_PATH" build/Payload/
+          (cd build && zip -qry "Yomink-unsigned.ipa" Payload)
+          test -f "$IPA_PATH"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yomink-unsigned-ipa
+          path: ${{ env.IPA_PATH }}
+          if-no-files-found: error
+
