@@ -46,12 +46,15 @@ struct TXTTextDecoder {
     private static let utf8BOM = Data([0xEF, 0xBB, 0xBF])
 
     private static let legacyChineseEncodings: [(name: String, encoding: String.Encoding)] = [
-        ("GB2312", stringEncoding(for: kCFStringEncodingGB_2312_80)),
-        ("GBK", stringEncoding(for: kCFStringEncodingGBK_95)),
-        ("GB18030", stringEncoding(for: kCFStringEncodingGB_18030_2000))
+        ("GB2312", stringEncoding(for: 0x0630)),
+        ("GBK", stringEncoding(for: 0x0631)),
+        ("GB18030", stringEncoding(for: 0x0632))
     ]
 
-    private static func stringEncoding(for encoding: CFStringEncoding) -> String.Encoding {
-        String.Encoding(rawValue: CFStringConvertEncodingToNSStringEncoding(encoding))
+    private static func stringEncoding(for cfEncoding: UInt32) -> String.Encoding {
+        let nsEncoding = CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(cfEncoding)
+        )
+        return String.Encoding(rawValue: nsEncoding)
     }
 }
