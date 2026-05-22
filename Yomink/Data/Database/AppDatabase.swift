@@ -93,6 +93,8 @@ final class AppDatabase: @unchecked Sendable {
             )
             """)
 
+            // Chapter offsets are UTF-8 byte offsets in normalized.txt:
+            // startOffset is inclusive and endOffset is exclusive.
             try db.execute(sql: """
             CREATE TABLE chapters (
                 id TEXT PRIMARY KEY NOT NULL,

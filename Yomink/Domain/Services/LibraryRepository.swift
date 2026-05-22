@@ -5,6 +5,7 @@ protocol LibraryRepository: Sendable {
     func fetchGroups() async throws -> [BookGroup]
     func insertImportedBook(_ draft: ImportedBookDraft) async throws -> Book
 
-    /// Deletes database rows only. Book files remain the caller/FileStore responsibility.
+    /// Removes database rows only.
+    /// Caller must invoke AppFileStore.removeBookFiles(id:) to drop on-disk artifacts.
     func deleteBook(id: UUID) async throws
 }

@@ -165,23 +165,63 @@ final class ImportService {
         for text: String,
         title: String
     ) -> [ImportedChapterDraft] {
-        let characterCount = text.count
-        let chapterCount = max(1, (characterCount + pseudoChapterLength - 1) / pseudoChapterLength)
+        var chapters: [ImportedChapterDraft] = []
+        var chapterStartOffset = 0
+        var currentOffset = 0
 
-        return (0..<chapterCount).map { index in
-            let startOffset = index * pseudoChapterLength
-            let endOffset = min(startOffset + pseudoChapterLength, characterCount)
-            return ImportedChapterDraft(
-                id: UUID(),
-                title: chapterCount == 1 ? title : "\(title) \(index + 1)",
-                startOffset: startOffset,
-                endOffset: endOffset,
-                sortOrder: index
+        for character in text {
+            let characterByteCount = String(character).utf8.count
+            if currentOffset > chapterStartOffset,
+               currentOffset + characterByteCount - chapterStartOffset > pseudoChapterByteLength {
+                chapters.append(
+                    pseudoChapter(
+                        title: title,
+                        startOffset: chapterStartOffset,
+                        endOffset: currentOffset,
+                        sortOrder: chapters.count
+                    )
+                )
+                chapterStartOffset = currentOffset
+            }
+            currentOffset += characterByteCount
+        }
+
+        chapters.append(
+            pseudoChapter(
+                title: title,
+                startOffset: chapterStartOffset,
+                endOffset: currentOffset,
+                sortOrder: chapters.count
             )
+        )
+
+        if chapters.count == 1 {
+            return chapters
+        }
+
+        return chapters.map { chapter in
+            var chapter = chapter
+            chapter.title = "\(title) \(chapter.sortOrder + 1)"
+            return chapter
         }
     }
 
-    private static let pseudoChapterLength = 128_000
+    private static func pseudoChapter(
+        title: String,
+        startOffset: Int,
+        endOffset: Int,
+        sortOrder: Int
+    ) -> ImportedChapterDraft {
+        ImportedChapterDraft(
+            id: UUID(),
+            title: title,
+            startOffset: startOffset,
+            endOffset: endOffset,
+            sortOrder: sortOrder
+        )
+    }
+
+    private static let pseudoChapterByteLength = 128 * 1_024
 }
 
 private struct PreparedImport {
