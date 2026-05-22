@@ -36,6 +36,80 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func fetchChapters(bookID: UUID) async throws -> [Chapter] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, bookId, title, startOffset, endOffset, sortOrder
+                FROM chapters
+                WHERE bookId = ?
+                ORDER BY sortOrder
+                """,
+                arguments: [bookID.uuidString]
+            )
+            return rows.compactMap(Chapter.init(row:))
+        }
+    }
+
+    func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress? {
+        try await database.writer.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT bookId, chapterId, chapterOffset, globalProgress
+                FROM reading_progress
+                WHERE bookId = ?
+                """,
+                arguments: [bookID.uuidString]
+            ) else {
+                return nil
+            }
+            return ReadingProgress(row: row)
+        }
+    }
+
+    func saveReadingProgress(_ progress: ReadingProgress) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO reading_progress (
+                    bookId, chapterId, chapterOffset, globalProgress, updatedAt
+                )
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(bookId) DO UPDATE SET
+                    chapterId = excluded.chapterId,
+                    chapterOffset = excluded.chapterOffset,
+                    globalProgress = excluded.globalProgress,
+                    updatedAt = excluded.updatedAt
+                """,
+                arguments: [
+                    progress.bookID.uuidString,
+                    progress.chapterID?.uuidString,
+                    progress.chapterOffset,
+                    min(max(progress.globalProgress, 0), 1),
+                    DatabaseDateFormatter.string(from: Date())
+                ]
+            )
+        }
+    }
+
+    func markBookOpened(id: UUID, at date: Date) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE books
+                SET lastReadAt = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    DatabaseDateFormatter.string(from: date),
+                    id.uuidString
+                ]
+            )
+        }
+    }
+
     func insertImportedBook(_ draft: ImportedBookDraft) async throws -> Book {
         let record = BookRecord(
             id: draft.id.uuidString,
@@ -167,6 +241,47 @@ private extension BookGroup {
             id: id,
             name: record.name,
             sortOrder: record.sortOrder
+        )
+    }
+}
+
+private extension Chapter {
+    init?(row: Row) {
+        let idString: String = row["id"]
+        let bookIDString: String = row["bookId"]
+
+        guard
+            let id = UUID(uuidString: idString),
+            let bookID = UUID(uuidString: bookIDString)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            bookID: bookID,
+            title: row["title"],
+            startOffset: row["startOffset"],
+            endOffset: row["endOffset"],
+            sortOrder: row["sortOrder"]
+        )
+    }
+}
+
+private extension ReadingProgress {
+    init?(row: Row) {
+        let bookIDString: String = row["bookId"]
+        let chapterIDString: String? = row["chapterId"]
+
+        guard let bookID = UUID(uuidString: bookIDString) else {
+            return nil
+        }
+
+        self.init(
+            bookID: bookID,
+            chapterID: chapterIDString.flatMap(UUID.init(uuidString:)),
+            chapterOffset: row["chapterOffset"],
+            globalProgress: row["globalProgress"]
         )
     }
 }

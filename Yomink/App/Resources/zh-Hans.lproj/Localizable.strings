@@ -27,6 +27,13 @@
 "reader.placeholder.title" = "阅读器核心容器";
 "reader.placeholder.message" = "UIKit 阅读器占位页已接入。\n\nPhase 2 会在这里实现高性能文本渲染、分页、手势热区和阅读进度恢复。";
 "reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@\n\nPhase 2 会在这里接入正文渲染和进度恢复。";
+"reader.loading" = "正在打开书籍...";
+"reader.close" = "返回书架";
+"reader.previousPage" = "上一页";
+"reader.nextPage" = "下一页";
+"reader.emptyChapter" = "当前章节没有可显示的内容。";
+"reader.progress.format" = "%@\n本章 %@ · 全书 %@";
+"reader.preview.chapter.title" = "预览章节";
 
 "book.untitled" = "未命名书籍";
 

@@ -49,7 +49,7 @@ struct LibraryView: View {
             }
             .sheet(
                 item: $activeSheet,
-                onDismiss: presentPendingImportPicker
+                onDismiss: handleSheetDismiss
             ) { sheet in
                 switch sheet {
                 case .librarySidebar:
@@ -62,8 +62,14 @@ struct LibraryView: View {
                 case .search:
                     GlobalSearchPlaceholderView()
                 case let .reader(book):
-                    ReaderHostView(book: book)
+                    if case let .ready(services) = environment.bootstrapState {
+                        ReaderHostView(
+                            book: book,
+                            fileStore: services.fileStore,
+                            repository: services.libraryRepository
+                        )
                         .ignoresSafeArea()
+                    }
                 }
             }
             .background {
@@ -216,7 +222,13 @@ struct LibraryView: View {
             .cornerRadius(8)
     }
 
-    private func presentPendingImportPicker() {
+    private func handleSheetDismiss() {
+        if case let .ready(services) = environment.bootstrapState {
+            Task {
+                await viewModel.loadBooks(repository: services.libraryRepository)
+            }
+        }
+
         guard shouldOpenImportPickerAfterSheetDismisses else {
             return
         }
@@ -226,10 +238,9 @@ struct LibraryView: View {
         }
     }
 
-    private static let txtContentType = UTType(
-        filenameExtension: "txt",
-        conformingTo: .plainText
-    ) ?? .plainText
+    // Use the system type directly. A dynamic "txt" UTType can make Files keep
+    // .txt documents disabled on some iOS versions.
+    private static let txtContentType = UTType.plainText
 }
 
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {

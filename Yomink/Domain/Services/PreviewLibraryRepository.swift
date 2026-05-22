@@ -1,6 +1,8 @@
 import Foundation
 
 struct PreviewLibraryRepository: LibraryRepository {
+    private static let sampleText = "这是一段阅读器预览文本。\n\nPhase 2 已接入按章节读取、分页、点击热区和阅读进度恢复。"
+
     func fetchBooks() async throws -> [Book] {
         [
             Book(
@@ -25,6 +27,32 @@ struct PreviewLibraryRepository: LibraryRepository {
     func fetchGroups() async throws -> [BookGroup] {
         []
     }
+
+    func fetchChapters(bookID: UUID) async throws -> [Chapter] {
+        [
+            Chapter(
+                id: UUID(),
+                bookID: bookID,
+                title: NSLocalizedString("reader.preview.chapter.title", comment: ""),
+                startOffset: 0,
+                endOffset: Self.sampleText.utf8.count,
+                sortOrder: 0
+            )
+        ]
+    }
+
+    func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress? {
+        ReadingProgress(
+            bookID: bookID,
+            chapterID: nil,
+            chapterOffset: 0,
+            globalProgress: 0
+        )
+    }
+
+    func saveReadingProgress(_ progress: ReadingProgress) async throws {}
+
+    func markBookOpened(id: UUID, at date: Date) async throws {}
 
     func insertImportedBook(_ draft: ImportedBookDraft) async throws -> Book {
         Book(
