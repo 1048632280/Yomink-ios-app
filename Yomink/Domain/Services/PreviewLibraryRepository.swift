@@ -10,7 +10,7 @@ struct PreviewLibraryRepository: LibraryRepository {
                 intro: nil,
                 fileName: "sample.txt",
                 fileSize: 1_024,
-                encoding: "UTF-8",
+                encoding: "utf-8",
                 wordCount: 480,
                 importedAt: Date(),
                 lastReadAt: nil,

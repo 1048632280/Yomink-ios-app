@@ -210,7 +210,9 @@ struct LibraryView: View {
             return
         }
         shouldOpenImportPickerAfterSheetDismisses = false
-        isImportPickerPresented = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            isImportPickerPresented = true
+        }
     }
 
     private static let txtContentType = UTType(
@@ -225,10 +227,6 @@ private final class LibraryViewModel: ObservableObject {
     @Published var isImporting = false
     @Published var importErrorMessage: String?
     private var currentImportTask: Task<Void, Never>?
-
-    deinit {
-        currentImportTask?.cancel()
-    }
 
     func loadBooks(repository: any LibraryRepository) async {
         guard !isImporting else {

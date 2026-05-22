@@ -1,6 +1,6 @@
 import Foundation
 
-final class AppFileStore {
+final class AppFileStore: @unchecked Sendable {
     enum StoreError: LocalizedError {
         case missingSystemDirectory(FileManager.SearchPathDirectory)
         case invalidRelativePath(String)
@@ -41,13 +41,11 @@ final class AppFileStore {
         let databaseURL = applicationSupportURL
             .appendingPathComponent("yomink.sqlite", isDirectory: false)
 
-        try fileManager.createDirectory(
-            at: booksURL,
-            withIntermediateDirectories: true
-        )
-        try fileManager.createDirectory(
-            at: applicationSupportURL,
-            withIntermediateDirectories: true
+        try Self.createRequiredDirectories(
+            fileManager: fileManager,
+            documentsURL: documentsURL,
+            booksURL: booksURL,
+            applicationSupportURL: applicationSupportURL
         )
 
         self.documentsURL = documentsURL
@@ -69,10 +67,18 @@ final class AppFileStore {
     }
 
     static func preview() throws -> AppFileStore {
-        let rootURL = FileManager.default.temporaryDirectory
+        let fileManager = FileManager.default
+        let rootURL = fileManager.temporaryDirectory
             .appendingPathComponent("YominkPreview", isDirectory: true)
         let booksURL = rootURL.appendingPathComponent("Books", isDirectory: true)
         let supportURL = rootURL.appendingPathComponent("ApplicationSupport", isDirectory: true)
+
+        try createRequiredDirectories(
+            fileManager: fileManager,
+            documentsURL: rootURL,
+            booksURL: booksURL,
+            applicationSupportURL: supportURL
+        )
 
         return AppFileStore(
             documentsURL: rootURL,
@@ -96,6 +102,15 @@ final class AppFileStore {
             .appendingPathComponent("normalized.txt", isDirectory: false)
     }
 
+    func removeBookFiles(id bookID: UUID) throws {
+        try Self.removeBookFiles(at: bookDirectoryURL(for: bookID))
+    }
+
+    static func removeBookFiles(at bookDirectoryURL: URL) throws {
+        try FileManager.default.removeItem(at: bookDirectoryURL)
+    }
+
+    /// Returns a database-safe path for files stored below the app Documents directory.
     func relativePath(for url: URL) throws -> String {
         let rootURL = documentsURL.standardizedFileURL
         let targetURL = url.standardizedFileURL
@@ -121,5 +136,25 @@ final class AppFileStore {
         }
 
         return documentsURL.appendingPathComponent(relativePath, isDirectory: false)
+    }
+
+    private static func createRequiredDirectories(
+        fileManager: FileManager,
+        documentsURL: URL,
+        booksURL: URL,
+        applicationSupportURL: URL
+    ) throws {
+        try fileManager.createDirectory(
+            at: documentsURL,
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: booksURL,
+            withIntermediateDirectories: true
+        )
+        try fileManager.createDirectory(
+            at: applicationSupportURL,
+            withIntermediateDirectories: true
+        )
     }
 }

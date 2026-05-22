@@ -1,8 +1,8 @@
 import CoreFoundation
 import Foundation
 
-struct TXTTextDecoder {
-    struct DecodedText: Equatable {
+struct TXTTextDecoder: Sendable {
+    struct DecodedText: Equatable, Sendable {
         var text: String
         var encodingName: String
     }
@@ -24,11 +24,11 @@ struct TXTTextDecoder {
             guard let text = String(data: textData, encoding: .utf8) else {
                 throw DecodeError.unsupportedEncoding
             }
-            return DecodedText(text: text, encodingName: "UTF-8 BOM")
+            return DecodedText(text: text, encodingName: "utf-8")
         }
 
         if let text = String(data: data, encoding: .utf8) {
-            return DecodedText(text: text, encodingName: "UTF-8")
+            return DecodedText(text: text, encodingName: "utf-8")
         }
 
         for candidate in Self.legacyChineseEncodings {
@@ -46,9 +46,9 @@ struct TXTTextDecoder {
     private static let utf8BOM = Data([0xEF, 0xBB, 0xBF])
 
     private static let legacyChineseEncodings: [(name: String, encoding: String.Encoding)] = [
-        ("GB2312", stringEncoding(for: 0x0630)),
-        ("GBK", stringEncoding(for: 0x0631)),
-        ("GB18030", stringEncoding(for: 0x0632))
+        ("gb18030", stringEncoding(for: 0x0632)),
+        ("gbk", stringEncoding(for: 0x0631)),
+        ("gb2312", stringEncoding(for: 0x0630))
     ]
 
     private static func stringEncoding(for cfEncoding: UInt32) -> String.Encoding {

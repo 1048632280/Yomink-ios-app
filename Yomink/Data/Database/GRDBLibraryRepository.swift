@@ -1,5 +1,6 @@
 import Foundation
 import GRDB
+import OSLog
 
 struct GRDBLibraryRepository: LibraryRepository {
     private let database: AppDatabase
@@ -55,7 +56,7 @@ struct GRDBLibraryRepository: LibraryRepository {
         )
         let progress = ReadingProgressRecord(
             bookId: draft.id.uuidString,
-            chapterId: nil,
+            chapterId: draft.chapters.first?.id.uuidString,
             chapterOffset: 0,
             globalProgress: 0,
             updatedAt: DatabaseDateFormatter.string(from: draft.importedAt)
@@ -63,6 +64,24 @@ struct GRDBLibraryRepository: LibraryRepository {
 
         return try await database.writer.write { db in
             try record.insert(db)
+            for chapter in draft.chapters {
+                try db.execute(
+                    sql: """
+                    INSERT INTO chapters (
+                        id, bookId, title, startOffset, endOffset, sortOrder
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    arguments: [
+                        chapter.id.uuidString,
+                        draft.id.uuidString,
+                        chapter.title,
+                        chapter.startOffset,
+                        chapter.endOffset,
+                        chapter.sortOrder
+                    ]
+                )
+            }
             try progress.insert(db)
 
             return Book(
@@ -92,17 +111,31 @@ struct GRDBLibraryRepository: LibraryRepository {
 }
 
 private extension Book {
+    static let rowLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Yomink",
+        category: "BookRow"
+    )
+
     init?(row: Row) {
         let idString: String = row["id"]
         let importedAtString: String = row["importedAt"]
         let lastReadAtString: String? = row["lastReadAt"]
         let groupIDString: String? = row["groupId"]
         let progressPercentage: Double = row["progressPercentage"] ?? 0
+        let lastReadAt = lastReadAtString.flatMap(DatabaseDateFormatter.date(from:))
+        let groupID = groupIDString.flatMap(UUID.init(uuidString:))
         guard
             let id = UUID(uuidString: idString),
             let importedAt = DatabaseDateFormatter.date(from: importedAtString)
         else {
+            Self.rowLogger.warning("Dropped invalid book row: id=\(idString, privacy: .public)")
             return nil
+        }
+        if lastReadAtString != nil, lastReadAt == nil {
+            Self.rowLogger.warning("Dropped invalid lastReadAt for book row: id=\(idString, privacy: .public)")
+        }
+        if groupIDString != nil, groupID == nil {
+            Self.rowLogger.warning("Dropped invalid groupId for book row: id=\(idString, privacy: .public)")
         }
 
         self.init(
@@ -115,9 +148,9 @@ private extension Book {
             encoding: row["encoding"],
             wordCount: row["wordCount"],
             importedAt: importedAt,
-            lastReadAt: lastReadAtString.flatMap(DatabaseDateFormatter.date(from:)),
-            groupID: groupIDString.flatMap(UUID.init(uuidString:)),
-            progressPercentage: progressPercentage,
+            lastReadAt: lastReadAt,
+            groupID: groupID,
+            progressPercentage: min(max(progressPercentage, 0), 1),
             sourcePath: row["sourcePath"],
             normalizedPath: row["normalizedPath"]
         )

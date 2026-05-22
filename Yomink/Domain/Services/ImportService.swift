@@ -41,10 +41,7 @@ final class ImportService {
             try Task.checkCancellation()
             return book
         } catch {
-            if error is CancellationError {
-                try? await libraryRepository.deleteBook(id: preparedImport.draft.id)
-            }
-            try? FileManager.default.removeItem(at: preparedImport.bookDirectoryURL)
+            cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
             throw error
         }
     }
@@ -83,7 +80,7 @@ final class ImportService {
                 )
                 try fileManager.copyItem(at: sourceURL, to: sourceCopyURL)
             } catch {
-                try? fileManager.removeItem(at: bookDirectoryURL)
+                try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
                 throw ImportError.cannotReadFile
             }
 
@@ -92,21 +89,29 @@ final class ImportService {
                 let data = try Data(contentsOf: sourceCopyURL, options: .mappedIfSafe)
                 try Task.checkCancellation()
                 let decodedText = try decoder.decode(data)
-                guard let normalizedData = decodedText.text.data(using: .utf8) else {
-                throw ImportError.cannotWriteUTF8Cache
-            }
-            try Task.checkCancellation()
-            try normalizedData.write(to: normalizedURL, options: .atomic)
-            try Task.checkCancellation()
+                do {
+                    try decodedText.text.write(
+                        to: normalizedURL,
+                        atomically: true,
+                        encoding: .utf8
+                    )
+                } catch {
+                    throw ImportError.cannotWriteUTF8Cache
+                }
+                try Task.checkCancellation()
 
-            let importedAt = Date()
+                let importedAt = Date()
                 let draft = ImportedBookDraft(
                     id: bookID,
                     title: sourceTitle,
                     fileName: sourceFileName,
                     fileSize: Int64(data.count),
                     encoding: decodedText.encodingName,
-                    wordCount: decodedText.text.count,
+                    wordCount: Self.visibleCharacterCount(in: decodedText.text),
+                    chapters: Self.pseudoChapters(
+                        for: decodedText.text,
+                        title: sourceTitle
+                    ),
                     importedAt: importedAt,
                     importSourceDisplayPath: sourceDisplayPath,
                     sourcePath: sourcePath,
@@ -117,7 +122,7 @@ final class ImportService {
                     bookDirectoryURL: bookDirectoryURL
                 )
             } catch {
-                try? fileManager.removeItem(at: bookDirectoryURL)
+                try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
                 throw error
             }
         }.value
@@ -132,6 +137,51 @@ final class ImportService {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? NSLocalizedString("book.untitled", comment: "") : title
     }
+
+    private func cleanUpFailedImport(
+        _ preparedImport: PreparedImport,
+        deletingDatabaseRecord: Bool
+    ) {
+        let bookID = preparedImport.draft.id
+        let bookDirectoryURL = preparedImport.bookDirectoryURL
+        try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
+
+        guard deletingDatabaseRecord else {
+            return
+        }
+
+        let libraryRepository = libraryRepository
+        _ = Task.detached {
+            // Cancellation can arrive after DB insertion; cleanup must not inherit it.
+            try? await libraryRepository.deleteBook(id: bookID)
+        }
+    }
+
+    private static func visibleCharacterCount(in text: String) -> Int {
+        text.unicodeScalars.lazy.filter { !$0.properties.isWhitespace }.count
+    }
+
+    private static func pseudoChapters(
+        for text: String,
+        title: String
+    ) -> [ImportedChapterDraft] {
+        let characterCount = text.count
+        let chapterCount = max(1, (characterCount + pseudoChapterLength - 1) / pseudoChapterLength)
+
+        return (0..<chapterCount).map { index in
+            let startOffset = index * pseudoChapterLength
+            let endOffset = min(startOffset + pseudoChapterLength, characterCount)
+            return ImportedChapterDraft(
+                id: UUID(),
+                title: chapterCount == 1 ? title : "\(title) \(index + 1)",
+                startOffset: startOffset,
+                endOffset: endOffset,
+                sortOrder: index
+            )
+        }
+    }
+
+    private static let pseudoChapterLength = 128_000
 }
 
 private struct PreparedImport {

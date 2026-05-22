@@ -1,7 +1,7 @@
 import Foundation
 import GRDB
 
-final class AppDatabase {
+final class AppDatabase: @unchecked Sendable {
     let writer: DatabaseWriter
 
     init(fileStore: AppFileStore) throws {
