@@ -9,7 +9,7 @@ struct GRDBLibraryRepository: LibraryRepository {
     }
 
     func fetchBooks() async throws -> [Book] {
-        try database.writer.read { db in
+        try await database.writer.read { db in
             let records = try BookRecord
                 .order(Column("lastReadAt").desc, Column("importedAt").desc)
                 .fetchAll(db)
@@ -18,7 +18,7 @@ struct GRDBLibraryRepository: LibraryRepository {
     }
 
     func fetchGroups() async throws -> [BookGroup] {
-        try database.writer.read { db in
+        try await database.writer.read { db in
             let records = try BookGroupRecord
                 .order(Column("sortOrder"), Column("createdAt"))
                 .fetchAll(db)

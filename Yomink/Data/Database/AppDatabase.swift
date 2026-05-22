@@ -35,7 +35,7 @@ final class AppDatabase {
     }
 
     private func migrate() throws {
-        var migrator = Self.makeMigrator()
+        let migrator = Self.makeMigrator()
         try migrator.migrate(writer)
     }
 
