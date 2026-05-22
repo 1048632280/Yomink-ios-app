@@ -7,14 +7,14 @@ struct AddBookSidebarView: View {
         NavigationView {
             List {
                 Section {
-                    Label("从文件导入", systemImage: "square.and.arrow.down")
-                    Label("足迹", systemImage: "clock")
+                    Label("add.import.file", systemImage: "square.and.arrow.down")
+                    Label("add.reading.history", systemImage: "clock")
                 }
             }
-            .navigationTitle("添加")
+            .navigationTitle("add.title")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
+                    Button("common.close") {
                         dismiss()
                     }
                 }
@@ -22,4 +22,3 @@ struct AddBookSidebarView: View {
         }
     }
 }
-

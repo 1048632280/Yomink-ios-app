@@ -7,8 +7,6 @@ build/
 
 # Swift Package Manager
 .build/
-Package.resolved
 
 # macOS
 .DS_Store
-

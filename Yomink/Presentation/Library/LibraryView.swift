@@ -2,16 +2,13 @@ import SwiftUI
 
 struct LibraryView: View {
     @EnvironmentObject private var environment: AppEnvironment
-    @State private var isLibrarySidebarPresented = false
-    @State private var isAddSidebarPresented = false
-    @State private var isSearchPresented = false
-    @State private var isReaderPresented = false
+    @State private var activeSheet: LibrarySheet?
 
     var body: some View {
         NavigationView {
             ZStack {
                 VStack(spacing: 16) {
-                    if let bootstrapError = environment.bootstrapError {
+                    if case let .failed(bootstrapError) = environment.bootstrapState {
                         bootstrapErrorView(bootstrapError)
                     }
 
@@ -19,45 +16,45 @@ struct LibraryView: View {
                 }
                 .padding(24)
             }
-            .navigationTitle("书架")
+            .navigationTitle("library.title")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
-                        isLibrarySidebarPresented = true
+                        activeSheet = .librarySidebar
                     } label: {
                         Image(systemName: "folder")
                     }
-                    .accessibilityLabel("打开分组")
+                    .accessibilityLabel(Text("library.sidebar.open"))
                 }
 
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
                     Button {
-                        isSearchPresented = true
+                        activeSheet = .search
                     } label: {
                         Image(systemName: "magnifyingglass")
                     }
-                    .accessibilityLabel("搜索")
+                    .accessibilityLabel(Text("library.search.open"))
 
                     Button {
-                        isAddSidebarPresented = true
+                        activeSheet = .addBook
                     } label: {
                         Image(systemName: "plus")
                     }
-                    .accessibilityLabel("添加")
+                    .accessibilityLabel(Text("library.add.open"))
                 }
             }
-            .sheet(isPresented: $isLibrarySidebarPresented) {
-                LibrarySidebarView()
-            }
-            .sheet(isPresented: $isAddSidebarPresented) {
-                AddBookSidebarView()
-            }
-            .sheet(isPresented: $isSearchPresented) {
-                GlobalSearchPlaceholderView()
-            }
-            .sheet(isPresented: $isReaderPresented) {
-                ReaderHostView()
-                    .ignoresSafeArea()
+            .sheet(item: $activeSheet) { sheet in
+                switch sheet {
+                case .librarySidebar:
+                    LibrarySidebarView()
+                case .addBook:
+                    AddBookSidebarView()
+                case .search:
+                    GlobalSearchPlaceholderView()
+                case .reader:
+                    ReaderHostView()
+                        .ignoresSafeArea()
+                }
             }
         }
         .navigationViewStyle(.stack)
@@ -69,16 +66,16 @@ struct LibraryView: View {
                 .font(.system(size: 48, weight: .regular))
                 .foregroundColor(.secondary)
 
-            Text("还没有导入书籍")
+            Text("library.empty.title")
                 .font(.headline)
 
-            Text("Phase 0 已完成工程初始化。下一阶段会接入文件导入、编码识别和书架数据。")
+            Text("library.empty.message")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
 
-            Button("打开阅读器占位页") {
-                isReaderPresented = true
+            Button("reader.placeholder.open") {
+                activeSheet = .reader
             }
             .buttonStyle(.borderedProminent)
             .padding(.top, 8)
@@ -87,7 +84,7 @@ struct LibraryView: View {
     }
 
     private func bootstrapErrorView(_ message: String) -> some View {
-        Text("初始化失败：\(message)")
+        Text(String(format: NSLocalizedString("bootstrap.error.message", comment: ""), message))
             .font(.footnote)
             .foregroundColor(.red)
             .padding(12)
@@ -106,17 +103,17 @@ private struct GlobalSearchPlaceholderView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 44))
                     .foregroundColor(.secondary)
-                Text("全局搜索")
+                Text("search.title")
                     .font(.headline)
-                Text("Phase 4 将实现书名模糊搜索和历史搜索气泡。")
+                Text("search.placeholder.message")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
             .padding()
-            .navigationTitle("搜索")
+            .navigationTitle("search.title")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
+                    Button("common.close") {
                         dismiss()
                     }
                 }
@@ -125,12 +122,20 @@ private struct GlobalSearchPlaceholderView: View {
     }
 }
 
+private enum LibrarySheet: String, Identifiable {
+    case librarySidebar
+    case addBook
+    case search
+    case reader
+
+    var id: String { rawValue }
+}
+
 #if DEBUG
 struct LibraryView_Previews: PreviewProvider {
     static var previews: some View {
         LibraryView()
-            .environmentObject(AppEnvironment.live())
+            .environmentObject(AppEnvironment.preview())
     }
 }
 #endif
-

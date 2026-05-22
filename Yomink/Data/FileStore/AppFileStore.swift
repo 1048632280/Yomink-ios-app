@@ -53,8 +53,33 @@ final class AppFileStore {
         self.databaseURL = databaseURL
     }
 
+    private init(
+        documentsURL: URL,
+        booksURL: URL,
+        applicationSupportURL: URL,
+        databaseURL: URL
+    ) {
+        self.documentsURL = documentsURL
+        self.booksURL = booksURL
+        self.applicationSupportURL = applicationSupportURL
+        self.databaseURL = databaseURL
+    }
+
+    static func preview() throws -> AppFileStore {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkPreview", isDirectory: true)
+        let booksURL = rootURL.appendingPathComponent("Books", isDirectory: true)
+        let supportURL = rootURL.appendingPathComponent("ApplicationSupport", isDirectory: true)
+
+        return AppFileStore(
+            documentsURL: rootURL,
+            booksURL: booksURL,
+            applicationSupportURL: supportURL,
+            databaseURL: supportURL.appendingPathComponent("preview.sqlite")
+        )
+    }
+
     func bookDirectoryURL(for bookID: UUID) -> URL {
-        booksURL.appendingPathComponent(bookID.uuidString, isDirectory: true)
+        booksURL.appendingPathComponent(bookID.uuidString.lowercased(), isDirectory: true)
     }
 }
-

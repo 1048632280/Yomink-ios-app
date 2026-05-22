@@ -27,18 +27,14 @@ final class ReaderViewController: UIViewController {
     }
 
     private func configureTitleLabel() {
-        titleLabel.text = "阅读器核心容器"
+        titleLabel.text = NSLocalizedString("reader.placeholder.title", comment: "")
         titleLabel.font = .preferredFont(forTextStyle: .headline)
         titleLabel.textAlignment = .center
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureBodyLabel() {
-        bodyLabel.text = """
-        UIKit 阅读器占位页已接入。
-
-        Phase 2 会在这里实现高性能文本渲染、分页、手势热区和阅读进度恢复。
-        """
+        bodyLabel.text = NSLocalizedString("reader.placeholder.message", comment: "")
         bodyLabel.font = .preferredFont(forTextStyle: .body)
         bodyLabel.textColor = .secondaryLabel
         bodyLabel.numberOfLines = 0
@@ -60,4 +56,3 @@ final class ReaderViewController: UIViewController {
         ])
     }
 }
-

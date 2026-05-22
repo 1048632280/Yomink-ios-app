@@ -4,10 +4,9 @@ import GRDB
 struct ReadingProgressRecord: Codable, FetchableRecord, PersistableRecord {
     static let databaseTableName = "reading_progress"
 
-    var bookId: String
-    var chapterId: String?
-    var chapterOffset: Int64
-    var globalProgress: Double
-    var updatedAt: String
+    let bookId: String
+    let chapterId: String?
+    let chapterOffset: Int64
+    let globalProgress: Double
+    let updatedAt: String
 }
-

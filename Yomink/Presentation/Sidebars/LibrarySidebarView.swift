@@ -6,27 +6,27 @@ struct LibrarySidebarView: View {
     var body: some View {
         NavigationView {
             List {
-                Section("书架分组") {
-                    Label("全部书籍", systemImage: "book")
-                    Label("未分组", systemImage: "tray")
+                Section("sidebar.groups.section") {
+                    Label("sidebar.allBooks", systemImage: "book")
+                    Label("sidebar.ungrouped", systemImage: "tray")
                 }
 
                 Section {
                     NavigationLink {
                         GroupManagementPlaceholderView()
                     } label: {
-                        Label("管理分组", systemImage: "folder.badge.gearshape")
+                        Label("sidebar.manageGroups", systemImage: "folder.badge.gearshape")
                     }
                 }
 
                 Section {
-                    Label("设置", systemImage: "gearshape")
+                    Label("settings.title", systemImage: "gearshape")
                 }
             }
-            .navigationTitle("书架")
+            .navigationTitle("library.title")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("关闭") {
+                    Button("common.close") {
                         dismiss()
                     }
                 }
@@ -37,11 +37,10 @@ struct LibrarySidebarView: View {
 
 private struct GroupManagementPlaceholderView: View {
     var body: some View {
-        Text("Phase 4 将实现新增、编辑、删除分组。")
+        Text("groups.placeholder.message")
             .font(.subheadline)
             .foregroundColor(.secondary)
             .padding()
-            .navigationTitle("管理分组")
+            .navigationTitle("sidebar.manageGroups")
     }
 }
-

@@ -30,6 +30,17 @@ jobs:
       - name: Show Xcode version
         run: xcodebuild -version
 
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('Yomink.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
       - name: Resolve Swift packages
         run: |
           xcodebuild \
@@ -66,4 +77,3 @@ jobs:
           name: Yomink-unsigned-ipa
           path: ${{ env.IPA_PATH }}
           if-no-files-found: error
-

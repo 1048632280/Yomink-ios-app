@@ -23,7 +23,7 @@ Yomink 是一款 iOS 原生纯本地 TXT 阅读器，目标系统为 iOS 15.5 �
 ### 2.1 技术栈
 
 - UI 架构：SwiftUI + UIKit 混合。
-- 数据库：GRDB + SQLite。
+- 数据库：GRDB + SQLite，使用 `DatabasePool` + WAL，适配单写多读的书架/阅读器场景。
 - 文件存储：App 沙盒文件系统。
 - 最低系统：iOS 15.5。
 - 阅读核心：UIKit 承担高性能文本渲染、手势、分页和滚动；SwiftUI 承担页面编排、书架、设置、表单等业务 UI。
@@ -121,7 +121,9 @@ Library/Application Support/
 - `importedAt`: 导入时间。
 - `lastReadAt`: 最近阅读时间。
 - `groupId`: 所属分组，可空。
-- `sourcePath`: 原文相对路径。
+- `importSourceDisplayPath`: 导入来源路径，仅用于展示，可空。
+- `sourceBookmark`: iOS security-scoped bookmark，可空，用于后续重新访问外部来源文件。
+- `sourcePath`: App 沙盒内原文相对路径，真实阅读和导出以此为准。
 - `normalizedPath`: 阅读缓存相对路径，可空。
 
 `groups`
@@ -130,6 +132,8 @@ Library/Application Support/
 - `name`: 分组名称。
 - `sortOrder`: 排序。
 - `createdAt`: 创建时间。
+
+所有数据库日期字段统一存储为 UTC ISO8601 字符串，格式包含 fractional seconds，例如 `2026-05-22T07:30:15.123Z`。代码统一通过 `DatabaseDateFormatter` 编解码，禁止业务层直接手写日期字符串。数据库迁移不使用 `IF NOT EXISTS` 掩盖 schema drift；全新项目阶段应让迁移差异显式失败。
 
 `reading_progress`
 
@@ -732,6 +736,7 @@ Library/Application Support/
 - 不把整本书作为阅读常态常驻内存。
 - 任何删除书籍逻辑必须同时清理数据库记录和文件目录。
 - 任何影响阅读布局的设置变化必须触发可控重排，并保存设置。
+- UI 文案使用 `Localizable.strings` key，避免页面增多后再整体迁移本地化。
 - 性能优化以 Instruments 真机数据为准。
 
 建议每个阶段完成后更新：
@@ -740,4 +745,3 @@ Library/Application Support/
 - 遗留问题。
 - 性能数据。
 - 下一阶段任务。
-

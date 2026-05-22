@@ -1,0 +1,29 @@
+"library.title" = "书架";
+"library.sidebar.open" = "打开分组";
+"library.search.open" = "搜索";
+"library.add.open" = "添加";
+"library.empty.title" = "还没有导入书籍";
+"library.empty.message" = "Phase 0 已完成工程初始化。下一阶段会接入文件导入、编码识别和书架数据。";
+
+"reader.placeholder.open" = "打开阅读器占位页";
+
+"search.title" = "搜索";
+"search.placeholder.message" = "Phase 4 将实现书名模糊搜索和历史搜索气泡。";
+
+"bootstrap.error.message" = "初始化失败：%@";
+
+"common.close" = "关闭";
+
+"add.title" = "添加";
+"add.import.file" = "从文件导入";
+"add.reading.history" = "足迹";
+
+"sidebar.groups.section" = "书架分组";
+"sidebar.allBooks" = "全部书籍";
+"sidebar.ungrouped" = "未分组";
+"sidebar.manageGroups" = "管理分组";
+"settings.title" = "设置";
+"groups.placeholder.message" = "Phase 4 将实现新增、编辑、删除分组。";
+
+"reader.placeholder.title" = "阅读器核心容器";
+"reader.placeholder.message" = "UIKit 阅读器占位页已接入。\n\nPhase 2 会在这里实现高性能文本渲染、分页、手势热区和阅读进度恢复。";
