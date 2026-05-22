@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 struct LibraryView: View {
@@ -65,19 +66,29 @@ struct LibraryView: View {
                         .ignoresSafeArea()
                 }
             }
-            .fileImporter(
-                isPresented: $isImportPickerPresented,
-                allowedContentTypes: [.item],
-                allowsMultipleSelection: false
-            ) { result in
+            .background {
+                DocumentPickerPresenter(
+                    isPresented: $isImportPickerPresented,
+                    allowedContentTypes: [.item]
+                ) { result in
+                    guard case let .ready(services) = environment.bootstrapState else {
+                        return
+                    }
+                    viewModel.handleImportResult(
+                        result,
+                        importService: services.importService,
+                        repository: services.libraryRepository
+                    )
+                }
+                .frame(width: 0, height: 0)
+            }
+            .onChange(of: isImportPickerPresented) { isPresented in
                 guard case let .ready(services) = environment.bootstrapState else {
                     return
                 }
-                viewModel.handleImportResult(
-                    result,
-                    importService: services.importService,
-                    repository: services.libraryRepository
-                )
+                if !isPresented {
+                    viewModel.loadIfNeededAfterPickerDismissal(repository: services.libraryRepository)
+                }
             }
             .alert(
                 "import.error.title",
@@ -217,6 +228,79 @@ struct LibraryView: View {
 
 }
 
+private struct DocumentPickerPresenter: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let allowedContentTypes: [UTType]
+    let onCompletion: (Result<[URL], Error>) -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(
+        _ uiViewController: UIViewController,
+        context: Context
+    ) {
+        context.coordinator.parent = self
+
+        if isPresented {
+            context.coordinator.presentPickerIfNeeded(from: uiViewController)
+        } else {
+            context.coordinator.dismissPickerIfNeeded()
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var parent: DocumentPickerPresenter
+        private weak var picker: UIDocumentPickerViewController?
+
+        init(parent: DocumentPickerPresenter) {
+            self.parent = parent
+        }
+
+        func presentPickerIfNeeded(from viewController: UIViewController) {
+            guard picker == nil,
+                  viewController.presentedViewController == nil,
+                  viewController.view.window != nil
+            else {
+                return
+            }
+
+            let picker = UIDocumentPickerViewController(
+                forOpeningContentTypes: parent.allowedContentTypes,
+                asCopy: true
+            )
+            picker.delegate = self
+            picker.allowsMultipleSelection = false
+            self.picker = picker
+            viewController.present(picker, animated: true)
+        }
+
+        func dismissPickerIfNeeded() {
+            picker?.dismiss(animated: true)
+            picker = nil
+        }
+
+        func documentPicker(
+            _ controller: UIDocumentPickerViewController,
+            didPickDocumentsAt urls: [URL]
+        ) {
+            picker = nil
+            parent.isPresented = false
+            parent.onCompletion(.success(urls))
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            picker = nil
+            parent.isPresented = false
+        }
+    }
+}
+
 @MainActor
 private final class LibraryViewModel: ObservableObject {
     @Published var books: [Book] = []
@@ -257,6 +341,16 @@ private final class LibraryViewModel: ObservableObject {
             )
         case let .failure(error):
             importErrorMessage = error.localizedDescription
+        }
+    }
+
+    func loadIfNeededAfterPickerDismissal(repository: any LibraryRepository) {
+        guard !isImporting else {
+            return
+        }
+
+        Task {
+            await loadBooks(repository: repository)
         }
     }
 
