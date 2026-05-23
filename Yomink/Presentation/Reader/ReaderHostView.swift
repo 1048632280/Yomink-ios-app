@@ -59,8 +59,10 @@ final class ReaderViewController: UIViewController {
     private var currentPageIndex = 0
     private var currentProgress: ReadingProgress?
     private var loadTask: Task<Void, Never>?
+    private var paginateTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var saveGeneration = 0
+    private var paginateGeneration = 0
     private var isMenuVisible = false
     private var lastPaginationSize = CGSize.zero
 
@@ -84,6 +86,7 @@ final class ReaderViewController: UIViewController {
 
     deinit {
         loadTask?.cancel()
+        paginateTask?.cancel()
         saveTask?.cancel()
     }
 
@@ -112,8 +115,10 @@ final class ReaderViewController: UIViewController {
         }
 
         lastPaginationSize = size
-        rebuildPaginator(anchorByteOffset: currentPaginator?.pageStartByteOffset(at: currentPageIndex) ?? 0)
-        renderCurrentPage(savingProgress: false)
+        rebuildPaginator(
+            anchorByteOffset: currentPaginator?.pageStartByteOffset(at: currentPageIndex) ?? 0,
+            savingProgress: false
+        )
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -281,7 +286,9 @@ final class ReaderViewController: UIViewController {
 
     private func startInitialLoad() {
         loadTask?.cancel()
+        paginateTask?.cancel()
         saveTask?.cancel()
+        paginateGeneration += 1
         chapters = []
         currentChapterText = ""
         currentPaginator = nil
@@ -386,10 +393,10 @@ final class ReaderViewController: UIViewController {
         self.chapters = chapters
         currentChapterIndex = chapterIndex
         currentChapterText = text
+        currentPaginator = nil
+        currentPageIndex = 0
         lastPaginationSize = textView.bounds.size
-        rebuildPaginator(anchorByteOffset: startOffset)
-        showLoading(false, message: nil)
-        renderCurrentPage(savingProgress: saveAfterRender)
+        rebuildPaginator(anchorByteOffset: startOffset, savingProgress: saveAfterRender)
     }
 
     private func showEmptyReader() {
@@ -417,13 +424,58 @@ final class ReaderViewController: UIViewController {
         }
     }
 
-    private func rebuildPaginator(anchorByteOffset: Int) {
-        currentPaginator = ChapterPaginator(
-            text: currentChapterText,
-            typography: .default,
-            fittingSize: textView.bounds.size
-        )
-        currentPageIndex = currentPaginator?.pageIndex(containingByteOffset: anchorByteOffset) ?? 0
+    private func rebuildPaginator(anchorByteOffset: Int, savingProgress: Bool) {
+        paginateGeneration += 1
+        let generation = paginateGeneration
+        let text = currentChapterText
+        let fittingSize = textView.bounds.size
+        let typography = ReaderTypography.default
+
+        // Phase 3: consider adjacent chapter paginator prefetch near chapter
+        // edges, coordinated with typography/settings changes and cancellation.
+        paginateTask?.cancel()
+        paginateTask = Task { [weak self] in
+            let buildTask = Task.detached(priority: .userInitiated) {
+                try Task.checkCancellation()
+                let paginator = ChapterPaginator(
+                    text: text,
+                    typography: typography,
+                    fittingSize: fittingSize
+                )
+                try Task.checkCancellation()
+                return paginator
+            }
+
+            do {
+                let paginator = try await buildTask.value
+
+                await self?.applyPaginator(
+                    paginator,
+                    anchorByteOffset: anchorByteOffset,
+                    generation: generation,
+                    savingProgress: savingProgress
+                )
+            } catch {
+                buildTask.cancel()
+            }
+        }
+    }
+
+    private func applyPaginator(
+        _ paginator: ChapterPaginator,
+        anchorByteOffset: Int,
+        generation: Int,
+        savingProgress: Bool
+    ) {
+        guard generation == paginateGeneration else {
+            return
+        }
+
+        currentPaginator = paginator
+        currentPageIndex = paginator.pageIndex(containingByteOffset: anchorByteOffset)
+        paginateTask = nil
+        showLoading(false, message: nil)
+        renderCurrentPage(savingProgress: savingProgress)
     }
 
     private func renderCurrentPage(savingProgress shouldSave: Bool) {
@@ -433,12 +485,9 @@ final class ReaderViewController: UIViewController {
             return
         }
 
-        let paginator = currentPaginator ?? ChapterPaginator(
-            text: currentChapterText,
-            typography: .default,
-            fittingSize: textView.bounds.size
-        )
-        currentPaginator = paginator
+        guard let paginator = currentPaginator else {
+            return
+        }
         currentPageIndex = min(max(currentPageIndex, 0), max(paginator.pageCount - 1, 0))
 
         let page = paginator.page(at: currentPageIndex)
@@ -474,6 +523,10 @@ final class ReaderViewController: UIViewController {
     }
 
     private func moveToPreviousPage() {
+        guard currentPaginator != nil else {
+            return
+        }
+
         if currentPageIndex > 0 {
             currentPageIndex -= 1
             renderCurrentPage(savingProgress: true)
@@ -674,16 +727,14 @@ private extension NumberFormatter {
     }()
 }
 
-private struct ReaderTypography {
-    var font: UIFont
-    var textColor: UIColor
-    var lineSpacing: CGFloat
-    var paragraphSpacing: CGFloat
+private struct ReaderTypography: Sendable {
+    var textStyle: String
+    var lineSpacing: Double
+    var paragraphSpacing: Double
 
     static var `default`: ReaderTypography {
         ReaderTypography(
-            font: .preferredFont(forTextStyle: .body),
-            textColor: .label,
+            textStyle: UIFont.TextStyle.body.rawValue,
             lineSpacing: 4,
             paragraphSpacing: 8
         )
@@ -691,21 +742,21 @@ private struct ReaderTypography {
 
     func attributedString(for text: String) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = lineSpacing
-        paragraphStyle.paragraphSpacing = paragraphSpacing
+        paragraphStyle.lineSpacing = CGFloat(lineSpacing)
+        paragraphStyle.paragraphSpacing = CGFloat(paragraphSpacing)
 
         return NSAttributedString(
             string: text,
             attributes: [
-                .font: font,
-                .foregroundColor: textColor,
+                .font: UIFont.preferredFont(forTextStyle: UIFont.TextStyle(textStyle)),
+                .foregroundColor: UIColor.label,
                 .paragraphStyle: paragraphStyle
             ]
         )
     }
 }
 
-private final class ChapterPaginator {
+private final class ChapterPaginator: @unchecked Sendable {
     struct Page {
         let attributedText: NSAttributedString
         let startByteOffset: Int
