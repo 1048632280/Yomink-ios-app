@@ -2,7 +2,7 @@ import Foundation
 
 protocol LibraryRepository: Sendable {
     func fetchBooks(scope: LibraryScope, sortOrder: LibrarySettings.SortOrder) async throws -> [Book]
-    func searchBooks(keyword: String) async throws -> [Book]
+    func searchBooks(keyword: String, sortOrder: LibrarySettings.SortOrder) async throws -> [Book]
     func fetchSearchHistory() async throws -> [SearchHistoryItem]
     func saveSearchKeyword(_ keyword: String) async throws
     func clearSearchHistory() async throws
@@ -25,4 +25,5 @@ protocol LibraryRepository: Sendable {
     /// Removes database rows only.
     /// Caller must invoke AppFileStore.removeBookFiles(id:) to drop on-disk artifacts.
     func deleteBook(id: UUID) async throws
+    func deleteBooks(ids: Set<UUID>) async throws
 }

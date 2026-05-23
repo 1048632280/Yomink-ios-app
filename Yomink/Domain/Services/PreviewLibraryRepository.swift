@@ -35,8 +35,11 @@ struct PreviewLibraryRepository: LibraryRepository {
         }
     }
 
-    func searchBooks(keyword: String) async throws -> [Book] {
-        try await fetchBooks(scope: .all, sortOrder: .lastReadAt)
+    func searchBooks(
+        keyword: String,
+        sortOrder: LibrarySettings.SortOrder
+    ) async throws -> [Book] {
+        try await fetchBooks(scope: .all, sortOrder: sortOrder)
             .filter { $0.title.localizedCaseInsensitiveContains(keyword) }
     }
 
@@ -133,5 +136,8 @@ struct PreviewLibraryRepository: LibraryRepository {
     }
 
     func deleteBook(id: UUID) async throws {
+    }
+
+    func deleteBooks(ids: Set<UUID>) async throws {
     }
 }

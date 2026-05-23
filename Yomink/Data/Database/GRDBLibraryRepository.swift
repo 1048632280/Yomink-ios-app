@@ -48,25 +48,36 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
-    func searchBooks(keyword: String) async throws -> [Book] {
+    func searchBooks(
+        keyword: String,
+        sortOrder: LibrarySettings.SortOrder
+    ) async throws -> [Book] {
         let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedKeyword.isEmpty else {
             return []
         }
 
         return try await database.writer.read { db in
+            var sql = """
+            SELECT
+                books.*,
+                COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
+            FROM books
+            LEFT JOIN reading_progress
+                ON reading_progress.bookId = books.id
+            WHERE books.title LIKE ? ESCAPE '\\'
+            """
+
+            switch sortOrder {
+            case .lastReadAt:
+                sql += "\nORDER BY books.lastReadAt DESC, books.importedAt DESC"
+            case .importedAt:
+                sql += "\nORDER BY books.importedAt DESC"
+            }
+
             let rows = try Row.fetchAll(
                 db,
-                sql: """
-                SELECT
-                    books.*,
-                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
-                FROM books
-                LEFT JOIN reading_progress
-                    ON reading_progress.bookId = books.id
-                WHERE books.title LIKE ? ESCAPE '\\'
-                ORDER BY books.lastReadAt DESC, books.importedAt DESC
-                """,
+                sql: sql,
                 arguments: [Self.likePattern(for: normalizedKeyword)]
             )
             return rows.compactMap(Book.init(row:))
@@ -282,6 +293,13 @@ struct GRDBLibraryRepository: LibraryRepository {
                     ON chapters.id = reading_history.chapterId
                 LEFT JOIN reading_progress
                     ON reading_progress.bookId = books.id
+                WHERE reading_history.id = (
+                    SELECT latest.id
+                    FROM reading_history latest
+                    WHERE latest.bookId = reading_history.bookId
+                    ORDER BY latest.readAt DESC, latest.id DESC
+                    LIMIT 1
+                )
                 ORDER BY reading_history.readAt DESC
                 LIMIT ?
                 """,
@@ -495,6 +513,21 @@ struct GRDBLibraryRepository: LibraryRepository {
     func deleteBook(id: UUID) async throws {
         _ = try await database.writer.write { db in
             try BookRecord.deleteOne(db, key: id.uuidString)
+        }
+    }
+
+    func deleteBooks(ids: Set<UUID>) async throws {
+        guard !ids.isEmpty else {
+            return
+        }
+
+        try await database.writer.write { db in
+            try db.inTransaction {
+                for id in ids {
+                    _ = try BookRecord.deleteOne(db, key: id.uuidString)
+                }
+                return .commit
+            }
         }
     }
 

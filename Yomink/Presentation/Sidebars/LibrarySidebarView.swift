@@ -3,19 +3,20 @@ import UIKit
 
 struct LibrarySidebarView: View {
     let repository: (any LibraryRepository)?
+    let groups: [BookGroup]
     let selectedScope: LibraryScope
     let settings: LibrarySettings?
     let onSelectScope: (LibraryScope) -> Void
     let onGroupsChanged: () -> Void
     let onSettingsChanged: (LibrarySettings) -> Void
 
-    @State private var groups: [BookGroup] = []
     @State private var librarySettings = LibrarySettings.default
     @State private var activeSheet: SidebarSheet?
     @State private var groupErrorMessage: String?
 
     init(
         repository: (any LibraryRepository)? = nil,
+        groups: [BookGroup] = [],
         selectedScope: LibraryScope = .all,
         settings: LibrarySettings? = nil,
         onSelectScope: @escaping (LibraryScope) -> Void = { _ in },
@@ -23,11 +24,13 @@ struct LibrarySidebarView: View {
         onSettingsChanged: @escaping (LibrarySettings) -> Void = { _ in }
     ) {
         self.repository = repository
+        self.groups = groups
         self.selectedScope = selectedScope
         self.settings = settings
         self.onSelectScope = onSelectScope
         self.onGroupsChanged = onGroupsChanged
         self.onSettingsChanged = onSettingsChanged
+        _librarySettings = State(initialValue: settings ?? .default)
     }
 
     var body: some View {
@@ -110,11 +113,14 @@ struct LibrarySidebarView: View {
             .navigationBarHidden(true)
             .background(Color(.systemGray6))
             .task {
-                await reloadGroups()
+                await reloadSettings()
+            }
+            .onChange(of: settings) { nextSettings in
+                librarySettings = nextSettings ?? .default
             }
             .sheet(item: $activeSheet, onDismiss: {
                 Task {
-                    await reloadGroups()
+                    await reloadSettings()
                 }
             }) { sheet in
                 switch sheet {
@@ -170,21 +176,16 @@ struct LibrarySidebarView: View {
     }
 
     @MainActor
-    private func reloadGroups() async {
+    private func reloadSettings() async {
         guard let repository else {
-            groups = []
+            librarySettings = settings ?? .default
             return
         }
 
-        do {
-            if let settings {
-                librarySettings = settings
-            } else if let fetchedSettings = try? await repository.fetchLibrarySettings() {
-                librarySettings = fetchedSettings
-            }
-            groups = try await repository.fetchGroups()
-        } catch {
-            groupErrorMessage = error.localizedDescription
+        if let settings {
+            librarySettings = settings
+        } else if let fetchedSettings = try? await repository.fetchLibrarySettings() {
+            librarySettings = fetchedSettings
         }
     }
 }

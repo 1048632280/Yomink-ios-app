@@ -3,6 +3,7 @@ import UIKit
 
 struct AddBookSidebarView: View {
     let repository: (any LibraryRepository)?
+    let revealToken: Int
     let onImportFromFile: () -> Void
     let onOpenBook: (Book) -> Void
 
@@ -11,10 +12,12 @@ struct AddBookSidebarView: View {
 
     init(
         repository: (any LibraryRepository)? = nil,
+        revealToken: Int = 0,
         onImportFromFile: @escaping () -> Void = {},
         onOpenBook: @escaping (Book) -> Void = { _ in }
     ) {
         self.repository = repository
+        self.revealToken = revealToken
         self.onImportFromFile = onImportFromFile
         self.onOpenBook = onOpenBook
     }
@@ -68,6 +71,11 @@ struct AddBookSidebarView: View {
             .background(Color(.systemGray6))
             .task {
                 await reloadHistory()
+            }
+            .onChange(of: revealToken) { _ in
+                Task {
+                    await reloadHistory()
+                }
             }
             .alert(
                 "history.error.title",

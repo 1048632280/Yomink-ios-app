@@ -8,8 +8,10 @@ struct LibraryView: View {
     @State private var activeSheet: LibrarySheet?
     @State private var activeDrawer: LibraryDrawerSide?
     @State private var activeReaderBook: Book?
+    @State private var pendingReaderBook: Book?
     @State private var isImportPickerPresented = false
     @State private var isDrawerOpen = false
+    @State private var drawerRevealToken = 0
     @State private var selectedScope: LibraryScope = .all
     @State private var exportPayload: ExportPayload?
 
@@ -161,9 +163,12 @@ struct LibraryView: View {
             ) { sheet in
                 switch sheet {
                 case .search:
-                    GlobalBookSearchView(repository: currentRepository) { book in
+                    GlobalBookSearchView(
+                        repository: currentRepository,
+                        sortOrder: viewModel.settings.sortOrder
+                    ) { book in
+                        pendingReaderBook = book
                         activeSheet = nil
-                        activeReaderBook = book
                     }
                 }
             }
@@ -274,6 +279,7 @@ struct LibraryView: View {
             if case let .ready(services) = environment.bootstrapState {
                 LibrarySidebarView(
                     repository: services.libraryRepository,
+                    groups: viewModel.groups,
                     selectedScope: selectedScope,
                     settings: viewModel.settings
                 ) { scope in
@@ -289,6 +295,7 @@ struct LibraryView: View {
                 }
             } else {
                 LibrarySidebarView(
+                    groups: viewModel.groups,
                     selectedScope: selectedScope,
                     settings: viewModel.settings
                 )
@@ -296,6 +303,7 @@ struct LibraryView: View {
         case .right:
             AddBookSidebarView(
                 repository: currentRepository,
+                revealToken: drawerRevealToken,
                 onImportFromFile: {
                     requestImportFromDrawer()
                 },
@@ -617,6 +625,10 @@ struct LibraryView: View {
 
     private func handleSheetDismiss() {
         reloadBooksIfReady()
+        if let pending = pendingReaderBook {
+            pendingReaderBook = nil
+            activeReaderBook = pending
+        }
     }
 
     private func reloadBooksIfReady() {
@@ -695,6 +707,7 @@ struct LibraryView: View {
 
     private func openDrawer(_ drawer: LibraryDrawerSide) {
         activeDrawer = drawer
+        drawerRevealToken += 1
         withAnimation(Self.drawerAnimation) {
             isDrawerOpen = true
         }
@@ -1082,12 +1095,20 @@ private final class LibraryViewModel: ObservableObject {
 
         Task {
             do {
+                try await repository.deleteBooks(ids: Set(ids))
+                var cleanupError: Error?
                 for id in ids {
-                    try fileStore.removeBookFiles(id: id)
-                    try await repository.deleteBook(id: id)
+                    do {
+                        try fileStore.removeBookFiles(id: id)
+                    } catch {
+                        cleanupError = cleanupError ?? error
+                    }
                 }
-                await loadBooks(repository: repository, scope: scope)
                 exitSelection()
+                await loadBooks(repository: repository, scope: scope)
+                if let cleanupError {
+                    importErrorMessage = cleanupError.localizedDescription
+                }
             } catch {
                 importErrorMessage = error.localizedDescription
             }
@@ -1317,6 +1338,7 @@ private extension NumberFormatter {
 private struct GlobalBookSearchView: View {
     @Environment(\.dismiss) private var dismiss
     let repository: (any LibraryRepository)?
+    let sortOrder: LibrarySettings.SortOrder
     let onOpenBook: (Book) -> Void
 
     @State private var keyword = ""
@@ -1473,7 +1495,10 @@ private struct GlobalBookSearchView: View {
         Task {
             do {
                 try await repository.saveSearchKeyword(keyword)
-                results = try await repository.searchBooks(keyword: keyword)
+                results = try await repository.searchBooks(
+                    keyword: keyword,
+                    sortOrder: sortOrder
+                )
                 await reloadHistory()
             } catch {
                 errorMessage = error.localizedDescription

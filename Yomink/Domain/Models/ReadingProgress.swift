@@ -41,12 +41,35 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     static let minimumFontSize = 14.0
     static let maximumFontSize = 28.0
 
+    private enum CodingKeys: String, CodingKey {
+        case pageMode
+        case theme
+        case fontSize
+    }
+
     static var `default`: ReaderSettings {
         ReaderSettings(
             pageMode: .paged,
             theme: .white,
             fontSize: 18
         )
+    }
+
+    init(
+        pageMode: PageMode = .paged,
+        theme: Theme = .white,
+        fontSize: Double = 18
+    ) {
+        self.pageMode = pageMode
+        self.theme = theme
+        self.fontSize = fontSize
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        pageMode = (try? container.decodeIfPresent(PageMode.self, forKey: .pageMode)) ?? .paged
+        theme = (try? container.decodeIfPresent(Theme.self, forKey: .theme)) ?? .white
+        fontSize = (try? container.decodeIfPresent(Double.self, forKey: .fontSize)) ?? 18
     }
 
     var normalized: ReaderSettings {

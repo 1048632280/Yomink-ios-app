@@ -50,11 +50,30 @@ struct LibrarySettings: Codable, Equatable, Sendable {
 
     static let storageKey = "library.settings"
 
+    private enum CodingKeys: String, CodingKey {
+        case viewMode
+        case sortOrder
+    }
+
     static var `default`: LibrarySettings {
         LibrarySettings(
             viewMode: .list,
             sortOrder: .lastReadAt
         )
+    }
+
+    init(
+        viewMode: ViewMode = .list,
+        sortOrder: SortOrder = .lastReadAt
+    ) {
+        self.viewMode = viewMode
+        self.sortOrder = sortOrder
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        viewMode = (try? container.decodeIfPresent(ViewMode.self, forKey: .viewMode)) ?? .list
+        sortOrder = (try? container.decodeIfPresent(SortOrder.self, forKey: .sortOrder)) ?? .lastReadAt
     }
 }
 
