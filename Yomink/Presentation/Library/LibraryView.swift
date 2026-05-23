@@ -104,7 +104,13 @@ struct LibraryView: View {
             .navigationTitle(navigationTitleKey)
             .disabled(viewModel.isImporting)
             .toolbar {
-                libraryToolbarContent
+                ToolbarItem(placement: .navigationBarLeading) {
+                    libraryLeadingToolbarContent
+                }
+
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    libraryTrailingToolbarContent
+                }
             }
             .sheet(
                 item: $activeSheet,
@@ -203,38 +209,37 @@ struct LibraryView: View {
         .navigationViewStyle(.stack)
     }
 
-    @ToolbarContentBuilder
-    private var libraryToolbarContent: some ToolbarContent {
+    @ViewBuilder
+    private var libraryLeadingToolbarContent: some View {
         if viewModel.isSelecting {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    viewModel.exitSelection()
-                } label: {
-                    Label {
-                        Text("library.selection.exit")
-                    } icon: {
-                        Image(systemName: "xmark")
-                    }
+            Button {
+                viewModel.exitSelection()
+            } label: {
+                Label {
+                    Text("library.selection.exit")
+                } icon: {
+                    Image(systemName: "xmark")
                 }
-                .accessibilityLabel(Text("library.selection.exit"))
             }
-
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Text(viewModel.selectionCountText)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundColor(.secondary)
-            }
+            .accessibilityLabel(Text("library.selection.exit"))
         } else {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button {
-                    openDrawer(.left)
-                } label: {
-                    Image(systemName: "folder")
-                }
-                .accessibilityLabel(Text("library.sidebar.open"))
+            Button {
+                openDrawer(.left)
+            } label: {
+                Image(systemName: "folder")
             }
+            .accessibilityLabel(Text("library.sidebar.open"))
+        }
+    }
 
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
+    @ViewBuilder
+    private var libraryTrailingToolbarContent: some View {
+        if viewModel.isSelecting {
+            Text(viewModel.selectionCountText)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.secondary)
+        } else {
+            HStack(spacing: 16) {
                 Button {
                     activeSheet = .search
                 } label: {
