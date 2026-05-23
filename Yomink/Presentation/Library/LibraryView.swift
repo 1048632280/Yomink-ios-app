@@ -442,7 +442,7 @@ struct LibraryView: View {
             .buttonStyle(.plain)
             .listRowBackground(Color(.systemGray6))
             .listRowInsets(
-                EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
+                EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
             )
         }
         .listStyle(.plain)
@@ -454,10 +454,8 @@ struct LibraryView: View {
     private var bookGridView: some View {
         ScrollView {
             LazyVGrid(
-                columns: [
-                    GridItem(.adaptive(minimum: 142, maximum: 190), spacing: 14)
-                ],
-                spacing: 14
+                columns: Self.bookGridColumns,
+                spacing: BookGridStyle.rowSpacing
             ) {
                 ForEach(viewModel.books) { book in
                     BookShelfItemButton(
@@ -482,7 +480,8 @@ struct LibraryView: View {
                 }
             }
             .padding(.bottom, viewModel.isSelecting ? 80 : 0)
-            .padding(24)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 24)
         }
         .padding(-24)
         .background(Color(.systemGray6))
@@ -793,6 +792,15 @@ struct LibraryView: View {
         response: 0.28,
         dampingFraction: 0.9,
         blendDuration: 0.02
+    )
+
+    private static let bookGridColumns = Array(
+        repeating: GridItem(
+            .flexible(),
+            spacing: BookGridStyle.columnSpacing,
+            alignment: .top
+        ),
+        count: 3
     )
 
     // Use the system type directly. A dynamic "txt" UTType can make Files keep
@@ -1239,46 +1247,64 @@ private struct BookRowView: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 12) {
-            if isSelecting {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundColor(isSelected ? .accentColor : .secondary)
-                    .frame(width: 24, height: 44)
-            }
-
-            Image(systemName: "doc.text")
-                .font(.title3)
-                .foregroundColor(.accentColor)
-                .frame(width: 32, height: 44)
+        HStack(alignment: .top, spacing: BookListStyle.coverTrailingSpacing) {
+            thumbnailView
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(book.title)
-                    .font(.headline)
+                Text(displayTitle)
+                    .font(.system(size: 16, weight: .regular))
                     .foregroundColor(.primary)
                     .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 6)
 
                 HStack(spacing: 8) {
                     ProgressView(value: clampedProgress)
                         .frame(maxWidth: 120)
 
                     Text(progressText)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundColor(BookCoverStyle.progressText)
+                        .lineLimit(1)
                         .monospacedDigit()
                 }
             }
-
-            Spacer(minLength: 8)
-
-            if !isSelecting {
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundColor(.secondary)
-            }
+            .frame(maxWidth: .infinity, minHeight: BookListStyle.coverHeight, alignment: .topLeading)
         }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    private var thumbnailView: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: BookCoverStyle.cornerRadius)
+                .fill(BookCoverStyle.background)
+                .frame(
+                    width: BookListStyle.coverWidth,
+                    height: BookListStyle.coverHeight
+                )
+
+            if isSelecting {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        isSelected ? Color.accentColor : Color(.systemGray),
+                        Color.white
+                    )
+                    .padding(5)
+            }
+        }
+    }
+
+    private var displayTitle: String {
+        let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
     }
 
     private var clampedProgress: Double {
@@ -1296,49 +1322,70 @@ private struct BookGridItemView: View {
     let isSelected: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .topTrailing) {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(.secondarySystemBackground))
-                    .frame(height: 138)
-                    .overlay {
-                        Image(systemName: "doc.text")
-                            .font(.system(size: 42))
-                            .foregroundColor(.accentColor)
-                    }
+        VStack(alignment: .leading, spacing: 6) {
+            coverView
 
-                if isSelecting {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.title3)
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
-                        .padding(8)
-                }
-            }
-
-            Text(book.title)
-                .font(.subheadline.weight(.semibold))
+            Text(displayTitle)
+                .font(.subheadline)
                 .foregroundColor(.primary)
                 .lineLimit(2)
-                .frame(minHeight: 38, alignment: .topLeading)
-
-            ProgressView(value: clampedProgress)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
 
             Text(progressText)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.caption2)
+                .foregroundColor(BookCoverStyle.progressText)
+                .lineLimit(1)
+                .truncationMode(.tail)
                 .monospacedDigit()
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color(.systemBackground))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color(.separator), lineWidth: 1)
-        )
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+
+    private var coverView: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: BookCoverStyle.cornerRadius)
+                .fill(BookCoverStyle.background)
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .overlay {
+                    Text(verbatim: coverInitial)
+                        .font(.system(size: 44, weight: .semibold))
+                        .foregroundColor(BookCoverStyle.coverText)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                }
+                .overlay {
+                    if isSelected {
+                        RoundedRectangle(cornerRadius: BookCoverStyle.cornerRadius)
+                            .stroke(Color.accentColor, lineWidth: 2)
+                    }
+                }
+
+            if isSelecting {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(
+                        isSelected ? Color.accentColor : Color(.systemGray),
+                        Color.white
+                    )
+                    .padding(6)
+            }
+        }
+    }
+
+    private var displayTitle: String {
+        let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+
+    private var coverInitial: String {
+        book.title
+            .firstBookCoverCharacter
+            .map(String.init)
+            ?? NSLocalizedString("library.cover.fallbackInitial", comment: "")
     }
 
     private var clampedProgress: Double {
@@ -1346,7 +1393,40 @@ private struct BookGridItemView: View {
     }
 
     private var progressText: String {
-        NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
+        let progress = NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
+        return String(
+            format: NSLocalizedString("library.grid.progress", comment: ""),
+            progress
+        )
+    }
+}
+
+private enum BookListStyle {
+    static let coverWidth: CGFloat = 56
+    static let coverHeight: CGFloat = 76
+    static let coverTrailingSpacing: CGFloat = 14
+}
+
+private enum BookGridStyle {
+    static let columnSpacing: CGFloat = 14
+    static let rowSpacing: CGFloat = 22
+}
+
+private enum BookCoverStyle {
+    static let cornerRadius: CGFloat = 5
+    static let background = Color(.systemGray5)
+    static let coverText = Color(.darkGray).opacity(0.62)
+    static let progressText = Color(.systemGray)
+}
+
+private extension String {
+    var firstBookCoverCharacter: Character? {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+            .first { character in
+                character.unicodeScalars.contains { scalar in
+                    CharacterSet.letters.contains(scalar)
+                }
+            }
     }
 }
 

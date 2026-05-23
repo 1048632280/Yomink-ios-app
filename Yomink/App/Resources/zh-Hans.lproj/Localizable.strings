@@ -18,6 +18,9 @@
 "library.selection.move" = "移动";
 "library.selection.export" = "导出";
 "library.delete" = "删除";
+"library.grid.progress" = "已读%@";
+"library.untitledBook" = "未命名书籍";
+"library.cover.fallbackInitial" = "书";
 
 "search.title" = "搜索";
 "search.field.placeholder" = "搜索书名";
