@@ -1366,7 +1366,7 @@ private struct BookGridItemView: View {
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .overlay {
                     Text(verbatim: coverInitial)
-                        .font(.system(size: 44, weight: .semibold))
+                        .font(.system(size: 40, weight: .semibold))
                         .foregroundColor(BookCoverStyle.coverText)
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
@@ -1389,6 +1389,7 @@ private struct BookGridItemView: View {
                     .padding(6)
             }
         }
+        .padding(.horizontal, BookGridStyle.coverHorizontalInset)
     }
 
     private var displayTitle: String {
@@ -1425,6 +1426,7 @@ private enum BookListStyle {
 private enum BookGridStyle {
     static let columnSpacing: CGFloat = 14
     static let rowSpacing: CGFloat = 22
+    static let coverHorizontalInset: CGFloat = 6
 }
 
 private enum BookCoverStyle {
