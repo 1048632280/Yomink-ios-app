@@ -10,7 +10,6 @@ struct LibraryView: View {
     @State private var activeReaderBook: Book?
     @State private var isImportPickerPresented = false
     @State private var isDrawerOpen = false
-    @State private var closeDragOffset: CGFloat = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -315,7 +314,6 @@ struct LibraryView: View {
     }
 
     private func openDrawer(_ drawer: LibraryDrawerSide) {
-        closeDragOffset = 0
         activeDrawer = drawer
         withAnimation(Self.drawerAnimation) {
             isDrawerOpen = true
@@ -329,7 +327,6 @@ struct LibraryView: View {
 
         withAnimation(Self.drawerAnimation) {
             isDrawerOpen = false
-            closeDragOffset = 0
         }
     }
 
@@ -348,27 +345,15 @@ struct LibraryView: View {
     }
 
     private func closeDragGesture(width: CGFloat) -> some Gesture {
-        DragGesture(minimumDistance: 8)
-            .onChanged { value in
-                guard let activeDrawer,
-                      isDrawerOpen,
-                      abs(value.translation.width) > abs(value.translation.height)
-                else {
-                    return
-                }
-                closeDragOffset = activeDrawer.closeOffset(
-                    for: value.translation.width,
-                    width: width
-                )
-            }
+        DragGesture(minimumDistance: 24)
             .onEnded { value in
                 guard let activeDrawer,
                       isDrawerOpen,
                       abs(value.translation.width) > abs(value.translation.height)
                 else {
-                    resetCloseDragOffset()
                     return
                 }
+
                 let offset = activeDrawer.closeOffset(
                     for: value.translation.width,
                     width: width
@@ -381,17 +366,11 @@ struct LibraryView: View {
                     || abs(predictedOffset) > width * 0.48
 
                 if shouldClose {
-                    closeDrawer()
-                } else {
-                    resetCloseDragOffset()
+                    DispatchQueue.main.async {
+                        closeDrawer()
+                    }
                 }
             }
-    }
-
-    private func resetCloseDragOffset() {
-        withAnimation(Self.drawerAnimation) {
-            closeDragOffset = 0
-        }
     }
 
     private func mainOffset(width: CGFloat) -> CGFloat {
@@ -401,7 +380,7 @@ struct LibraryView: View {
             return 0
         }
 
-        return activeDrawer.openOffset(width: width) + closeDragOffset
+        return activeDrawer.openOffset(width: width)
     }
 
     private static let drawerAnimationDuration = 0.28
