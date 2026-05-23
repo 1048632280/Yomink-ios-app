@@ -48,6 +48,15 @@ final class AppEnvironment: ObservableObject {
     static func preview() -> AppEnvironment {
         do {
             let fileStore = try AppFileStore.preview()
+            try FileManager.default.createDirectory(
+                at: fileStore.bookDirectoryURL(for: PreviewLibraryRepository.sampleBookID),
+                withIntermediateDirectories: true
+            )
+            try PreviewLibraryRepository.sampleText.write(
+                to: fileStore.normalizedURL(for: PreviewLibraryRepository.sampleBookID),
+                atomically: true,
+                encoding: .utf8
+            )
             let database = try AppDatabase.inMemory()
             let repository = PreviewLibraryRepository()
             let services = AppServices(

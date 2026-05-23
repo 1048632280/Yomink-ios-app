@@ -1,12 +1,13 @@
 import Foundation
 
 struct PreviewLibraryRepository: LibraryRepository {
-    private static let sampleText = "这是一段阅读器预览文本。\n\nPhase 2 已接入按章节读取、分页、点击热区和阅读进度恢复。"
+    static let sampleBookID = UUID(uuidString: "4D52E7FE-A7ED-41F1-8C49-55C3E22B6B48") ?? UUID()
+    static let sampleText = "这是一段阅读器预览文本。\n\nPhase 2 已接入按章节读取、分页、点击热区和阅读进度恢复。\n\nPhase 3 会继续加入平移翻页、滚动阅读、目录跳转和阅读设置。"
 
     func fetchBooks() async throws -> [Book] {
         [
             Book(
-                id: UUID(uuidString: "4D52E7FE-A7ED-41F1-8C49-55C3E22B6B48") ?? UUID(),
+                id: Self.sampleBookID,
                 title: "示例小说",
                 author: nil,
                 intro: nil,
@@ -18,8 +19,8 @@ struct PreviewLibraryRepository: LibraryRepository {
                 lastReadAt: nil,
                 groupID: nil,
                 progressPercentage: 0,
-                sourcePath: "Books/sample/source.txt",
-                normalizedPath: "Books/sample/normalized.txt"
+                sourcePath: "Books/\(Self.sampleBookID.uuidString.lowercased())/source.txt",
+                normalizedPath: "Books/\(Self.sampleBookID.uuidString.lowercased())/normalized.txt"
             )
         ]
     }
@@ -51,6 +52,12 @@ struct PreviewLibraryRepository: LibraryRepository {
     }
 
     func saveReadingProgress(_ progress: ReadingProgress) async throws {}
+
+    func fetchReaderSettings() async throws -> ReaderSettings {
+        .default
+    }
+
+    func saveReaderSettings(_ settings: ReaderSettings) async throws {}
 
     func markBookOpened(id: UUID, at date: Date) async throws {}
 

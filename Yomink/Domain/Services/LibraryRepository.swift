@@ -6,6 +6,8 @@ protocol LibraryRepository: Sendable {
     func fetchChapters(bookID: UUID) async throws -> [Chapter]
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress?
     func saveReadingProgress(_ progress: ReadingProgress) async throws
+    func fetchReaderSettings() async throws -> ReaderSettings
+    func saveReaderSettings(_ settings: ReaderSettings) async throws
     func markBookOpened(id: UUID, at date: Date) async throws
     func insertImportedBook(_ draft: ImportedBookDraft) async throws -> Book
 

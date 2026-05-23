@@ -38,7 +38,7 @@ struct ReaderHostView: UIViewControllerRepresentable {
 }
 
 @MainActor
-final class ReaderViewController: UIViewController {
+final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestureRecognizerDelegate {
     private let fileStore: AppFileStore
     private let repository: any LibraryRepository
     private let onClose: () -> Void
@@ -49,6 +49,11 @@ final class ReaderViewController: UIViewController {
     private let titleLabel = UILabel()
     private let statusLabel = UILabel()
     private let progressLabel = UILabel()
+    private let progressSlider = UISlider()
+    private let previousChapterButton = UIButton(type: .system)
+    private let nextChapterButton = UIButton(type: .system)
+    private let catalogButton = UIButton(type: .system)
+    private let settingsButton = UIButton(type: .system)
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private var book: Book
@@ -61,9 +66,18 @@ final class ReaderViewController: UIViewController {
     private var loadTask: Task<Void, Never>?
     private var paginateTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    private var settingsSaveTask: Task<Void, Never>?
+    private var prefetchTask: Task<Void, Never>?
     private var saveGeneration = 0
+    private var settingsSaveGeneration = 0
     private var paginateGeneration = 0
+    private var prefetchGeneration = 0
+    private var readerSettings = ReaderSettings.default
+    private var prefetchedChapter: PrefetchedChapter?
+    private var prefetchingChapterID: UUID?
     private var isMenuVisible = false
+    private var isTrackingProgressSlider = false
+    private var isApplyingProgrammaticScroll = false
     private var lastPaginationSize = CGSize.zero
 
     init(
@@ -88,16 +102,18 @@ final class ReaderViewController: UIViewController {
         loadTask?.cancel()
         paginateTask?.cancel()
         saveTask?.cancel()
+        settingsSaveTask?.cancel()
+        prefetchTask?.cancel()
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
-        view.backgroundColor = .systemBackground
         configureTextView()
         configureMenus()
         configureLoadingIndicator()
         configureGestures()
+        applyTheme()
         startInitialLoad()
     }
 
@@ -108,22 +124,34 @@ final class ReaderViewController: UIViewController {
         guard currentChapterText.isEmpty == false,
               size.width > 0,
               size.height > 0,
-              abs(size.width - lastPaginationSize.width) > 1
-                || abs(size.height - lastPaginationSize.height) > 1
+              (
+                abs(size.width - lastPaginationSize.width) > 1
+                    || abs(size.height - lastPaginationSize.height) > 1
+              )
         else {
             return
         }
 
         lastPaginationSize = size
-        rebuildPaginator(
-            anchorByteOffset: currentPaginator?.pageStartByteOffset(at: currentPageIndex) ?? 0,
-            savingProgress: false
-        )
+        let anchorByteOffset = currentDisplayByteOffset()
+        invalidatePrefetch()
+        if readerSettings.pageMode == .scroll {
+            renderScrollContent(
+                anchorByteOffset: anchorByteOffset,
+                savingProgress: false
+            )
+        } else {
+            rebuildPaginator(
+                anchorByteOffset: anchorByteOffset,
+                savingProgress: false
+            )
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         saveProgressImmediately()
+        saveSettingsImmediately()
     }
 
     func update(book: Book) {
@@ -142,6 +170,8 @@ final class ReaderViewController: UIViewController {
         textView.isEditable = false
         textView.isSelectable = false
         textView.isScrollEnabled = false
+        textView.alwaysBounceVertical = true
+        textView.delegate = self
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
         textView.translatesAutoresizingMaskIntoConstraints = false
@@ -209,17 +239,28 @@ final class ReaderViewController: UIViewController {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomBar)
 
-        let previousButton = UIButton(type: .system)
-        previousButton.setImage(UIImage(systemName: "chevron.left.circle"), for: .normal)
-        previousButton.accessibilityLabel = NSLocalizedString("reader.previousPage", comment: "")
-        previousButton.addTarget(self, action: #selector(previousButtonTapped), for: .touchUpInside)
-        previousButton.translatesAutoresizingMaskIntoConstraints = false
+        previousChapterButton.setImage(UIImage(systemName: "backward.end"), for: .normal)
+        previousChapterButton.accessibilityLabel = NSLocalizedString("reader.previousChapter", comment: "")
+        previousChapterButton.addTarget(self, action: #selector(previousChapterButtonTapped), for: .touchUpInside)
+        previousChapterButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let nextButton = UIButton(type: .system)
-        nextButton.setImage(UIImage(systemName: "chevron.right.circle"), for: .normal)
-        nextButton.accessibilityLabel = NSLocalizedString("reader.nextPage", comment: "")
-        nextButton.addTarget(self, action: #selector(nextButtonTapped), for: .touchUpInside)
-        nextButton.translatesAutoresizingMaskIntoConstraints = false
+        nextChapterButton.setImage(UIImage(systemName: "forward.end"), for: .normal)
+        nextChapterButton.accessibilityLabel = NSLocalizedString("reader.nextChapter", comment: "")
+        nextChapterButton.addTarget(self, action: #selector(nextChapterButtonTapped), for: .touchUpInside)
+        nextChapterButton.translatesAutoresizingMaskIntoConstraints = false
+
+        progressSlider.minimumValue = 0
+        progressSlider.maximumValue = 1
+        progressSlider.value = 0
+        progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
+        progressSlider.addTarget(self, action: #selector(progressSliderTouchDown), for: .touchDown)
+        progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
+        progressSlider.addTarget(
+            self,
+            action: #selector(progressSliderTouchFinished),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
+        progressSlider.translatesAutoresizingMaskIntoConstraints = false
 
         progressLabel.font = .preferredFont(forTextStyle: .footnote)
         progressLabel.adjustsFontForContentSizeCategory = true
@@ -228,29 +269,64 @@ final class ReaderViewController: UIViewController {
         progressLabel.numberOfLines = 2
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        bottomBar.contentView.addSubview(previousButton)
+        catalogButton.setImage(UIImage(systemName: "list.bullet"), for: .normal)
+        catalogButton.setTitle(NSLocalizedString("reader.catalog", comment: ""), for: .normal)
+        catalogButton.accessibilityLabel = NSLocalizedString("reader.catalog", comment: "")
+        catalogButton.addTarget(self, action: #selector(catalogButtonTapped), for: .touchUpInside)
+        catalogButton.translatesAutoresizingMaskIntoConstraints = false
+
+        settingsButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
+        settingsButton.setTitle(NSLocalizedString("reader.settings", comment: ""), for: .normal)
+        settingsButton.accessibilityLabel = NSLocalizedString("reader.settings", comment: "")
+        settingsButton.addTarget(self, action: #selector(settingsButtonTapped), for: .touchUpInside)
+        settingsButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let progressRow = UIStackView(arrangedSubviews: [
+            previousChapterButton,
+            progressSlider,
+            nextChapterButton
+        ])
+        progressRow.axis = .horizontal
+        progressRow.alignment = .center
+        progressRow.spacing = 12
+        progressRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let actionRow = UIStackView(arrangedSubviews: [
+            catalogButton,
+            settingsButton
+        ])
+        actionRow.axis = .horizontal
+        actionRow.alignment = .center
+        actionRow.distribution = .fillEqually
+        actionRow.spacing = 12
+        actionRow.translatesAutoresizingMaskIntoConstraints = false
+
+        bottomBar.contentView.addSubview(progressRow)
         bottomBar.contentView.addSubview(progressLabel)
-        bottomBar.contentView.addSubview(nextButton)
+        bottomBar.contentView.addSubview(actionRow)
 
         NSLayoutConstraint.activate([
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            bottomBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -72),
+            bottomBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -132),
 
-            previousButton.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
-            previousButton.topAnchor.constraint(equalTo: bottomBar.contentView.topAnchor, constant: 12),
-            previousButton.widthAnchor.constraint(equalToConstant: 44),
-            previousButton.heightAnchor.constraint(equalToConstant: 44),
+            progressRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
+            progressRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
+            progressRow.topAnchor.constraint(equalTo: bottomBar.contentView.topAnchor, constant: 12),
+            progressRow.heightAnchor.constraint(equalToConstant: 32),
 
-            nextButton.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
-            nextButton.centerYAnchor.constraint(equalTo: previousButton.centerYAnchor),
-            nextButton.widthAnchor.constraint(equalToConstant: 44),
-            nextButton.heightAnchor.constraint(equalToConstant: 44),
+            previousChapterButton.widthAnchor.constraint(equalToConstant: 44),
+            nextChapterButton.widthAnchor.constraint(equalToConstant: 44),
 
-            progressLabel.leadingAnchor.constraint(equalTo: previousButton.trailingAnchor, constant: 12),
-            progressLabel.trailingAnchor.constraint(equalTo: nextButton.leadingAnchor, constant: -12),
-            progressLabel.centerYAnchor.constraint(equalTo: previousButton.centerYAnchor)
+            progressLabel.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
+            progressLabel.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
+            progressLabel.topAnchor.constraint(equalTo: progressRow.bottomAnchor, constant: 8),
+
+            actionRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
+            actionRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
+            actionRow.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 8),
+            actionRow.heightAnchor.constraint(equalToConstant: 34)
         ])
     }
 
@@ -281,17 +357,27 @@ final class ReaderViewController: UIViewController {
     private func configureGestures() {
         let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
         tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
+
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        panGesture.cancelsTouchesInView = false
+        panGesture.delegate = self
+        view.addGestureRecognizer(panGesture)
     }
 
     private func startInitialLoad() {
         loadTask?.cancel()
         paginateTask?.cancel()
         saveTask?.cancel()
+        prefetchTask?.cancel()
         paginateGeneration += 1
+        prefetchGeneration += 1
         chapters = []
         currentChapterText = ""
         currentPaginator = nil
+        prefetchedChapter = nil
+        prefetchingChapterID = nil
         currentChapterIndex = 0
         currentPageIndex = 0
         currentProgress = nil
@@ -307,10 +393,12 @@ final class ReaderViewController: UIViewController {
             do {
                 async let fetchedChapters = repository.fetchChapters(bookID: book.id)
                 async let fetchedProgress = repository.fetchReadingProgress(bookID: book.id)
+                async let fetchedSettings = repository.fetchReaderSettings()
                 async let markOpened: Void = repository.markBookOpened(id: book.id, at: Date())
 
                 let chapters = try await fetchedChapters
                 let progress = try await fetchedProgress
+                let settings = try await fetchedSettings
                 try? await markOpened
                 try Task.checkCancellation()
 
@@ -334,6 +422,7 @@ final class ReaderViewController: UIViewController {
                     chapterIndex: selected.index,
                     text: text,
                     startOffset: selected.offset,
+                    settings: settings,
                     saveAfterRender: false
                 )
             } catch is CancellationError {
@@ -352,7 +441,21 @@ final class ReaderViewController: UIViewController {
             return
         }
 
+        if let prefetchedChapter = takePrefetchedChapter(at: index) {
+            applyPrefetchedChapter(
+                prefetchedChapter,
+                startOffset: startOffset,
+                saveAfterRender: saveAfterRender
+            )
+            return
+        }
+
         loadTask?.cancel()
+        paginateTask?.cancel()
+        prefetchTask?.cancel()
+        paginateGeneration += 1
+        prefetchGeneration += 1
+        prefetchingChapterID = nil
         showLoading(true, message: NSLocalizedString("reader.loading", comment: ""))
 
         let book = book
@@ -388,15 +491,241 @@ final class ReaderViewController: UIViewController {
         chapterIndex: Int,
         text: String,
         startOffset: Int,
+        settings: ReaderSettings? = nil,
         saveAfterRender: Bool
     ) {
         self.chapters = chapters
+        if let settings = settings {
+            readerSettings = settings.normalized
+        }
         currentChapterIndex = chapterIndex
         currentChapterText = text
         currentPaginator = nil
         currentPageIndex = 0
+        if prefetchedChapter?.chapter.id != chapters[chapterIndex].id {
+            prefetchedChapter = nil
+            prefetchingChapterID = nil
+        }
         lastPaginationSize = textView.bounds.size
-        rebuildPaginator(anchorByteOffset: startOffset, savingProgress: saveAfterRender)
+        renderContent(anchorByteOffset: startOffset, savingProgress: saveAfterRender)
+    }
+
+    private func renderContent(anchorByteOffset: Int, savingProgress: Bool) {
+        applyTheme()
+        textView.transform = .identity
+        textView.alpha = 1
+
+        switch readerSettings.pageMode {
+        case .paged:
+            textView.isScrollEnabled = false
+            rebuildPaginator(
+                anchorByteOffset: anchorByteOffset,
+                savingProgress: savingProgress
+            )
+        case .scroll:
+            paginateTask?.cancel()
+            paginateGeneration += 1
+            currentPaginator = nil
+            renderScrollContent(
+                anchorByteOffset: anchorByteOffset,
+                savingProgress: savingProgress
+            )
+        }
+    }
+
+    private func takePrefetchedChapter(at index: Int) -> PrefetchedChapter? {
+        guard let prefetchedChapter = prefetchedChapter,
+              prefetchedChapter.index == index,
+              prefetchContextMatches(prefetchedChapter)
+        else {
+            return nil
+        }
+
+        self.prefetchedChapter = nil
+        prefetchingChapterID = nil
+        return prefetchedChapter
+    }
+
+    private func applyPrefetchedChapter(
+        _ prefetchedChapter: PrefetchedChapter,
+        startOffset: Int,
+        saveAfterRender: Bool
+    ) {
+        loadTask?.cancel()
+        paginateTask?.cancel()
+        prefetchTask?.cancel()
+        paginateGeneration += 1
+        prefetchGeneration += 1
+        prefetchingChapterID = nil
+        self.prefetchedChapter = nil
+
+        currentChapterIndex = prefetchedChapter.index
+        currentChapterText = prefetchedChapter.text
+        currentPaginator = nil
+        currentPageIndex = 0
+        lastPaginationSize = textView.bounds.size
+        applyTheme()
+        textView.transform = .identity
+        textView.alpha = 1
+
+        if readerSettings.pageMode == .paged,
+           let paginator = prefetchedChapter.paginator {
+            textView.isScrollEnabled = false
+            currentPaginator = paginator
+            currentPageIndex = paginator.pageIndex(containingByteOffset: startOffset)
+            showLoading(false, message: nil)
+            renderCurrentPage(savingProgress: saveAfterRender)
+        } else {
+            renderContent(anchorByteOffset: startOffset, savingProgress: saveAfterRender)
+        }
+    }
+
+    private func prefetchAdjacentChapterIfNeeded() {
+        guard currentChapterText.isEmpty == false,
+              chapters.indices.contains(currentChapterIndex)
+        else {
+            return
+        }
+
+        let targetIndex: Int?
+        switch readerSettings.pageMode {
+        case .paged:
+            guard let paginator = currentPaginator,
+                  paginator.pageCount > 0
+            else {
+                return
+            }
+
+            if currentPageIndex + 2 >= paginator.pageCount {
+                targetIndex = currentChapterIndex + 1
+            } else if currentPageIndex <= 1 {
+                targetIndex = currentChapterIndex - 1
+            } else {
+                targetIndex = nil
+            }
+        case .scroll:
+            let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
+            if textView.contentOffset.y >= maxOffset - textView.bounds.height * 1.2 {
+                targetIndex = currentChapterIndex + 1
+            } else if textView.contentOffset.y <= textView.bounds.height * 0.4 {
+                targetIndex = currentChapterIndex - 1
+            } else {
+                targetIndex = nil
+            }
+        }
+
+        guard let targetIndex = targetIndex,
+              chapters.indices.contains(targetIndex)
+        else {
+            return
+        }
+
+        startPrefetchingChapter(at: targetIndex)
+    }
+
+    private func startPrefetchingChapter(at index: Int) {
+        let chapter = chapters[index]
+        if let prefetchedChapter = prefetchedChapter,
+           prefetchedChapter.chapter.id == chapter.id,
+           prefetchContextMatches(prefetchedChapter) {
+            return
+        }
+        guard prefetchingChapterID != chapter.id else {
+            return
+        }
+
+        prefetchTask?.cancel()
+        prefetchGeneration += 1
+        let generation = prefetchGeneration
+        let book = book
+        let fileStore = fileStore
+        let settings = readerSettings.normalized
+        let fittingSize = textView.bounds.size
+        let typography = ReaderTypography(settings: settings)
+        prefetchingChapterID = chapter.id
+
+        prefetchTask = Task { [weak self] in
+            do {
+                let text = try await Self.readChapterText(
+                    book: book,
+                    chapter: chapter,
+                    fileStore: fileStore
+                )
+                try Task.checkCancellation()
+
+                let paginator: ChapterPaginator?
+                if settings.pageMode == .paged {
+                    paginator = try await Task.detached(priority: .utility) {
+                        try Task.checkCancellation()
+                        let paginator = ChapterPaginator(
+                            text: text,
+                            typography: typography,
+                            fittingSize: fittingSize
+                        )
+                        try Task.checkCancellation()
+                        return paginator
+                    }.value
+                } else {
+                    paginator = nil
+                }
+                try Task.checkCancellation()
+
+                await self?.storePrefetchedChapter(
+                    PrefetchedChapter(
+                        index: index,
+                        chapter: chapter,
+                        text: text,
+                        paginator: paginator,
+                        settings: settings,
+                        fittingSize: fittingSize
+                    ),
+                    generation: generation
+                )
+            } catch {
+                await self?.clearPrefetchingChapter(
+                    id: chapter.id,
+                    generation: generation
+                )
+            }
+        }
+    }
+
+    private func storePrefetchedChapter(
+        _ prefetchedChapter: PrefetchedChapter,
+        generation: Int
+    ) {
+        guard generation == prefetchGeneration,
+              chapters.indices.contains(prefetchedChapter.index),
+              chapters[prefetchedChapter.index].id == prefetchedChapter.chapter.id,
+              prefetchContextMatches(prefetchedChapter)
+        else {
+            clearPrefetchingChapter(
+                id: prefetchedChapter.chapter.id,
+                generation: generation
+            )
+            return
+        }
+
+        self.prefetchedChapter = prefetchedChapter
+        prefetchingChapterID = nil
+        prefetchTask = nil
+    }
+
+    private func clearPrefetchingChapter(id: UUID, generation: Int) {
+        guard generation == prefetchGeneration,
+              prefetchingChapterID == id
+        else {
+            return
+        }
+
+        prefetchingChapterID = nil
+        prefetchTask = nil
+    }
+
+    private func prefetchContextMatches(_ prefetchedChapter: PrefetchedChapter) -> Bool {
+        prefetchedChapter.settings == readerSettings.normalized
+            && abs(prefetchedChapter.fittingSize.width - textView.bounds.width) < 1
+            && abs(prefetchedChapter.fittingSize.height - textView.bounds.height) < 1
     }
 
     private func showEmptyReader() {
@@ -429,10 +758,8 @@ final class ReaderViewController: UIViewController {
         let generation = paginateGeneration
         let text = currentChapterText
         let fittingSize = textView.bounds.size
-        let typography = ReaderTypography.default
+        let typography = ReaderTypography(settings: readerSettings)
 
-        // Phase 3: consider adjacent chapter paginator prefetch near chapter
-        // edges, coordinated with typography/settings changes and cancellation.
         paginateTask?.cancel()
         paginateTask = Task { [weak self] in
             let buildTask = Task.detached(priority: .userInitiated) {
@@ -478,6 +805,39 @@ final class ReaderViewController: UIViewController {
         renderCurrentPage(savingProgress: savingProgress)
     }
 
+    private func renderScrollContent(anchorByteOffset: Int, savingProgress shouldSave: Bool) {
+        guard currentChapterText.isEmpty == false else {
+            textView.text = NSLocalizedString("reader.emptyChapter", comment: "")
+            currentProgress = nil
+            return
+        }
+
+        showLoading(false, message: nil)
+        textView.isScrollEnabled = true
+        textView.attributedText = ReaderTypography(settings: readerSettings)
+            .attributedString(for: currentChapterText)
+        view.layoutIfNeeded()
+
+        let chapter = chapters.indices.contains(currentChapterIndex)
+            ? chapters[currentChapterIndex]
+            : nil
+        let chapterLength = max(chapter?.byteLength ?? 0, 1)
+        let ratio = min(max(Double(anchorByteOffset) / Double(chapterLength), 0), 1)
+        let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
+        isApplyingProgrammaticScroll = true
+        textView.setContentOffset(
+            CGPoint(x: 0, y: CGFloat(ratio) * maxOffset),
+            animated: false
+        )
+        isApplyingProgrammaticScroll = false
+        updateProgress(chapterOffset: anchorByteOffset)
+        prefetchAdjacentChapterIfNeeded()
+
+        if shouldSave {
+            scheduleProgressSave()
+        }
+    }
+
     private func renderCurrentPage(savingProgress shouldSave: Bool) {
         guard currentChapterText.isEmpty == false else {
             textView.text = NSLocalizedString("reader.emptyChapter", comment: "")
@@ -492,7 +852,8 @@ final class ReaderViewController: UIViewController {
 
         let page = paginator.page(at: currentPageIndex)
         textView.attributedText = page.attributedText
-        updateProgress()
+        updateProgress(chapterOffset: page.startByteOffset)
+        prefetchAdjacentChapterIfNeeded()
 
         if shouldSave {
             scheduleProgressSave()
@@ -501,6 +862,11 @@ final class ReaderViewController: UIViewController {
 
     private func moveToNextPage() {
         guard currentChapterText.isEmpty == false else {
+            return
+        }
+
+        if readerSettings.pageMode == .scroll,
+           scrollByPage(forward: true) {
             return
         }
 
@@ -523,6 +889,11 @@ final class ReaderViewController: UIViewController {
     }
 
     private func moveToPreviousPage() {
+        if readerSettings.pageMode == .scroll,
+           scrollByPage(forward: false) {
+            return
+        }
+
         guard currentPaginator != nil else {
             return
         }
@@ -546,13 +917,54 @@ final class ReaderViewController: UIViewController {
         )
     }
 
-    private func updateProgress() {
+    private func scrollByPage(forward: Bool) -> Bool {
+        guard readerSettings.pageMode == .scroll else {
+            return false
+        }
+
+        let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
+        let step = max(textView.bounds.height * 0.86, 1)
+        let currentY = textView.contentOffset.y
+        let targetY = min(max(currentY + (forward ? step : -step), 0), maxOffset)
+
+        if abs(targetY - currentY) > 1 {
+            isApplyingProgrammaticScroll = true
+            textView.setContentOffset(CGPoint(x: 0, y: targetY), animated: true)
+            isApplyingProgrammaticScroll = false
+            updateScrollProgressFromContentOffset()
+            scheduleProgressSave()
+            return true
+        }
+
+        if forward {
+            let nextChapterIndex = currentChapterIndex + 1
+            guard chapters.indices.contains(nextChapterIndex) else {
+                return true
+            }
+            loadChapter(at: nextChapterIndex, startOffset: 0, saveAfterRender: true)
+        } else {
+            let previousChapterIndex = currentChapterIndex - 1
+            guard chapters.indices.contains(previousChapterIndex) else {
+                return true
+            }
+            let previousChapter = chapters[previousChapterIndex]
+            loadChapter(
+                at: previousChapterIndex,
+                startOffset: max(0, previousChapter.byteLength - 1),
+                saveAfterRender: true
+            )
+        }
+
+        return true
+    }
+
+    private func updateProgress(chapterOffset: Int) {
         guard chapters.indices.contains(currentChapterIndex) else {
             return
         }
 
         let chapter = chapters[currentChapterIndex]
-        let pageStartByteOffset = currentPaginator?.pageStartByteOffset(at: currentPageIndex) ?? 0
+        let pageStartByteOffset = min(max(chapterOffset, 0), max(chapter.byteLength - 1, 0))
         let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
         let absoluteOffset = chapter.startOffset + pageStartByteOffset
         let globalProgress = min(max(Double(absoluteOffset) / Double(totalByteLength), 0), 1)
@@ -567,7 +979,22 @@ final class ReaderViewController: UIViewController {
             globalProgress: globalProgress
         )
 
-        progressLabel.text = String(
+        progressLabel.text = progressText(
+            chapter: chapter,
+            chapterProgress: chapterProgress,
+            globalProgress: globalProgress
+        )
+        if !isTrackingProgressSlider {
+            progressSlider.value = Float(globalProgress)
+        }
+    }
+
+    private func progressText(
+        chapter: Chapter,
+        chapterProgress: Double,
+        globalProgress: Double
+    ) -> String {
+        String(
             format: NSLocalizedString("reader.progress.format", comment: ""),
             chapter.title,
             NumberFormatter.readerPercent.string(
@@ -577,6 +1004,22 @@ final class ReaderViewController: UIViewController {
                 from: NSNumber(value: globalProgress)
             ) ?? "0%"
         )
+    }
+
+    private func updateScrollProgressFromContentOffset() {
+        guard readerSettings.pageMode == .scroll,
+              chapters.indices.contains(currentChapterIndex)
+        else {
+            return
+        }
+
+        let chapter = chapters[currentChapterIndex]
+        let maxOffset = max(textView.contentSize.height - textView.bounds.height, 1)
+        let yOffset = min(max(textView.contentOffset.y, 0), maxOffset)
+        let ratio = min(max(Double(yOffset / maxOffset), 0), 1)
+        let chapterOffset = Int(Double(chapter.byteLength) * ratio)
+        updateProgress(chapterOffset: chapterOffset)
+        prefetchAdjacentChapterIfNeeded()
     }
 
     private func scheduleProgressSave() {
@@ -612,6 +1055,65 @@ final class ReaderViewController: UIViewController {
         Task {
             try? await repository.saveReadingProgress(progress)
         }
+    }
+
+    private func applyReaderSettings(_ settings: ReaderSettings) {
+        let oldSettings = readerSettings
+        let normalizedSettings = settings.normalized
+        guard normalizedSettings != oldSettings else {
+            return
+        }
+
+        let anchorByteOffset = currentDisplayByteOffset()
+        readerSettings = normalizedSettings
+        invalidatePrefetch()
+        renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
+        scheduleSettingsSave()
+    }
+
+    private func invalidatePrefetch() {
+        prefetchTask?.cancel()
+        prefetchGeneration += 1
+        prefetchedChapter = nil
+        prefetchingChapterID = nil
+    }
+
+    private func scheduleSettingsSave() {
+        settingsSaveGeneration += 1
+        let generation = settingsSaveGeneration
+        let settings = readerSettings
+        let repository = repository
+        settingsSaveTask?.cancel()
+        settingsSaveTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: 350_000_000)
+                try Task.checkCancellation()
+                guard generation == settingsSaveGeneration else {
+                    return
+                }
+                try await repository.saveReaderSettings(settings)
+            } catch {
+            }
+        }
+    }
+
+    private func saveSettingsImmediately() {
+        settingsSaveTask?.cancel()
+        let settings = readerSettings
+        let repository = repository
+        Task {
+            try? await repository.saveReaderSettings(settings)
+        }
+    }
+
+    private func applyTheme() {
+        overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+        view.backgroundColor = readerSettings.theme.backgroundColor
+        textView.backgroundColor = .clear
+        textView.indicatorStyle = readerSettings.theme == .dark ? .white : .black
+        statusLabel.textColor = readerSettings.theme.secondaryTextColor
+        progressLabel.textColor = readerSettings.theme.secondaryTextColor
+        loadingIndicator.color = readerSettings.theme.secondaryTextColor
     }
 
     private func setMenuVisible(_ visible: Bool, animated: Bool) {
@@ -655,17 +1157,214 @@ final class ReaderViewController: UIViewController {
         }
     }
 
-    @objc private func previousButtonTapped() {
-        moveToPreviousPage()
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: view)
+        let width = max(view.bounds.width, 1)
+
+        switch gesture.state {
+        case .changed:
+            let limitedTranslation = min(max(translation.x, -width), width)
+            textView.transform = CGAffineTransform(translationX: limitedTranslation * 0.32, y: 0)
+        case .ended:
+            let velocity = gesture.velocity(in: view).x
+            let shouldMoveNext = translation.x < -width * 0.22 || velocity < -520
+            let shouldMovePrevious = translation.x > width * 0.22 || velocity > 520
+
+            UIView.animate(
+                withDuration: 0.16,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut]
+            ) {
+                if shouldMoveNext {
+                    self.textView.transform = CGAffineTransform(translationX: -width * 0.28, y: 0)
+                    self.textView.alpha = 0.25
+                } else if shouldMovePrevious {
+                    self.textView.transform = CGAffineTransform(translationX: width * 0.28, y: 0)
+                    self.textView.alpha = 0.25
+                } else {
+                    self.textView.transform = .identity
+                    self.textView.alpha = 1
+                }
+            } completion: { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                self.textView.transform = .identity
+                self.textView.alpha = 1
+                if shouldMoveNext {
+                    self.moveToNextPage()
+                } else if shouldMovePrevious {
+                    self.moveToPreviousPage()
+                }
+            }
+        case .cancelled, .failed:
+            UIView.animate(withDuration: 0.16) {
+                self.textView.transform = .identity
+                self.textView.alpha = 1
+            }
+        default:
+            break
+        }
     }
 
-    @objc private func nextButtonTapped() {
-        moveToNextPage()
+    @objc private func previousChapterButtonTapped() {
+        let previousChapterIndex = currentChapterIndex - 1
+        guard chapters.indices.contains(previousChapterIndex) else {
+            return
+        }
+        loadChapter(at: previousChapterIndex, startOffset: 0, saveAfterRender: true)
+    }
+
+    @objc private func nextChapterButtonTapped() {
+        let nextChapterIndex = currentChapterIndex + 1
+        guard chapters.indices.contains(nextChapterIndex) else {
+            return
+        }
+        loadChapter(at: nextChapterIndex, startOffset: 0, saveAfterRender: true)
+    }
+
+    @objc private func progressSliderTouchDown() {
+        isTrackingProgressSlider = true
+    }
+
+    @objc private func progressSliderChanged() {
+        guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
+            return
+        }
+        progressLabel.text = progressText(
+            chapter: target.chapter,
+            chapterProgress: target.chapterProgress,
+            globalProgress: Double(progressSlider.value)
+        )
+    }
+
+    @objc private func progressSliderTouchFinished() {
+        isTrackingProgressSlider = false
+        guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
+            return
+        }
+
+        if target.index == currentChapterIndex {
+            renderContent(anchorByteOffset: target.chapterOffset, savingProgress: true)
+        } else {
+            loadChapter(
+                at: target.index,
+                startOffset: target.chapterOffset,
+                saveAfterRender: true
+            )
+        }
+    }
+
+    @objc private func catalogButtonTapped() {
+        let listViewController = ReaderChapterListViewController(
+            chapters: chapters,
+            selectedIndex: currentChapterIndex
+        ) { [weak self] index in
+            guard let self else {
+                return
+            }
+            self.dismiss(animated: true) {
+                self.loadChapter(at: index, startOffset: 0, saveAfterRender: true)
+            }
+        }
+        let navigationController = UINavigationController(rootViewController: listViewController)
+        navigationController.modalPresentationStyle = .pageSheet
+        present(navigationController, animated: true)
+    }
+
+    @objc private func settingsButtonTapped() {
+        let settingsViewController = ReaderSettingsViewController(
+            settings: readerSettings
+        ) { [weak self] settings in
+            self?.applyReaderSettings(settings)
+        }
+        let navigationController = UINavigationController(rootViewController: settingsViewController)
+        navigationController.modalPresentationStyle = .pageSheet
+        present(navigationController, animated: true)
+    }
+
+    private func currentDisplayByteOffset() -> Int {
+        if let progress = currentProgress {
+            return Int(progress.chapterOffset)
+        }
+        return currentPaginator?.pageStartByteOffset(at: currentPageIndex) ?? 0
+    }
+
+    private func targetChapter(
+        forGlobalProgress globalProgress: Double
+    ) -> (index: Int, chapter: Chapter, chapterOffset: Int, chapterProgress: Double)? {
+        guard chapters.isEmpty == false else {
+            return nil
+        }
+
+        let totalByteLength = max(chapters.last?.endOffset ?? 1, 1)
+        let absoluteOffset = min(
+            max(Int(Double(totalByteLength) * min(max(globalProgress, 0), 1)), 0),
+            max(totalByteLength - 1, 0)
+        )
+        let index = chapters.firstIndex { chapter in
+            absoluteOffset >= chapter.startOffset && absoluteOffset < chapter.endOffset
+        } ?? max(chapters.count - 1, 0)
+        let chapter = chapters[index]
+        let chapterOffset = min(
+            max(absoluteOffset - chapter.startOffset, 0),
+            max(chapter.byteLength - 1, 0)
+        )
+        let chapterProgress = chapter.byteLength > 0
+            ? min(max(Double(chapterOffset) / Double(chapter.byteLength), 0), 1)
+            : 0
+
+        return (index, chapter, chapterOffset, chapterProgress)
     }
 
     @objc private func closeButtonTapped() {
         saveProgressImmediately()
+        saveSettingsImmediately()
         onClose()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === textView,
+              !isApplyingProgrammaticScroll
+        else {
+            return
+        }
+        updateScrollProgressFromContentOffset()
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard scrollView === textView,
+              readerSettings.pageMode == .scroll,
+              !decelerate
+        else {
+            return
+        }
+        scheduleProgressSave()
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        guard scrollView === textView,
+              readerSettings.pageMode == .scroll
+        else {
+            return
+        }
+        scheduleProgressSave()
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        guard let panGesture = gestureRecognizer as? UIPanGestureRecognizer else {
+            return true
+        }
+
+        let location = panGesture.location(in: view)
+        guard topBar.frame.contains(location) == false,
+              bottomBar.frame.contains(location) == false
+        else {
+            return false
+        }
+
+        let velocity = panGesture.velocity(in: view)
+        return abs(velocity.x) > abs(velocity.y)
     }
 
     private nonisolated static func selectedChapter(
@@ -712,9 +1411,32 @@ final class ReaderViewController: UIViewController {
 
             try handle.seek(toOffset: UInt64(chapter.startOffset))
             let data = handle.readData(ofLength: chapter.byteLength)
-            return String(data: data, encoding: .utf8) ?? ""
+            guard let text = String(data: data, encoding: .utf8) else {
+                throw ReaderLoadError.invalidUTF8Cache
+            }
+            return text
         }.value
     }
+}
+
+private enum ReaderLoadError: LocalizedError {
+    case invalidUTF8Cache
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUTF8Cache:
+            return NSLocalizedString("reader.error.invalidUTF8Cache", comment: "")
+        }
+    }
+}
+
+private struct PrefetchedChapter: @unchecked Sendable {
+    let index: Int
+    let chapter: Chapter
+    let text: String
+    let paginator: ChapterPaginator?
+    let settings: ReaderSettings
+    let fittingSize: CGSize
 }
 
 private extension NumberFormatter {
@@ -727,32 +1449,320 @@ private extension NumberFormatter {
     }()
 }
 
-private struct ReaderTypography: Sendable {
-    var textStyle: String
+private struct ReaderTypography: @unchecked Sendable {
+    var fontSize: Double
     var lineSpacing: Double
     var paragraphSpacing: Double
+    var textColor: UIColor
 
-    static var `default`: ReaderTypography {
-        ReaderTypography(
-            textStyle: UIFont.TextStyle.body.rawValue,
-            lineSpacing: 4,
-            paragraphSpacing: 8
-        )
+    init(settings: ReaderSettings) {
+        fontSize = settings.normalized.fontSize
+        lineSpacing = 4
+        paragraphSpacing = 8
+        textColor = settings.theme.textColor
     }
 
     func attributedString(for text: String) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineSpacing = CGFloat(lineSpacing)
         paragraphStyle.paragraphSpacing = CGFloat(paragraphSpacing)
+        let baseFont = UIFont.systemFont(ofSize: CGFloat(fontSize), weight: .regular)
+        let font = UIFontMetrics(forTextStyle: .body).scaledFont(for: baseFont)
 
         return NSAttributedString(
             string: text,
             attributes: [
-                .font: UIFont.preferredFont(forTextStyle: UIFont.TextStyle(textStyle)),
-                .foregroundColor: UIColor.label,
+                .font: font,
+                .foregroundColor: textColor,
                 .paragraphStyle: paragraphStyle
             ]
         )
+    }
+}
+
+private extension ReaderSettings.Theme {
+    var backgroundColor: UIColor {
+        switch self {
+        case .white:
+            return .systemBackground
+        case .eyeCare:
+            return UIColor(red: 0.92, green: 0.97, blue: 0.90, alpha: 1)
+        case .paper:
+            return UIColor(red: 0.97, green: 0.94, blue: 0.86, alpha: 1)
+        case .dark:
+            return UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
+        }
+    }
+
+    var textColor: UIColor {
+        switch self {
+        case .white:
+            return .label
+        case .eyeCare:
+            return UIColor(red: 0.11, green: 0.18, blue: 0.12, alpha: 1)
+        case .paper:
+            return UIColor(red: 0.18, green: 0.13, blue: 0.08, alpha: 1)
+        case .dark:
+            return UIColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1)
+        }
+    }
+
+    var secondaryTextColor: UIColor {
+        switch self {
+        case .dark:
+            return UIColor(red: 0.70, green: 0.70, blue: 0.68, alpha: 1)
+        default:
+            return .secondaryLabel
+        }
+    }
+
+    var userInterfaceStyle: UIUserInterfaceStyle {
+        self == .dark ? .dark : .light
+    }
+}
+
+private final class ReaderChapterListViewController: UITableViewController {
+    private let chapters: [Chapter]
+    private let selectedIndex: Int
+    private let onSelect: (Int) -> Void
+
+    init(
+        chapters: [Chapter],
+        selectedIndex: Int,
+        onSelect: @escaping (Int) -> Void
+    ) {
+        self.chapters = chapters
+        self.selectedIndex = selectedIndex
+        self.onSelect = onSelect
+        super.init(style: .plain)
+        title = NSLocalizedString("reader.catalog.title", comment: "")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.close", comment: ""),
+            style: .plain,
+            target: self,
+            action: #selector(closeButtonTapped)
+        )
+
+        if chapters.isEmpty {
+            let emptyLabel = UILabel()
+            emptyLabel.text = NSLocalizedString("reader.catalog.empty", comment: "")
+            emptyLabel.textAlignment = .center
+            emptyLabel.textColor = .secondaryLabel
+            emptyLabel.numberOfLines = 0
+            tableView.backgroundView = emptyLabel
+        }
+    }
+
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        chapters.count
+    }
+
+    override func tableView(
+        _ tableView: UITableView,
+        cellForRowAt indexPath: IndexPath
+    ) -> UITableViewCell {
+        let reuseIdentifier = "chapter"
+        let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: reuseIdentifier)
+        let chapter = chapters[indexPath.row]
+        cell.textLabel?.text = chapter.title
+        cell.detailTextLabel?.text = String(
+            format: NSLocalizedString("reader.catalog.chapterProgress", comment: ""),
+            NumberFormatter.readerPercent.string(
+                from: NSNumber(value: chapterStartProgress(for: chapter))
+            ) ?? "0%"
+        )
+        cell.accessoryType = indexPath.row == selectedIndex ? .checkmark : .none
+        return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        onSelect(indexPath.row)
+    }
+
+    @objc private func closeButtonTapped() {
+        dismiss(animated: true)
+    }
+
+    private func chapterStartProgress(for chapter: Chapter) -> Double {
+        let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
+        return min(max(Double(chapter.startOffset) / Double(totalByteLength), 0), 1)
+    }
+}
+
+private final class ReaderSettingsViewController: UIViewController {
+    private var settings: ReaderSettings
+    private let onChange: (ReaderSettings) -> Void
+    private let fontValueLabel = UILabel()
+    private let fontStepper = UIStepper()
+    private lazy var pageModeControl = UISegmentedControl(
+        items: ReaderSettings.PageMode.allCases.map(\.localizedTitle)
+    )
+    private lazy var themeControl = UISegmentedControl(
+        items: ReaderSettings.Theme.allCases.map(\.localizedTitle)
+    )
+
+    init(
+        settings: ReaderSettings,
+        onChange: @escaping (ReaderSettings) -> Void
+    ) {
+        self.settings = settings.normalized
+        self.onChange = onChange
+        super.init(nibName: nil, bundle: nil)
+        title = NSLocalizedString("reader.settings.title", comment: "")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+
+        view.backgroundColor = .systemGroupedBackground
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.close", comment: ""),
+            style: .plain,
+            target: self,
+            action: #selector(closeButtonTapped)
+        )
+
+        configureControls()
+    }
+
+    private func configureControls() {
+        pageModeControl.selectedSegmentIndex = ReaderSettings.PageMode.allCases
+            .firstIndex(of: settings.pageMode) ?? 0
+        pageModeControl.addTarget(self, action: #selector(pageModeChanged), for: .valueChanged)
+
+        themeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases
+            .firstIndex(of: settings.theme) ?? 0
+        themeControl.addTarget(self, action: #selector(themeChanged), for: .valueChanged)
+
+        fontStepper.minimumValue = ReaderSettings.minimumFontSize
+        fontStepper.maximumValue = ReaderSettings.maximumFontSize
+        fontStepper.stepValue = 1
+        fontStepper.value = settings.fontSize
+        fontStepper.addTarget(self, action: #selector(fontSizeChanged), for: .valueChanged)
+        updateFontValueLabel()
+
+        let fontRow = UIStackView(arrangedSubviews: [fontValueLabel, fontStepper])
+        fontRow.axis = .horizontal
+        fontRow.alignment = .center
+        fontRow.spacing = 12
+        fontRow.distribution = .equalSpacing
+
+        let stackView = UIStackView(arrangedSubviews: [
+            settingsSection(
+                title: NSLocalizedString("reader.settings.pageMode", comment: ""),
+                control: pageModeControl
+            ),
+            settingsSection(
+                title: NSLocalizedString("reader.settings.fontSize", comment: ""),
+                control: fontRow
+            ),
+            settingsSection(
+                title: NSLocalizedString("reader.settings.theme", comment: ""),
+                control: themeControl
+            )
+        ])
+        stackView.axis = .vertical
+        stackView.spacing = 18
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+
+        view.addSubview(stackView)
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+            stackView.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+            stackView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 24)
+        ])
+    }
+
+    private func settingsSection(title: String, control: UIView) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+
+        let stackView = UIStackView(arrangedSubviews: [titleLabel, control])
+        stackView.axis = .vertical
+        stackView.spacing = 8
+        return stackView
+    }
+
+    private func updateFontValueLabel() {
+        fontValueLabel.text = String(
+            format: NSLocalizedString("reader.settings.fontSize.value", comment: ""),
+            Int(settings.fontSize)
+        )
+        fontValueLabel.font = .preferredFont(forTextStyle: .body)
+        fontValueLabel.adjustsFontForContentSizeCategory = true
+    }
+
+    @objc private func pageModeChanged() {
+        let index = pageModeControl.selectedSegmentIndex
+        guard ReaderSettings.PageMode.allCases.indices.contains(index) else {
+            return
+        }
+        settings.pageMode = ReaderSettings.PageMode.allCases[index]
+        onChange(settings)
+    }
+
+    @objc private func themeChanged() {
+        let index = themeControl.selectedSegmentIndex
+        guard ReaderSettings.Theme.allCases.indices.contains(index) else {
+            return
+        }
+        settings.theme = ReaderSettings.Theme.allCases[index]
+        onChange(settings)
+    }
+
+    @objc private func fontSizeChanged() {
+        settings.fontSize = fontStepper.value
+        updateFontValueLabel()
+        onChange(settings)
+    }
+
+    @objc private func closeButtonTapped() {
+        dismiss(animated: true)
+    }
+}
+
+private extension ReaderSettings.PageMode {
+    var localizedTitle: String {
+        switch self {
+        case .paged:
+            return NSLocalizedString("reader.settings.pageMode.paged", comment: "")
+        case .scroll:
+            return NSLocalizedString("reader.settings.pageMode.scroll", comment: "")
+        }
+    }
+}
+
+private extension ReaderSettings.Theme {
+    var localizedTitle: String {
+        switch self {
+        case .white:
+            return NSLocalizedString("reader.settings.theme.white", comment: "")
+        case .eyeCare:
+            return NSLocalizedString("reader.settings.theme.eyeCare", comment: "")
+        case .paper:
+            return NSLocalizedString("reader.settings.theme.paper", comment: "")
+        case .dark:
+            return NSLocalizedString("reader.settings.theme.dark", comment: "")
+        }
     }
 }
 

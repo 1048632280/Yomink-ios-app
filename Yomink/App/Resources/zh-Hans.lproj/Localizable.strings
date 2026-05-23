@@ -25,13 +25,33 @@
 "groups.placeholder.message" = "Phase 4 将实现新增、编辑、删除分组。";
 
 "reader.placeholder.title" = "阅读器核心容器";
-"reader.placeholder.message" = "UIKit 阅读器占位页已接入。\n\nPhase 2 会在这里实现高性能文本渲染、分页、手势热区和阅读进度恢复。";
-"reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@\n\nPhase 2 会在这里接入正文渲染和进度恢复。";
+"reader.placeholder.message" = "UIKit 阅读器已接入分页、滚动、进度和阅读设置。";
+"reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@";
 "reader.loading" = "正在打开书籍...";
 "reader.close" = "返回书架";
 "reader.previousPage" = "上一页";
 "reader.nextPage" = "下一页";
+"reader.previousChapter" = "上一章";
+"reader.nextChapter" = "下一章";
+"reader.progress.slider" = "阅读进度";
+"reader.catalog" = "目录";
+"reader.settings" = "设置";
+"reader.catalog.title" = "目录";
+"reader.catalog.empty" = "暂无目录";
+"reader.catalog.chapterProgress" = "全书 %@";
+"reader.settings.title" = "阅读设置";
+"reader.settings.pageMode" = "翻页";
+"reader.settings.pageMode.paged" = "分页";
+"reader.settings.pageMode.scroll" = "滚动";
+"reader.settings.fontSize" = "字号";
+"reader.settings.fontSize.value" = "%d pt";
+"reader.settings.theme" = "主题";
+"reader.settings.theme.white" = "纯白";
+"reader.settings.theme.eyeCare" = "护眼";
+"reader.settings.theme.paper" = "纸张";
+"reader.settings.theme.dark" = "暗黑";
 "reader.emptyChapter" = "当前章节没有可显示的内容。";
+"reader.error.invalidUTF8Cache" = "阅读缓存无法按 UTF-8 解码。";
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";
 "reader.preview.chapter.title" = "预览章节";
 
