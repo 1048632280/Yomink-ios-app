@@ -739,10 +739,8 @@ struct LibraryView: View {
     }
 
     private func openRouteFromDrawer(_ route: LibraryRoute) {
+        activeRoute = route
         closeDrawer()
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerAnimationDuration + 0.02) {
-            activeRoute = route
-        }
     }
 
     private func openBookAfterRouteDismissal(_ book: Book) {
@@ -1218,6 +1216,7 @@ private final class LibraryViewModel: ObservableObject {
 
 private struct BookShelfItemButton<Content: View>: View {
     let isSelected: Bool
+    @State private var suppressNextTap = false
     private let content: () -> Content
     private let action: () -> Void
     private let longPressAction: () -> Void
@@ -1239,19 +1238,21 @@ private struct BookShelfItemButton<Content: View>: View {
     var body: some View {
         content()
             .contentShape(Rectangle())
-            .gesture(
-                LongPressGesture(minimumDuration: 0.45)
-                    .exclusively(before: TapGesture())
-                    .onEnded { value in
-                        switch value {
-                        case .first:
-                            longPressAction()
-                        case .second:
-                            action()
-                        }
-                    }
-        )
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+            .onTapGesture {
+                guard !suppressNextTap else {
+                    suppressNextTap = false
+                    return
+                }
+                action()
+            }
+            .onLongPressGesture(minimumDuration: 0.45) {
+                suppressNextTap = true
+                longPressAction()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    suppressNextTap = false
+                }
+            }
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

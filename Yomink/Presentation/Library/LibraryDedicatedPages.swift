@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct LibraryGroupsPage: View {
     @Environment(\.dismiss) private var dismiss
@@ -41,6 +42,7 @@ struct LibraryGroupsPage: View {
             .background(Color(.systemGray6))
         }
         .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("groups.page.title")
         .toolbar {
@@ -236,6 +238,7 @@ struct ReadingHistoryPage: View {
             .background(Color(.systemGray6))
         }
         .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("add.reading.history")
         .toolbar {
@@ -329,6 +332,7 @@ struct LibrarySettingsPage: View {
             .background(Color(.systemGray6))
         }
         .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
         .navigationBarTitleDisplayMode(.inline)
         .navigationTitle("settings.title")
         .toolbar {
@@ -489,6 +493,68 @@ private struct BackTextButton: View {
                 Text("<")
                 Text("common.back")
             }
+        }
+    }
+}
+
+private struct InteractivePopGestureRestorer: UIViewControllerRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeUIViewController(context: Context) -> Controller {
+        let controller = Controller()
+        controller.onMoveToNavigationController = { navigationController in
+            context.coordinator.restoreGesture(on: navigationController)
+        }
+        return controller
+    }
+
+    func updateUIViewController(_ controller: Controller, context: Context) {
+        controller.onMoveToNavigationController = { navigationController in
+            context.coordinator.restoreGesture(on: navigationController)
+        }
+        DispatchQueue.main.async {
+            context.coordinator.restoreGesture(on: controller.navigationController)
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        private weak var navigationController: UINavigationController?
+
+        func restoreGesture(on navigationController: UINavigationController?) {
+            guard let navigationController,
+                  let gesture = navigationController.interactivePopGestureRecognizer
+            else {
+                return
+            }
+
+            self.navigationController = navigationController
+            gesture.delegate = self
+            gesture.isEnabled = true
+        }
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
+    }
+
+    final class Controller: UIViewController {
+        var onMoveToNavigationController: ((UINavigationController?) -> Void)?
+
+        override func viewDidLoad() {
+            super.viewDidLoad()
+            view.backgroundColor = .clear
+        }
+
+        override func didMove(toParent parent: UIViewController?) {
+            super.didMove(toParent: parent)
+            onMoveToNavigationController?(navigationController)
+        }
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            onMoveToNavigationController?(navigationController)
         }
     }
 }
