@@ -11,7 +11,6 @@ struct LibraryView: View {
     @State private var isImportPickerPresented = false
     @State private var isDrawerOpen = false
     @State private var closeDragOffset: CGFloat = 0
-    @State private var drawerAnimationGeneration = 0
 
     var body: some View {
         GeometryReader { proxy in
@@ -62,9 +61,9 @@ struct LibraryView: View {
     private func mainSurface(width: CGFloat) -> some View {
         ZStack {
             libraryNavigationView
-                .allowsHitTesting(activeDrawer == nil)
+                .allowsHitTesting(!isDrawerOpen)
 
-            if activeDrawer != nil {
+            if isDrawerOpen {
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {
@@ -316,7 +315,6 @@ struct LibraryView: View {
     }
 
     private func openDrawer(_ drawer: LibraryDrawerSide) {
-        drawerAnimationGeneration += 1
         closeDragOffset = 0
         activeDrawer = drawer
         withAnimation(Self.drawerAnimation) {
@@ -325,28 +323,19 @@ struct LibraryView: View {
     }
 
     private func closeDrawer() {
-        guard activeDrawer != nil else {
+        guard isDrawerOpen else {
             return
         }
 
-        drawerAnimationGeneration += 1
-        let generation = drawerAnimationGeneration
         withAnimation(Self.drawerAnimation) {
             isDrawerOpen = false
             closeDragOffset = 0
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerCloseDuration) {
-            guard generation == drawerAnimationGeneration else {
-                return
-            }
-            activeDrawer = nil
         }
     }
 
     private func requestImportFromDrawer() {
         closeDrawer()
-        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerCloseDuration + 0.02) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerAnimationDuration + 0.02) {
             isImportPickerPresented = true
         }
     }
@@ -362,6 +351,7 @@ struct LibraryView: View {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
                 guard let activeDrawer,
+                      isDrawerOpen,
                       abs(value.translation.width) > abs(value.translation.height)
                 else {
                     return
@@ -373,6 +363,7 @@ struct LibraryView: View {
             }
             .onEnded { value in
                 guard let activeDrawer,
+                      isDrawerOpen,
                       abs(value.translation.width) > abs(value.translation.height)
                 else {
                     resetCloseDragOffset()
@@ -413,7 +404,7 @@ struct LibraryView: View {
         return activeDrawer.openOffset(width: width) + closeDragOffset
     }
 
-    private static let drawerCloseDuration = 0.28
+    private static let drawerAnimationDuration = 0.28
 
     private static let drawerAnimation = Animation.spring(
         response: 0.28,

@@ -24,19 +24,18 @@ struct LibrarySidebarView: View {
                             .padding(.bottom, 4)
 
                         SidebarItemRow(
-                            title: "sidebar.allBooks",
+                            localizedTitle: "sidebar.allBooks",
                             systemImage: "book"
                         )
                         SidebarItemRow(
-                            title: "sidebar.ungrouped",
+                            localizedTitle: "sidebar.ungrouped",
                             systemImage: "tray"
                         )
 
                         ForEach(groups) { group in
                             SidebarItemRow(
-                                title: group.name,
-                                systemImage: "folder",
-                                isLocalized: false
+                                verbatimTitle: group.name,
+                                systemImage: "folder"
                             )
                         }
 
@@ -44,7 +43,7 @@ struct LibrarySidebarView: View {
                             GroupManagementPlaceholderView()
                         } label: {
                             SidebarItemRow(
-                                title: "sidebar.manageGroups",
+                                localizedTitle: "sidebar.manageGroups",
                                 systemImage: "folder.badge.gearshape"
                             )
                         }
@@ -57,7 +56,7 @@ struct LibrarySidebarView: View {
                 Divider()
 
                 SidebarItemRow(
-                    title: "settings.title",
+                    localizedTitle: "settings.title",
                     systemImage: "gearshape"
                 )
                 .padding(.vertical, 10)
@@ -91,9 +90,29 @@ struct LibrarySidebarView: View {
 }
 
 struct SidebarItemRow: View {
-    let title: String
+    private enum Title {
+        case localized(LocalizedStringKey)
+        case verbatim(String)
+    }
+
+    private let title: Title
     let systemImage: String
-    var isLocalized = true
+
+    init(
+        localizedTitle: LocalizedStringKey,
+        systemImage: String
+    ) {
+        self.title = .localized(localizedTitle)
+        self.systemImage = systemImage
+    }
+
+    init(
+        verbatimTitle: String,
+        systemImage: String
+    ) {
+        self.title = .verbatim(verbatimTitle)
+        self.systemImage = systemImage
+    }
 
     var body: some View {
         Label {
@@ -114,9 +133,10 @@ struct SidebarItemRow: View {
 
     @ViewBuilder
     private var titleText: some View {
-        if isLocalized {
+        switch title {
+        case let .localized(title):
             Text(title)
-        } else {
+        case let .verbatim(title):
             Text(verbatim: title)
         }
     }

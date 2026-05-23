@@ -19,14 +19,14 @@ struct AddBookSidebarView: View {
                             onImportFromFile()
                         } label: {
                             SidebarItemRow(
-                                title: "add.import.file",
+                                localizedTitle: "add.import.file",
                                 systemImage: "square.and.arrow.down"
                             )
                         }
                         .buttonStyle(.plain)
 
                         SidebarItemRow(
-                            title: "add.reading.history",
+                            localizedTitle: "add.reading.history",
                             systemImage: "clock"
                         )
                     }
