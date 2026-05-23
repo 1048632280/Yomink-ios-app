@@ -11,9 +11,9 @@ struct LibrarySidebarView: View {
     let onSettingsChanged: (LibrarySettings) -> Void
     let onDisplayOptionChanged: () -> Void
     let onOpenGroupsPage: () -> Void
+    let onOpenSettingsPage: () -> Void
 
     @State private var librarySettings = LibrarySettings.default
-    @State private var isSettingsPresented = false
     @State private var groupErrorMessage: String?
 
     init(
@@ -25,7 +25,8 @@ struct LibrarySidebarView: View {
         onSelectScope: @escaping (LibraryScope) -> Void = { _ in },
         onSettingsChanged: @escaping (LibrarySettings) -> Void = { _ in },
         onDisplayOptionChanged: @escaping () -> Void = {},
-        onOpenGroupsPage: @escaping () -> Void = {}
+        onOpenGroupsPage: @escaping () -> Void = {},
+        onOpenSettingsPage: @escaping () -> Void = {}
     ) {
         self.repository = repository
         self.groups = groups
@@ -36,6 +37,7 @@ struct LibrarySidebarView: View {
         self.onSettingsChanged = onSettingsChanged
         self.onDisplayOptionChanged = onDisplayOptionChanged
         self.onOpenGroupsPage = onOpenGroupsPage
+        self.onOpenSettingsPage = onOpenSettingsPage
         _librarySettings = State(initialValue: settings ?? .default)
     }
 
@@ -85,7 +87,7 @@ struct LibrarySidebarView: View {
                 sectionGap
 
                 Button {
-                    openSettings()
+                    onOpenSettingsPage()
                 } label: {
                     SidebarItemRow(
                         localizedTitle: "settings.title"
@@ -100,19 +102,6 @@ struct LibrarySidebarView: View {
             }
             .onChange(of: settings) { nextSettings in
                 librarySettings = nextSettings ?? .default
-            }
-            .sheet(isPresented: $isSettingsPresented, onDismiss: {
-                Task {
-                    await reloadSettings()
-                }
-            }) {
-                AppSettingsView(
-                    repository: repository,
-                    settings: librarySettings
-                ) { settings in
-                    librarySettings = settings
-                    onSettingsChanged(settings)
-                }
             }
             .alert(
                 "groups.error.title",
@@ -211,10 +200,6 @@ struct LibrarySidebarView: View {
         }
     }
 
-    private func openSettings() {
-        isSettingsPresented = true
-    }
-
     @MainActor
     private func reloadSettings() async {
         guard let repository else {
@@ -292,110 +277,7 @@ struct SidebarItemRow: View {
     }
 }
 
-private struct AppSettingsView: View {
-    let repository: (any LibraryRepository)?
-    let onChange: (LibrarySettings) -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var settings: LibrarySettings
-    @State private var errorMessage: String?
-
-    init(
-        repository: (any LibraryRepository)?,
-        settings: LibrarySettings,
-        onChange: @escaping (LibrarySettings) -> Void
-    ) {
-        self.repository = repository
-        self.onChange = onChange
-        _settings = State(initialValue: settings)
-    }
-
-    var body: some View {
-        NavigationView {
-            Form {
-                Section {
-                    Picker("settings.sortOrder", selection: sortOrderBinding) {
-                        ForEach(LibrarySettings.SortOrder.allCases, id: \.self) { sortOrder in
-                            Text(sortOrder.localizedTitle)
-                                .tag(sortOrder)
-                        }
-                    }
-
-                    Picker("settings.viewMode", selection: viewModeBinding) {
-                        ForEach(LibrarySettings.ViewMode.allCases, id: \.self) { viewMode in
-                            Text(viewMode.localizedTitle)
-                                .tag(viewMode)
-                        }
-                    }
-                }
-            }
-                .navigationTitle("settings.title")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("common.close") {
-                            dismiss()
-                        }
-                    }
-                }
-                .alert(
-                    "settings.error.title",
-                    isPresented: Binding(
-                        get: { errorMessage != nil },
-                        set: { isPresented in
-                            if !isPresented {
-                                errorMessage = nil
-                            }
-                        }
-                    )
-                ) {
-                    Button("common.ok", role: .cancel) {
-                        errorMessage = nil
-                    }
-                } message: {
-                    Text(errorMessage ?? "")
-                }
-        }
-    }
-
-    private var sortOrderBinding: Binding<LibrarySettings.SortOrder> {
-        Binding(
-            get: { settings.sortOrder },
-            set: { newValue in
-                settings.sortOrder = newValue
-                persistSettings()
-            }
-        )
-    }
-
-    private var viewModeBinding: Binding<LibrarySettings.ViewMode> {
-        Binding(
-            get: { settings.viewMode },
-            set: { newValue in
-                settings.viewMode = newValue
-                persistSettings()
-            }
-        )
-    }
-
-    private func persistSettings() {
-        let settings = settings
-        onChange(settings)
-
-        guard let repository else {
-            return
-        }
-
-        Task {
-            do {
-                try await repository.saveLibrarySettings(settings)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-}
-
-private extension LibrarySettings.SortOrder {
+extension LibrarySettings.SortOrder {
     var localizedTitle: LocalizedStringKey {
         switch self {
         case .importedAt:
@@ -415,7 +297,7 @@ private extension LibrarySettings.SortOrder {
     }
 }
 
-private extension LibrarySettings.ViewMode {
+extension LibrarySettings.ViewMode {
     var localizedTitle: LocalizedStringKey {
         switch self {
         case .list:

@@ -5,10 +5,8 @@ import UniformTypeIdentifiers
 struct LibraryView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var viewModel = LibraryViewModel()
-    @State private var activeSheet: LibrarySheet?
     @State private var activeDrawer: LibraryDrawerSide?
     @State private var activeReaderBook: Book?
-    @State private var pendingReaderBook: Book?
     @State private var isImportPickerPresented = false
     @State private var isDrawerOpen = false
     @State private var selectedScope: LibraryScope = .ungrouped
@@ -126,21 +124,6 @@ struct LibraryView: View {
 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     libraryTrailingToolbarContent
-                }
-            }
-            .sheet(
-                item: $activeSheet,
-                onDismiss: handleSheetDismiss
-            ) { sheet in
-                switch sheet {
-                case .search:
-                    GlobalBookSearchView(
-                        repository: currentRepository,
-                        sortOrder: viewModel.settings.sortOrder
-                    ) { book in
-                        pendingReaderBook = book
-                        activeSheet = nil
-                    }
                 }
             }
             .fullScreenCover(
@@ -262,7 +245,7 @@ struct LibraryView: View {
         } else {
             HStack(spacing: 16) {
                 Button {
-                    activeSheet = .search
+                    activeRoute = .search
                 } label: {
                     Image(systemName: "magnifyingglass")
                 }
@@ -319,6 +302,8 @@ struct LibraryView: View {
                     closeDrawer()
                 } onOpenGroupsPage: {
                     openRouteFromDrawer(.groups)
+                } onOpenSettingsPage: {
+                    openRouteFromDrawer(.settings)
                 }
             } else {
                 LibrarySidebarView(
@@ -371,6 +356,41 @@ struct LibraryView: View {
                     repository: services.libraryRepository,
                     onOpenBook: { book in
                         openBookAfterRouteDismissal(book)
+                    }
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
+
+            NavigationLink(
+                tag: LibraryRoute.search,
+                selection: $activeRoute
+            ) {
+                GlobalBookSearchView(
+                    repository: services.libraryRepository,
+                    sortOrder: viewModel.settings.sortOrder,
+                    onOpenBook: { book in
+                        openBookAfterRouteDismissal(book)
+                    }
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
+
+            NavigationLink(
+                tag: LibraryRoute.settings,
+                selection: $activeRoute
+            ) {
+                LibrarySettingsPage(
+                    repository: services.libraryRepository,
+                    settings: viewModel.settings,
+                    onChange: { settings in
+                        viewModel.applyLibrarySettings(settings)
+                        reloadBooksIfReady()
                     }
                 )
             } label: {
@@ -620,14 +640,6 @@ struct LibraryView: View {
             .cornerRadius(8)
     }
 
-    private func handleSheetDismiss() {
-        reloadBooksIfReady()
-        if let pending = pendingReaderBook {
-            pendingReaderBook = nil
-            activeReaderBook = pending
-        }
-    }
-
     private func reloadBooksIfReady() {
         if case let .ready(services) = environment.bootstrapState {
             Task {
@@ -828,6 +840,8 @@ struct LibraryView: View {
 private enum LibraryRoute: Hashable {
     case groups
     case history
+    case search
+    case settings
 }
 
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {
@@ -1441,7 +1455,6 @@ private extension NumberFormatter {
 }
 
 private struct GlobalBookSearchView: View {
-    @Environment(\.dismiss) private var dismiss
     let repository: (any LibraryRepository)?
     let sortOrder: LibrarySettings.SortOrder
     let onOpenBook: (Book) -> Void
@@ -1452,70 +1465,62 @@ private struct GlobalBookSearchView: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 10) {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
 
-                    TextField("search.field.placeholder", text: $keyword)
-                        .textInputAutocapitalization(.never)
-                        .disableAutocorrection(true)
-                        .submitLabel(.search)
-                        .onSubmit {
-                            performSearch()
-                        }
+                TextField("search.field.placeholder", text: $keyword)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .submitLabel(.search)
+                    .onSubmit {
+                        performSearch()
+                    }
 
-                    if !keyword.isEmpty {
-                        Button {
-                            keyword = ""
-                            results = []
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .accessibilityLabel(Text("search.clearInput"))
+                if !keyword.isEmpty {
+                    Button {
+                        keyword = ""
+                        results = []
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .accessibilityLabel(Text("search.clearInput"))
+                }
+            }
+            .padding(12)
+            .background(Color(.secondarySystemBackground))
+            .cornerRadius(8)
+
+            if !historyItems.isEmpty {
+                historySection
+            }
+
+            resultList
+        }
+        .padding()
+        .navigationTitle("search.title")
+        .navigationBarTitleDisplayMode(.inline)
+        .task {
+            await reloadHistory()
+        }
+        .alert(
+            "search.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
                     }
                 }
-                .padding(12)
-                .background(Color(.secondarySystemBackground))
-                .cornerRadius(8)
-
-                if !historyItems.isEmpty {
-                    historySection
-                }
-
-                resultList
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
             }
-            .padding()
-            .navigationTitle("search.title")
-            .task {
-                await reloadHistory()
-            }
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("common.close") {
-                        dismiss()
-                    }
-                }
-            }
-            .alert(
-                "search.error.title",
-                isPresented: Binding(
-                    get: { errorMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            errorMessage = nil
-                        }
-                    }
-                )
-            ) {
-                Button("common.ok", role: .cancel) {
-                    errorMessage = nil
-                }
-            } message: {
-                Text(errorMessage ?? "")
-            }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -1638,17 +1643,6 @@ private struct GlobalBookSearchView: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
-        }
-    }
-}
-
-private enum LibrarySheet: Identifiable {
-    case search
-
-    var id: String {
-        switch self {
-        case .search:
-            return "search"
         }
     }
 }
