@@ -22,14 +22,11 @@ struct AddBookSidebarView: View {
     var body: some View {
         NavigationView {
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
+                LazyVStack(alignment: .leading, spacing: 0) {
                     Button {
                         onImportFromFile()
                     } label: {
-                        SidebarItemRow(
-                            localizedTitle: "add.import.file",
-                            systemImage: "square.and.arrow.down"
-                        )
+                        SidebarItemRow(localizedTitle: "add.import.file")
                     }
                     .buttonStyle(.plain)
 
@@ -40,15 +37,12 @@ struct AddBookSidebarView: View {
                             onOpenBook: onOpenBook
                         )
                     } label: {
-                        SidebarItemRow(
-                            localizedTitle: "add.reading.history",
-                            systemImage: "clock"
-                        )
+                        SidebarItemRow(localizedTitle: "add.reading.history")
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.top, 18)
-                .padding(.bottom, 16)
+                .padding(.top, SidebarStyle.groupHeaderHeight)
+                .padding(.bottom, SidebarStyle.groupHeaderHeight)
             }
             .navigationBarHidden(true)
             .background(SidebarStyle.background)
@@ -69,7 +63,7 @@ private struct ReadingHistoryPage: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 8) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 if historyItems.isEmpty {
                     Text("history.empty.message")
                         .font(.subheadline)
@@ -87,8 +81,8 @@ private struct ReadingHistoryPage: View {
                     }
                 }
             }
-            .padding(.top, 18)
-            .padding(.bottom, 16)
+            .padding(.top, SidebarStyle.groupHeaderHeight)
+            .padding(.bottom, SidebarStyle.groupHeaderHeight)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             historyTitleBar
@@ -165,11 +159,6 @@ private struct ReadingHistoryRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "clock")
-                .font(.system(size: 18, weight: .regular))
-                .foregroundColor(SidebarStyle.icon)
-                .frame(width: 28)
-
             VStack(alignment: .leading, spacing: 5) {
                 Text(verbatim: item.book.title)
                     .font(.body.weight(.medium))
@@ -191,13 +180,14 @@ private struct ReadingHistoryRow: View {
 
             Spacer(minLength: 8)
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .padding(.horizontal, 24)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(SidebarStyle.rowBackground)
-                .padding(.horizontal, 12)
-        )
+        .frame(maxWidth: .infinity, minHeight: SidebarStyle.itemHeight, alignment: .leading)
+        .background(SidebarStyle.rowBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(SidebarStyle.separator)
+                .frame(height: 0.5)
+        }
         .contentShape(Rectangle())
     }
 

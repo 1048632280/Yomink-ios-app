@@ -442,7 +442,10 @@ struct LibraryView: View {
                 }
             }
             .padding(.bottom, viewModel.isSelecting ? 80 : 0)
+            .padding(24)
         }
+        .padding(-24)
+        .background(Color(.systemGray6))
     }
 
     private var selectionActionBar: some View {

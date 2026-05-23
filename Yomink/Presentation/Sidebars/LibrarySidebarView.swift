@@ -44,24 +44,15 @@ struct LibrarySidebarView: View {
             VStack(spacing: 0) {
                 displayControls
 
-                Divider()
-                    .background(SidebarStyle.rowBackground)
-
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 8) {
-                        Text("sidebar.groups.section")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundColor(SidebarStyle.secondaryText)
-                            .padding(.horizontal, 24)
-                            .padding(.top, 18)
-                            .padding(.bottom, 4)
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        groupHeader
 
                         Button {
                             onSelectScope(.all)
                         } label: {
                             SidebarItemRow(
                                 localizedTitle: "sidebar.allBooks",
-                                systemImage: "book",
                                 isSelected: selectedScope == .all
                             )
                         }
@@ -72,7 +63,6 @@ struct LibrarySidebarView: View {
                         } label: {
                             SidebarItemRow(
                                 localizedTitle: "sidebar.ungrouped",
-                                systemImage: "tray",
                                 isSelected: selectedScope == .ungrouped
                             )
                         }
@@ -84,7 +74,6 @@ struct LibrarySidebarView: View {
                             } label: {
                                 SidebarItemRow(
                                     verbatimTitle: groupTitle(group),
-                                    systemImage: "folder",
                                     isSelected: selectedScope == .group(group.id)
                                 )
                             }
@@ -95,28 +84,22 @@ struct LibrarySidebarView: View {
                             activeSheet = .groups
                         } label: {
                             SidebarItemRow(
-                                localizedTitle: "sidebar.manageGroups",
-                                systemImage: "folder.badge.gearshape"
+                                localizedTitle: "sidebar.manageGroups"
                             )
                         }
                         .buttonStyle(.plain)
-                        .padding(.top, 10)
                     }
-                    .padding(.bottom, 16)
+                    .padding(.bottom, SidebarStyle.groupHeaderHeight)
                 }
 
-                Divider()
-                    .background(SidebarStyle.rowBackground)
+                sectionGap
 
                 Button {
                     activeSheet = .settings
                 } label: {
                     SidebarItemRow(
-                        localizedTitle: "settings.title",
-                        systemImage: "gearshape"
+                        localizedTitle: "settings.title"
                     )
-                    .padding(.vertical, 10)
-                    .padding(.bottom, 8)
                 }
                 .buttonStyle(.plain)
             }
@@ -171,13 +154,12 @@ struct LibrarySidebarView: View {
     }
 
     private var displayControls: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 0) {
             Button {
                 toggleSortOrder()
             } label: {
                 SidebarItemRow(
-                    localizedTitle: librarySettings.sortOrder.sidebarTitle,
-                    systemImage: "arrow.up.arrow.down"
+                    localizedTitle: librarySettings.sortOrder.sidebarTitle
                 )
             }
             .buttonStyle(.plain)
@@ -186,14 +168,28 @@ struct LibrarySidebarView: View {
                 toggleViewMode()
             } label: {
                 SidebarItemRow(
-                    localizedTitle: librarySettings.viewMode.sidebarTitle,
-                    systemImage: librarySettings.viewMode == .list ? "list.bullet" : "square.grid.2x2"
+                    localizedTitle: librarySettings.viewMode.toggleTargetTitle
                 )
             }
             .buttonStyle(.plain)
         }
-        .padding(.top, 18)
-        .padding(.bottom, 10)
+        .padding(.top, SidebarStyle.groupHeaderHeight)
+        .background(SidebarStyle.background)
+    }
+
+    private var groupHeader: some View {
+        Text("sidebar.groups.section")
+            .font(.footnote.weight(.semibold))
+            .foregroundColor(SidebarStyle.secondaryText)
+            .frame(maxWidth: .infinity, minHeight: SidebarStyle.groupHeaderHeight, alignment: .bottomLeading)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 6)
+            .background(SidebarStyle.background)
+    }
+
+    private var sectionGap: some View {
+        SidebarStyle.background
+            .frame(height: SidebarStyle.groupHeaderHeight)
     }
 
     private func groupTitle(_ group: BookGroup) -> String {
@@ -255,48 +251,47 @@ struct SidebarItemRow: View {
     }
 
     private let title: Title
-    let systemImage: String
     let isSelected: Bool
 
     init(
         localizedTitle: LocalizedStringKey,
-        systemImage: String,
         isSelected: Bool = false
     ) {
         self.title = .localized(localizedTitle)
-        self.systemImage = systemImage
         self.isSelected = isSelected
     }
 
     init(
         verbatimTitle: String,
-        systemImage: String,
         isSelected: Bool = false
     ) {
         self.title = .verbatim(verbatimTitle)
-        self.systemImage = systemImage
         self.isSelected = isSelected
     }
 
     var body: some View {
-        Label {
+        HStack(spacing: 12) {
             titleText
                 .font(.body.weight(.medium))
                 .foregroundColor(SidebarStyle.primaryText)
                 .lineLimit(1)
-        } icon: {
-            Image(systemName: systemImage)
-                .font(.system(size: 19, weight: .regular))
-                .foregroundColor(SidebarStyle.icon)
-                .frame(width: 28)
+
+            Spacer(minLength: 12)
+
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundColor(SidebarStyle.primaryText)
+            }
         }
-        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .padding(.horizontal, 24)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? SidebarStyle.selectedRowBackground : SidebarStyle.rowBackground)
-                .padding(.horizontal, 12)
-        )
+        .frame(maxWidth: .infinity, minHeight: SidebarStyle.itemHeight, alignment: .leading)
+        .background(SidebarStyle.rowBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(SidebarStyle.separator)
+                .frame(height: 0.5)
+        }
         .contentShape(Rectangle())
     }
 
@@ -625,12 +620,12 @@ private extension LibrarySettings.ViewMode {
         }
     }
 
-    var sidebarTitle: LocalizedStringKey {
+    var toggleTargetTitle: LocalizedStringKey {
         switch self {
         case .list:
-            return "settings.viewMode.listMode"
-        case .grid:
             return "settings.viewMode.gridMode"
+        case .grid:
+            return "settings.viewMode.listMode"
         }
     }
 }
