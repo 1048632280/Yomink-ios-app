@@ -56,6 +56,20 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let settingsButton = UIButton(type: .system)
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
+    private enum Layout {
+        static let readerHorizontalInset: CGFloat = 24
+        static let readerVerticalInset: CGFloat = 28
+        static let topBarContentHeight: CGFloat = 52
+        static let topBarButtonBottomInset: CGFloat = 8
+        static let bottomBarTopInset: CGFloat = 12
+        static let bottomBarSafeAreaInset: CGFloat = 10
+        static let bottomBarHorizontalInset: CGFloat = 18
+        static let bottomBarRowSpacing: CGFloat = 8
+        static let progressRowHeight: CGFloat = 32
+        static let bottomActionRowHeight: CGFloat = 34
+        static let chapterButtonWidth: CGFloat = 44
+    }
+
     private var book: Book
     private var chapters: [Chapter] = []
     private var currentChapterIndex = 0
@@ -187,10 +201,22 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         view.addSubview(textView)
 
         NSLayoutConstraint.activate([
-            textView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 24),
-            textView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -24),
-            textView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 28),
-            textView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -28)
+            textView.leadingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: Layout.readerHorizontalInset
+            ),
+            textView.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.readerHorizontalInset
+            ),
+            textView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: Layout.readerVerticalInset
+            ),
+            textView.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.readerVerticalInset
+            )
         ])
     }
 
@@ -228,10 +254,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             topBar.topAnchor.constraint(equalTo: view.topAnchor),
-            topBar.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 52),
+            topBar.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: Layout.topBarContentHeight
+            ),
 
-            closeButton.leadingAnchor.constraint(equalTo: topBar.contentView.leadingAnchor, constant: 12),
-            closeButton.bottomAnchor.constraint(equalTo: topBar.contentView.bottomAnchor, constant: -8),
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            closeButton.bottomAnchor.constraint(
+                equalTo: topBar.contentView.bottomAnchor,
+                constant: -Layout.topBarButtonBottomInset
+            ),
             closeButton.widthAnchor.constraint(equalToConstant: 44),
             closeButton.heightAnchor.constraint(equalToConstant: 36),
 
@@ -239,7 +271,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 8),
 
             spacer.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
-            spacer.trailingAnchor.constraint(equalTo: topBar.contentView.trailingAnchor, constant: -12),
+            spacer.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
             spacer.widthAnchor.constraint(equalTo: closeButton.widthAnchor)
         ])
     }
@@ -318,24 +350,54 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            bottomBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -132),
 
-            progressRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
-            progressRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
-            progressRow.topAnchor.constraint(equalTo: bottomBar.contentView.topAnchor, constant: 12),
-            progressRow.heightAnchor.constraint(equalToConstant: 32),
+            progressRow.topAnchor.constraint(
+                equalTo: bottomBar.topAnchor,
+                constant: Layout.bottomBarTopInset
+            ),
+            progressRow.leadingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: Layout.bottomBarHorizontalInset
+            ),
+            progressRow.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.bottomBarHorizontalInset
+            ),
+            progressRow.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
 
-            previousChapterButton.widthAnchor.constraint(equalToConstant: 44),
-            nextChapterButton.widthAnchor.constraint(equalToConstant: 44),
+            previousChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
+            nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
 
-            progressLabel.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
-            progressLabel.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
-            progressLabel.topAnchor.constraint(equalTo: progressRow.bottomAnchor, constant: 8),
+            progressLabel.leadingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: Layout.bottomBarHorizontalInset
+            ),
+            progressLabel.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.bottomBarHorizontalInset
+            ),
+            progressLabel.topAnchor.constraint(
+                equalTo: progressRow.bottomAnchor,
+                constant: Layout.bottomBarRowSpacing
+            ),
 
-            actionRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 18),
-            actionRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -18),
-            actionRow.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 8),
-            actionRow.heightAnchor.constraint(equalToConstant: 34)
+            actionRow.leadingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
+                constant: Layout.bottomBarHorizontalInset
+            ),
+            actionRow.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.bottomBarHorizontalInset
+            ),
+            actionRow.topAnchor.constraint(
+                equalTo: progressLabel.bottomAnchor,
+                constant: Layout.bottomBarRowSpacing
+            ),
+            actionRow.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.bottomBarSafeAreaInset
+            ),
+            actionRow.heightAnchor.constraint(equalToConstant: Layout.bottomActionRowHeight)
         ])
     }
 

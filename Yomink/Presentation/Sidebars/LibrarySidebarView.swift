@@ -60,6 +60,7 @@ struct LibrarySidebarView: View {
                     systemImage: "gearshape"
                 )
                 .padding(.vertical, 10)
+                .padding(.bottom, 8)
             }
             .navigationBarHidden(true)
             .background(Color(.systemGray6))
@@ -83,7 +84,7 @@ struct LibrarySidebarView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.top, 24)
+        .padding(.top, 18)
         .padding(.bottom, 16)
         .background(Color(.systemGray6))
     }

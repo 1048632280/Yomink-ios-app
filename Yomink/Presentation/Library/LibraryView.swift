@@ -14,9 +14,13 @@ struct LibraryView: View {
     var body: some View {
         GeometryReader { proxy in
             let drawerWidth = drawerWidth(for: proxy.size)
+            let safeAreaInsets = proxy.safeAreaInsets
 
             ZStack {
-                drawerRevealLayer(width: drawerWidth)
+                drawerRevealLayer(
+                    width: drawerWidth,
+                    safeAreaInsets: safeAreaInsets
+                )
 
                 mainSurface(width: drawerWidth)
                     .offset(x: mainOffset(width: drawerWidth))
@@ -28,12 +32,18 @@ struct LibraryView: View {
     }
 
     @ViewBuilder
-    private func drawerRevealLayer(width: CGFloat) -> some View {
+    private func drawerRevealLayer(
+        width: CGFloat,
+        safeAreaInsets: EdgeInsets
+    ) -> some View {
         ZStack {
             if activeDrawer == .left {
                 HStack(spacing: 0) {
                     drawerView(for: .left)
                         .frame(width: width)
+                        .padding(.top, safeAreaInsets.top)
+                        .padding(.bottom, safeAreaInsets.bottom)
+                        .background(Color(.systemGray6))
                         .offset(x: isDrawerOpen ? 0 : -width * 0.18)
                         .allowsHitTesting(isDrawerOpen)
 
@@ -47,6 +57,9 @@ struct LibraryView: View {
 
                     drawerView(for: .right)
                         .frame(width: width)
+                        .padding(.top, safeAreaInsets.top)
+                        .padding(.bottom, safeAreaInsets.bottom)
+                        .background(Color(.systemGray6))
                         .offset(x: isDrawerOpen ? 0 : width * 0.18)
                         .allowsHitTesting(isDrawerOpen)
                 }

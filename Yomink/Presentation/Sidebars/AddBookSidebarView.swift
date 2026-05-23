@@ -50,7 +50,7 @@ struct AddBookSidebarView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.top, 24)
+        .padding(.top, 18)
         .padding(.bottom, 16)
         .background(Color(.systemGray6))
     }
