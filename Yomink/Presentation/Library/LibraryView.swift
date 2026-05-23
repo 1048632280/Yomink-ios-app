@@ -104,58 +104,7 @@ struct LibraryView: View {
             .navigationTitle(navigationTitleKey)
             .disabled(viewModel.isImporting)
             .toolbar {
-                if viewModel.isSelecting {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            viewModel.exitSelection()
-                        } label: {
-                            Label {
-                                Text("library.selection.exit")
-                            } icon: {
-                                Image(systemName: "xmark")
-                            }
-                        }
-                        .accessibilityLabel(Text("library.selection.exit"))
-                    }
-
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Text(viewModel.selectionCountText)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundColor(.secondary)
-                    }
-                } else {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            openDrawer(.left)
-                        } label: {
-                            Image(systemName: "folder")
-                        }
-                        .accessibilityLabel(Text("library.sidebar.open"))
-                    }
-
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        Button {
-                            activeSheet = .search
-                        } label: {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        .accessibilityLabel(Text("library.search.open"))
-
-                        Button {
-                            viewModel.toggleViewModeIfReady(repository: currentRepository)
-                        } label: {
-                            Image(systemName: viewModel.settings.viewMode == .list ? "square.grid.2x2" : "list.bullet")
-                        }
-                        .accessibilityLabel(Text("library.viewMode.toggle"))
-
-                        Button {
-                            openDrawer(.right)
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .accessibilityLabel(Text("library.add.open"))
-                    }
-                }
+                libraryToolbarContent
             }
             .sheet(
                 item: $activeSheet,
@@ -252,6 +201,62 @@ struct LibraryView: View {
             }
         }
         .navigationViewStyle(.stack)
+    }
+
+    @ToolbarContentBuilder
+    private var libraryToolbarContent: some ToolbarContent {
+        if viewModel.isSelecting {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    viewModel.exitSelection()
+                } label: {
+                    Label {
+                        Text("library.selection.exit")
+                    } icon: {
+                        Image(systemName: "xmark")
+                    }
+                }
+                .accessibilityLabel(Text("library.selection.exit"))
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Text(viewModel.selectionCountText)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundColor(.secondary)
+            }
+        } else {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button {
+                    openDrawer(.left)
+                } label: {
+                    Image(systemName: "folder")
+                }
+                .accessibilityLabel(Text("library.sidebar.open"))
+            }
+
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button {
+                    activeSheet = .search
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                }
+                .accessibilityLabel(Text("library.search.open"))
+
+                Button {
+                    viewModel.toggleViewModeIfReady(repository: currentRepository)
+                } label: {
+                    Image(systemName: viewModel.settings.viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                }
+                .accessibilityLabel(Text("library.viewMode.toggle"))
+
+                Button {
+                    openDrawer(.right)
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .accessibilityLabel(Text("library.add.open"))
+            }
+        }
     }
 
     private var currentRepository: (any LibraryRepository)? {
