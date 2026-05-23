@@ -1466,17 +1466,21 @@ private struct GlobalBookSearchView: View {
     @State private var results: [Book] = []
     @State private var historyItems: [SearchHistoryItem] = []
     @State private var errorMessage: String?
+    @FocusState private var isSearchFieldFocused: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
+                    .font(.system(size: 15, weight: .regular))
                     .foregroundColor(.secondary)
 
                 TextField("search.field.placeholder", text: $keyword)
+                    .font(.body)
                     .textInputAutocapitalization(.never)
                     .disableAutocorrection(true)
                     .submitLabel(.search)
+                    .focused($isSearchFieldFocused)
                     .onSubmit {
                         performSearch()
                     }
@@ -1487,14 +1491,16 @@ private struct GlobalBookSearchView: View {
                         results = []
                     } label: {
                         Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 16, weight: .regular))
                             .foregroundColor(.secondary)
                     }
                     .accessibilityLabel(Text("search.clearInput"))
                 }
             }
-            .padding(12)
-            .background(Color(.secondarySystemBackground))
-            .cornerRadius(8)
+            .padding(.horizontal, 10)
+            .frame(height: SearchBarStyle.height)
+            .background(Color(.systemGray5))
+            .clipShape(RoundedRectangle(cornerRadius: SearchBarStyle.cornerRadius, style: .continuous))
 
             if !historyItems.isEmpty {
                 historySection
@@ -1507,6 +1513,9 @@ private struct GlobalBookSearchView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task {
             await reloadHistory()
+        }
+        .onAppear {
+            focusSearchField()
         }
         .alert(
             "search.error.title",
@@ -1648,6 +1657,17 @@ private struct GlobalBookSearchView: View {
             }
         }
     }
+
+    private func focusSearchField() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+            isSearchFieldFocused = true
+        }
+    }
+}
+
+private enum SearchBarStyle {
+    static let height: CGFloat = 36
+    static let cornerRadius: CGFloat = 10
 }
 
 private struct ExportPayload: Identifiable {

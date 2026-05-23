@@ -214,15 +214,14 @@ struct ReadingHistoryPage: View {
             Color(.systemGray6)
                 .ignoresSafeArea()
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    if historyItems.isEmpty {
-                        Text("history.empty.message")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.rowHeight)
-                            .background(Color.white)
-                    } else {
+            if historyItems.isEmpty {
+                Text("history.empty.message")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
                         ForEach(historyItems) { item in
                             Button {
                                 onOpenBook(item.book)
@@ -232,10 +231,10 @@ struct ReadingHistoryPage: View {
                             .buttonStyle(.plain)
                         }
                     }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                .background(Color(.systemGray6))
             }
-            .background(Color(.systemGray6))
         }
         .navigationBarBackButtonHidden(true)
         .background(InteractivePopGestureRestorer())
@@ -600,26 +599,21 @@ private struct DedicatedHistoryRow: View {
     let item: ReadingHistoryItem
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        HStack(spacing: 12) {
             Text(verbatim: item.book.title)
                 .font(.body)
                 .foregroundColor(.primary)
                 .lineLimit(1)
 
-            HStack(spacing: 6) {
-                if let chapterTitle = item.chapterTitle {
-                    Text(verbatim: chapterTitle)
-                        .lineLimit(1)
-                }
+            Spacer(minLength: 12)
 
-                Text(historyDateText)
-                    .lineLimit(1)
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
+            Text(historyDateText)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.rowHeight, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.compactRowHeight, alignment: .leading)
         .background(Color.white)
         .overlay(alignment: .bottom) {
             DedicatedPageStyle.separator
@@ -640,6 +634,7 @@ private struct DedicatedHistoryRow: View {
 
 private enum DedicatedPageStyle {
     static let rowHeight: CGFloat = 54
+    static let compactRowHeight: CGFloat = 44
 
     static var separator: some View {
         Rectangle()
