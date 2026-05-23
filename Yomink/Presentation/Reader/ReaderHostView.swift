@@ -73,6 +73,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var saveGeneration = 0
     private var settingsSaveGeneration = 0
     private var settingsRenderGeneration = 0
+    private var settingsRenderNeedsTrailingRender = false
     private var paginateGeneration = 0
     private var prefetchGeneration = 0
     private var readerSettings = ReaderSettings.default
@@ -1014,6 +1015,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             chapterOffset: Int64(pageStartByteOffset),
             globalProgress: globalProgress
         )
+
+        if !isTrackingProgressSlider {
+            progressSlider.value = Float(globalProgress)
+        }
     }
 
     private func progressText(
@@ -1094,17 +1099,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
 
         let anchorByteOffset = currentDisplayByteOffset()
-        let isFontOnlyChange = oldSettings.pageMode == normalizedSettings.pageMode
-            && oldSettings.theme == normalizedSettings.theme
-            && oldSettings.fontSize != normalizedSettings.fontSize
+        let requiresImmediateRerender = oldSettings.pageMode != normalizedSettings.pageMode
+            || oldSettings.theme != normalizedSettings.theme
         readerSettings = normalizedSettings
         invalidatePrefetch()
         applyTheme()
-        if isFontOnlyChange {
-            scheduleSettingsRender()
-        } else {
+        if requiresImmediateRerender {
             cancelSettingsRender()
             renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
+        } else {
+            scheduleSettingsRender(anchorByteOffset: anchorByteOffset)
         }
         scheduleSettingsSave()
     }
@@ -1116,10 +1120,19 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         prefetchingChapterID = nil
     }
 
-    private func scheduleSettingsRender() {
+    private func scheduleSettingsRender(anchorByteOffset: Int) {
+        let shouldRenderImmediately = settingsRenderTask == nil
         settingsRenderGeneration += 1
         let generation = settingsRenderGeneration
         settingsRenderTask?.cancel()
+
+        if shouldRenderImmediately {
+            settingsRenderNeedsTrailingRender = false
+            renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
+        } else {
+            settingsRenderNeedsTrailingRender = true
+        }
+
         settingsRenderTask = Task { [weak self] in
             do {
                 try await Task.sleep(nanoseconds: 250_000_000)
@@ -1136,6 +1149,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
 
         settingsRenderTask = nil
+        guard settingsRenderNeedsTrailingRender else {
+            return
+        }
+
+        settingsRenderNeedsTrailingRender = false
         renderContent(
             anchorByteOffset: currentDisplayByteOffset(),
             savingProgress: false
@@ -1146,6 +1164,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         settingsRenderGeneration += 1
         settingsRenderTask?.cancel()
         settingsRenderTask = nil
+        settingsRenderNeedsTrailingRender = false
     }
 
     private func scheduleSettingsSave() {
