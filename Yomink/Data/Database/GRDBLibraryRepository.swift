@@ -9,8 +9,52 @@ struct GRDBLibraryRepository: LibraryRepository {
         self.database = database
     }
 
-    func fetchBooks() async throws -> [Book] {
+    func fetchBooks(
+        scope: LibraryScope = .all,
+        sortOrder: LibrarySettings.SortOrder = .lastReadAt
+    ) async throws -> [Book] {
         try await database.writer.read { db in
+            var sql = """
+            SELECT
+                books.*,
+                COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
+            FROM books
+            LEFT JOIN reading_progress
+                ON reading_progress.bookId = books.id
+            """
+            let arguments: StatementArguments
+
+            switch scope {
+            case .all:
+                arguments = []
+                break
+            case .ungrouped:
+                sql += "\nWHERE books.groupId IS NULL"
+                arguments = []
+            case let .group(groupID):
+                sql += "\nWHERE books.groupId = ?"
+                arguments = [groupID.uuidString]
+            }
+
+            switch sortOrder {
+            case .lastReadAt:
+                sql += "\nORDER BY books.lastReadAt DESC, books.importedAt DESC"
+            case .importedAt:
+                sql += "\nORDER BY books.importedAt DESC"
+            }
+
+            let rows = try Row.fetchAll(db, sql: sql, arguments: arguments)
+            return rows.compactMap(Book.init(row:))
+        }
+    }
+
+    func searchBooks(keyword: String) async throws -> [Book] {
+        let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedKeyword.isEmpty else {
+            return []
+        }
+
+        return try await database.writer.read { db in
             let rows = try Row.fetchAll(
                 db,
                 sql: """
@@ -20,10 +64,57 @@ struct GRDBLibraryRepository: LibraryRepository {
                 FROM books
                 LEFT JOIN reading_progress
                     ON reading_progress.bookId = books.id
+                WHERE books.title LIKE ? ESCAPE '\\'
                 ORDER BY books.lastReadAt DESC, books.importedAt DESC
-                """
+                """,
+                arguments: [Self.likePattern(for: normalizedKeyword)]
             )
             return rows.compactMap(Book.init(row:))
+        }
+    }
+
+    func fetchSearchHistory() async throws -> [SearchHistoryItem] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, keyword, createdAt
+                FROM search_history
+                ORDER BY createdAt DESC
+                LIMIT 20
+                """
+            )
+            return rows.compactMap(SearchHistoryItem.init(row:))
+        }
+    }
+
+    func saveSearchKeyword(_ keyword: String) async throws {
+        let normalizedKeyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedKeyword.isEmpty else {
+            return
+        }
+
+        try await database.writer.write { db in
+            let now = DatabaseDateFormatter.string(from: Date())
+            try db.execute(
+                sql: """
+                INSERT INTO search_history (id, keyword, createdAt)
+                VALUES (?, ?, ?)
+                ON CONFLICT(keyword) DO UPDATE SET
+                    createdAt = excluded.createdAt
+                """,
+                arguments: [
+                    UUID().uuidString,
+                    normalizedKeyword,
+                    now
+                ]
+            )
+        }
+    }
+
+    func clearSearchHistory() async throws {
+        try await database.writer.write { db in
+            try db.execute(sql: "DELETE FROM search_history")
         }
     }
 
@@ -33,6 +124,84 @@ struct GRDBLibraryRepository: LibraryRepository {
                 .order(Column("sortOrder"), Column("createdAt"))
                 .fetchAll(db)
             return records.compactMap(BookGroup.init(record:))
+        }
+    }
+
+    func createGroup(name: String) async throws -> BookGroup {
+        let trimmedName = Self.normalizedGroupName(name)
+        let id = UUID()
+        let createdAt = Date()
+
+        return try await database.writer.write { db in
+            let nextSortOrder = (try Int.fetchOne(
+                db,
+                sql: "SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM book_groups"
+            ) ?? 0)
+            let record = BookGroupRecord(
+                id: id.uuidString,
+                name: trimmedName,
+                sortOrder: nextSortOrder,
+                createdAt: DatabaseDateFormatter.string(from: createdAt)
+            )
+            try record.insert(db)
+            return BookGroup(
+                id: id,
+                name: trimmedName,
+                sortOrder: nextSortOrder
+            )
+        }
+    }
+
+    func renameGroup(id: UUID, name: String) async throws {
+        let trimmedName = Self.normalizedGroupName(name)
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE book_groups
+                SET name = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    trimmedName,
+                    id.uuidString
+                ]
+            )
+        }
+    }
+
+    func deleteGroup(id: UUID) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE books
+                SET groupId = NULL
+                WHERE groupId = ?
+                """,
+                arguments: [id.uuidString]
+            )
+            try BookGroupRecord.deleteOne(db, key: id.uuidString)
+        }
+    }
+
+    func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws {
+        guard !ids.isEmpty else {
+            return
+        }
+
+        try await database.writer.write { db in
+            for bookID in ids {
+                try db.execute(
+                    sql: """
+                    UPDATE books
+                    SET groupId = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [
+                        groupID?.uuidString,
+                        bookID.uuidString
+                    ]
+                )
+            }
         }
     }
 
@@ -94,6 +263,79 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func fetchReadingHistory(limit: Int) async throws -> [ReadingHistoryItem] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT
+                    reading_history.id AS historyId,
+                    reading_history.offset,
+                    reading_history.readAt,
+                    chapters.title AS chapterTitle,
+                    books.*,
+                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
+                FROM reading_history
+                INNER JOIN books
+                    ON books.id = reading_history.bookId
+                LEFT JOIN chapters
+                    ON chapters.id = reading_history.chapterId
+                LEFT JOIN reading_progress
+                    ON reading_progress.bookId = books.id
+                ORDER BY reading_history.readAt DESC
+                LIMIT ?
+                """,
+                arguments: [max(limit, 1)]
+            )
+            return rows.compactMap(ReadingHistoryItem.init(row:))
+        }
+    }
+
+    func fetchLibrarySettings() async throws -> LibrarySettings {
+        try await database.writer.read { db in
+            guard let value = try String.fetchOne(
+                db,
+                sql: """
+                SELECT value
+                FROM app_settings
+                WHERE key = ?
+                """,
+                arguments: [LibrarySettings.storageKey]
+            ) else {
+                return .default
+            }
+
+            guard let data = value.data(using: .utf8) else {
+                return .default
+            }
+
+            return (try? JSONDecoder().decode(LibrarySettings.self, from: data))
+                ?? .default
+        }
+    }
+
+    func saveLibrarySettings(_ settings: LibrarySettings) async throws {
+        let data = try JSONEncoder().encode(settings)
+        guard let value = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO app_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value
+                """,
+                arguments: [
+                    LibrarySettings.storageKey,
+                    value
+                ]
+            )
+        }
+    }
+
     func fetchReaderSettings() async throws -> ReaderSettings {
         try await database.writer.read { db in
             guard let value = try String.fetchOne(
@@ -142,6 +384,19 @@ struct GRDBLibraryRepository: LibraryRepository {
 
     func markBookOpened(id: UUID, at date: Date) async throws {
         try await database.writer.write { db in
+            let progressRow = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT chapterId, chapterOffset
+                FROM reading_progress
+                WHERE bookId = ?
+                """,
+                arguments: [id.uuidString]
+            )
+            let chapterID: String? = progressRow?["chapterId"]
+            let chapterOffset: Int64 = progressRow?["chapterOffset"] ?? 0
+            let dateString = DatabaseDateFormatter.string(from: date)
+
             try db.execute(
                 sql: """
                 UPDATE books
@@ -149,8 +404,22 @@ struct GRDBLibraryRepository: LibraryRepository {
                 WHERE id = ?
                 """,
                 arguments: [
-                    DatabaseDateFormatter.string(from: date),
+                    dateString,
                     id.uuidString
+                ]
+            )
+
+            try db.execute(
+                sql: """
+                INSERT INTO reading_history (id, bookId, chapterId, offset, readAt)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    UUID().uuidString,
+                    id.uuidString,
+                    chapterID,
+                    chapterOffset,
+                    dateString
                 ]
             )
         }
@@ -227,6 +496,19 @@ struct GRDBLibraryRepository: LibraryRepository {
         _ = try await database.writer.write { db in
             try BookRecord.deleteOne(db, key: id.uuidString)
         }
+    }
+
+    private static func normalizedGroupName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("sidebar.untitledGroup", comment: "") : trimmed
+    }
+
+    private static func likePattern(for keyword: String) -> String {
+        let escaped = keyword
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+        return "%\(escaped)%"
     }
 }
 
@@ -328,6 +610,49 @@ private extension ReadingProgress {
             chapterID: chapterIDString.flatMap(UUID.init(uuidString:)),
             chapterOffset: row["chapterOffset"],
             globalProgress: row["globalProgress"]
+        )
+    }
+}
+
+private extension SearchHistoryItem {
+    init?(row: Row) {
+        let idString: String = row["id"]
+        let createdAtString: String = row["createdAt"]
+
+        guard
+            let id = UUID(uuidString: idString),
+            let createdAt = DatabaseDateFormatter.date(from: createdAtString)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            keyword: row["keyword"],
+            createdAt: createdAt
+        )
+    }
+}
+
+private extension ReadingHistoryItem {
+    init?(row: Row) {
+        let idString: String = row["historyId"]
+        let readAtString: String = row["readAt"]
+
+        guard
+            let id = UUID(uuidString: idString),
+            let readAt = DatabaseDateFormatter.date(from: readAtString),
+            let book = Book(row: row)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            book: book,
+            chapterTitle: row["chapterTitle"],
+            offset: row["offset"],
+            readAt: readAt
         )
     }
 }

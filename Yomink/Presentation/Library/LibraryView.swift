@@ -10,6 +10,8 @@ struct LibraryView: View {
     @State private var activeReaderBook: Book?
     @State private var isImportPickerPresented = false
     @State private var isDrawerOpen = false
+    @State private var selectedScope: LibraryScope = .all
+    @State private var exportPayload: ExportPayload?
 
     var body: some View {
         GeometryReader { proxy in
@@ -97,32 +99,60 @@ struct LibraryView: View {
                     importingOverlay
                 }
             }
-            .navigationTitle("library.title")
+            .navigationTitle(navigationTitleKey)
             .disabled(viewModel.isImporting)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        openDrawer(.left)
-                    } label: {
-                        Image(systemName: "folder")
+                if viewModel.isSelecting {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            viewModel.exitSelection()
+                        } label: {
+                            Label {
+                                Text("library.selection.exit")
+                            } icon: {
+                                Image(systemName: "xmark")
+                            }
+                        }
+                        .accessibilityLabel(Text("library.selection.exit"))
                     }
-                    .accessibilityLabel(Text("library.sidebar.open"))
-                }
 
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        activeSheet = .search
-                    } label: {
-                        Image(systemName: "magnifyingglass")
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Text(viewModel.selectionCountText)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(.secondary)
                     }
-                    .accessibilityLabel(Text("library.search.open"))
+                } else {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            openDrawer(.left)
+                        } label: {
+                            Image(systemName: "folder")
+                        }
+                        .accessibilityLabel(Text("library.sidebar.open"))
+                    }
 
-                    Button {
-                        openDrawer(.right)
-                    } label: {
-                        Image(systemName: "plus")
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        Button {
+                            activeSheet = .search
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .accessibilityLabel(Text("library.search.open"))
+
+                        Button {
+                            viewModel.toggleViewModeIfReady(repository: currentRepository)
+                        } label: {
+                            Image(systemName: viewModel.settings.viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                        }
+                        .accessibilityLabel(Text("library.viewMode.toggle"))
+
+                        Button {
+                            openDrawer(.right)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel(Text("library.add.open"))
                     }
-                    .accessibilityLabel(Text("library.add.open"))
                 }
             }
             .sheet(
@@ -131,7 +161,10 @@ struct LibraryView: View {
             ) { sheet in
                 switch sheet {
                 case .search:
-                    GlobalSearchPlaceholderView()
+                    GlobalBookSearchView(repository: currentRepository) { book in
+                        activeSheet = nil
+                        activeReaderBook = book
+                    }
                 }
             }
             .fullScreenCover(
@@ -159,17 +192,24 @@ struct LibraryView: View {
                     viewModel.handleImportResult(
                         result,
                         importService: services.importService,
-                        repository: services.libraryRepository
+                        repository: services.libraryRepository,
+                        scope: selectedScope
                     )
                 }
                 .frame(width: 0, height: 0)
+            }
+            .sheet(item: $exportPayload) { payload in
+                ActivityPresenter(activityItems: payload.urls.map { $0 as Any })
             }
             .onChange(of: isImportPickerPresented) { isPresented in
                 guard case let .ready(services) = environment.bootstrapState else {
                     return
                 }
                 if !isPresented {
-                    viewModel.loadIfNeededAfterPickerDismissal(repository: services.libraryRepository)
+                    viewModel.loadIfNeededAfterPickerDismissal(
+                        repository: services.libraryRepository,
+                        scope: selectedScope
+                    )
                 }
             }
             .alert(
@@ -191,16 +231,40 @@ struct LibraryView: View {
             }
             .refreshable {
                 if case let .ready(services) = environment.bootstrapState {
-                    await viewModel.loadBooks(repository: services.libraryRepository)
+                    await viewModel.loadBooks(
+                        repository: services.libraryRepository,
+                        scope: selectedScope
+                    )
                 }
             }
             .task(id: bootstrapTaskID) {
                 if case let .ready(services) = environment.bootstrapState {
-                    await viewModel.loadBooks(repository: services.libraryRepository)
+                    await viewModel.bootstrap(
+                        repository: services.libraryRepository,
+                        scope: selectedScope
+                    )
                 }
             }
         }
         .navigationViewStyle(.stack)
+    }
+
+    private var currentRepository: (any LibraryRepository)? {
+        switch environment.bootstrapState {
+        case let .ready(services):
+            return services.libraryRepository
+        case .failed:
+            return nil
+        }
+    }
+
+    private var currentFileStore: AppFileStore? {
+        switch environment.bootstrapState {
+        case let .ready(services):
+            return services.fileStore
+        case .failed:
+            return nil
+        }
     }
 
     @ViewBuilder
@@ -208,14 +272,38 @@ struct LibraryView: View {
         switch side {
         case .left:
             if case let .ready(services) = environment.bootstrapState {
-                LibrarySidebarView(repository: services.libraryRepository)
+                LibrarySidebarView(
+                    repository: services.libraryRepository,
+                    selectedScope: selectedScope,
+                    settings: viewModel.settings
+                ) { scope in
+                    selectedScope = scope
+                    viewModel.exitSelection()
+                    closeDrawer()
+                    reloadBooks(for: scope)
+                } onGroupsChanged: {
+                    reloadBooksIfReady()
+                } onSettingsChanged: { settings in
+                    viewModel.applyLibrarySettings(settings)
+                    reloadBooksIfReady()
+                }
             } else {
-                LibrarySidebarView()
+                LibrarySidebarView(
+                    selectedScope: selectedScope,
+                    settings: viewModel.settings
+                )
             }
         case .right:
-            AddBookSidebarView {
-                requestImportFromDrawer()
-            }
+            AddBookSidebarView(
+                repository: currentRepository,
+                onImportFromFile: {
+                    requestImportFromDrawer()
+                },
+                onOpenBook: { book in
+                    closeDrawer()
+                    activeReaderBook = book
+                }
+            )
         }
     }
 
@@ -231,17 +319,105 @@ struct LibraryView: View {
             if viewModel.books.isEmpty {
                 emptyShelfView
             } else {
-                bookListView
+                VStack(spacing: 12) {
+                    shelfHeader
+                    shelfContentView
+                    if viewModel.isSelecting {
+                        selectionActionBar
+                    }
+                }
             }
+        }
+    }
+
+    private var navigationTitleKey: LocalizedStringKey {
+        viewModel.isSelecting ? "library.selection.title" : "library.title"
+    }
+
+    @ViewBuilder
+    private var shelfContentView: some View {
+        switch viewModel.settings.viewMode {
+        case .list:
+            bookListView
+        case .grid:
+            bookGridView
+        }
+    }
+
+    private var shelfHeader: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                scopeTitle
+                    .font(.headline)
+                Text(viewModel.bookCountText)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer(minLength: 8)
+
+            Menu {
+                Button {
+                    viewModel.setSortOrder(.lastReadAt, repository: currentRepository) {
+                        reloadBooksIfReady()
+                    }
+                } label: {
+                    Label {
+                        Text("library.sort.lastReadAt")
+                    } icon: {
+                        Image(systemName: "clock")
+                    }
+                }
+
+                Button {
+                    viewModel.setSortOrder(.importedAt, repository: currentRepository) {
+                        reloadBooksIfReady()
+                    }
+                } label: {
+                    Label {
+                        Text("library.sort.importedAt")
+                    } icon: {
+                        Image(systemName: "tray.and.arrow.down")
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .frame(width: 34, height: 34)
+            }
+            .accessibilityLabel(Text("library.sort.menu"))
         }
     }
 
     private var bookListView: some View {
         List(viewModel.books) { book in
-            Button {
-                activeReaderBook = book
-            } label: {
-                BookRowView(book: book)
+            BookShelfItemButton(
+                book: book,
+                isSelecting: viewModel.isSelecting,
+                isSelected: viewModel.selectedBookIDs.contains(book.id),
+                content: {
+                    BookRowView(
+                        book: book,
+                        isSelecting: viewModel.isSelecting,
+                        isSelected: viewModel.selectedBookIDs.contains(book.id)
+                    )
+                },
+                action: {
+                    handleBookTap(book)
+                },
+                longPressAction: {
+                    viewModel.beginSelection(with: book.id)
+                }
+            )
+            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                Button(role: .destructive) {
+                    deleteBooks([book.id])
+                } label: {
+                    Label {
+                        Text("library.delete")
+                    } icon: {
+                        Image(systemName: "trash")
+                    }
+                }
             }
             .buttonStyle(.plain)
             .listRowInsets(
@@ -251,6 +427,113 @@ struct LibraryView: View {
         .listStyle(.plain)
         .padding(.horizontal, -24)
         .padding(.vertical, -24)
+    }
+
+    private var bookGridView: some View {
+        ScrollView {
+            LazyVGrid(
+                columns: [
+                    GridItem(.adaptive(minimum: 142, maximum: 190), spacing: 14)
+                ],
+                spacing: 14
+            ) {
+                ForEach(viewModel.books) { book in
+                    BookShelfItemButton(
+                        book: book,
+                        isSelecting: viewModel.isSelecting,
+                        isSelected: viewModel.selectedBookIDs.contains(book.id),
+                        content: {
+                            BookGridItemView(
+                                book: book,
+                                isSelecting: viewModel.isSelecting,
+                                isSelected: viewModel.selectedBookIDs.contains(book.id)
+                            )
+                        },
+                        action: {
+                            handleBookTap(book)
+                        },
+                        longPressAction: {
+                            viewModel.beginSelection(with: book.id)
+                        }
+                    )
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, viewModel.isSelecting ? 80 : 0)
+        }
+    }
+
+    private var selectionActionBar: some View {
+        HStack(spacing: 12) {
+            Button {
+                viewModel.invertSelection()
+            } label: {
+                Label {
+                    Text("library.selection.invert")
+                } icon: {
+                    Image(systemName: "checkmark.circle")
+                }
+            }
+
+            Menu {
+                Button {
+                    moveSelectedBooks(to: nil)
+                } label: {
+                    Label {
+                        Text("sidebar.ungrouped")
+                    } icon: {
+                        Image(systemName: "tray")
+                    }
+                }
+
+                ForEach(viewModel.groups) { group in
+                    Button {
+                        moveSelectedBooks(to: group.id)
+                    } label: {
+                        Label {
+                            Text(verbatim: group.name)
+                        } icon: {
+                            Image(systemName: "folder")
+                        }
+                    }
+                }
+            } label: {
+                Label {
+                    Text("library.selection.move")
+                } icon: {
+                    Image(systemName: "folder")
+                }
+            }
+            .disabled(viewModel.selectedBookIDs.isEmpty)
+
+            Button {
+                exportSelectedBooks()
+            } label: {
+                Label {
+                    Text("library.selection.export")
+                } icon: {
+                    Image(systemName: "square.and.arrow.up")
+                }
+            }
+            .disabled(viewModel.selectedBookIDs.isEmpty)
+
+            Button(role: .destructive) {
+                deleteBooks(viewModel.selectedBookIDs)
+            } label: {
+                Label {
+                    Text("library.delete")
+                } icon: {
+                    Image(systemName: "trash")
+                }
+            }
+            .disabled(viewModel.selectedBookIDs.isEmpty)
+        }
+        .font(.footnote.weight(.semibold))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial)
+        .cornerRadius(8)
     }
 
     private var emptyShelfView: some View {
@@ -270,7 +553,11 @@ struct LibraryView: View {
             Button {
                 isImportPickerPresented = true
             } label: {
-                Label("add.import.file", systemImage: "square.and.arrow.down")
+                Label {
+                    Text("add.import.file")
+                } icon: {
+                    Image(systemName: "square.and.arrow.down")
+                }
             }
             .buttonStyle(.borderedProminent)
             .padding(.top, 8)
@@ -295,10 +582,24 @@ struct LibraryView: View {
         }
     }
 
+    private var scopeTitle: Text {
+        switch selectedScope {
+        case .all:
+            return Text("sidebar.allBooks")
+        case .ungrouped:
+            return Text("sidebar.ungrouped")
+        case let .group(groupID):
+            if let group = viewModel.groups.first(where: { $0.id == groupID }) {
+                return Text(verbatim: group.name)
+            }
+            return Text("sidebar.allBooks")
+        }
+    }
+
     private var bootstrapTaskID: String {
         switch environment.bootstrapState {
         case .ready:
-            return "ready"
+            return "ready-\(selectedScope.settingsKey)"
         case let .failed(message):
             return "failed-\(message)"
         }
@@ -321,8 +622,74 @@ struct LibraryView: View {
     private func reloadBooksIfReady() {
         if case let .ready(services) = environment.bootstrapState {
             Task {
-                await viewModel.loadBooks(repository: services.libraryRepository)
+                await viewModel.loadBooks(
+                    repository: services.libraryRepository,
+                    scope: selectedScope
+                )
             }
+        }
+    }
+
+    private func reloadBooks(for scope: LibraryScope) {
+        if case let .ready(services) = environment.bootstrapState {
+            Task {
+                await viewModel.loadBooks(
+                    repository: services.libraryRepository,
+                    scope: scope
+                )
+            }
+        }
+    }
+
+    private func handleBookTap(_ book: Book) {
+        if viewModel.isSelecting {
+            viewModel.toggleSelection(for: book.id)
+        } else {
+            activeReaderBook = book
+        }
+    }
+
+    private func moveSelectedBooks(to groupID: UUID?) {
+        guard let repository = currentRepository else {
+            return
+        }
+
+        viewModel.moveSelectedBooks(
+            to: groupID,
+            repository: repository,
+            scope: selectedScope
+        )
+    }
+
+    private func deleteBooks(_ ids: Set<UUID>) {
+        guard let repository = currentRepository,
+              let fileStore = currentFileStore
+        else {
+            return
+        }
+
+        viewModel.deleteBooks(
+            ids: ids,
+            repository: repository,
+            fileStore: fileStore,
+            scope: selectedScope
+        )
+    }
+
+    private func exportSelectedBooks() {
+        guard let fileStore = currentFileStore else {
+            return
+        }
+
+        do {
+            let urls = try viewModel.exportURLs(fileStore: fileStore)
+            guard !urls.isEmpty else {
+                return
+            }
+            exportPayload = ExportPayload(urls: urls)
+            viewModel.exitSelection()
+        } catch {
+            viewModel.importErrorMessage = error.localizedDescription
         }
     }
 
@@ -508,20 +875,88 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
     }
 }
 
+private struct ActivityPresenter: UIViewControllerRepresentable {
+    let activityItems: [Any]
+
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+    }
+
+    func updateUIViewController(
+        _ uiViewController: UIActivityViewController,
+        context: Context
+    ) {
+    }
+}
+
 @MainActor
 private final class LibraryViewModel: ObservableObject {
     @Published var books: [Book] = []
+    @Published var groups: [BookGroup] = []
+    @Published var settings = LibrarySettings.default
+    @Published var selectedBookIDs: Set<UUID> = []
     @Published var isImporting = false
     @Published var importErrorMessage: String?
     private var currentImportTask: Task<Void, Never>?
 
-    func loadBooks(repository: any LibraryRepository) async {
+    var isSelecting: Bool {
+        !selectedBookIDs.isEmpty
+    }
+
+    var selectionCountText: String {
+        String(
+            format: NSLocalizedString("library.selection.count", comment: ""),
+            selectedBookIDs.count
+        )
+    }
+
+    var bookCountText: String {
+        String(
+            format: NSLocalizedString("library.count", comment: ""),
+            books.count
+        )
+    }
+
+    func bootstrap(
+        repository: any LibraryRepository,
+        scope: LibraryScope
+    ) async {
         guard !isImporting else {
             return
         }
 
         do {
-            books = try await repository.fetchBooks()
+            async let fetchedSettings = repository.fetchLibrarySettings()
+            async let fetchedGroups = repository.fetchGroups()
+            settings = try await fetchedSettings
+            groups = try await fetchedGroups
+            books = try await repository.fetchBooks(
+                scope: scope,
+                sortOrder: settings.sortOrder
+            )
+            pruneSelection()
+        } catch {
+            importErrorMessage = error.localizedDescription
+        }
+    }
+
+    func loadBooks(
+        repository: any LibraryRepository,
+        scope: LibraryScope
+    ) async {
+        guard !isImporting else {
+            return
+        }
+
+        do {
+            async let fetchedGroups = repository.fetchGroups()
+            async let fetchedBooks = repository.fetchBooks(
+                scope: scope,
+                sortOrder: settings.sortOrder
+            )
+            groups = try await fetchedGroups
+            books = try await fetchedBooks
+            pruneSelection()
         } catch {
             importErrorMessage = error.localizedDescription
         }
@@ -530,7 +965,8 @@ private final class LibraryViewModel: ObservableObject {
     func handleImportResult(
         _ result: Result<[URL], Error>,
         importService: ImportService,
-        repository: any LibraryRepository
+        repository: any LibraryRepository,
+        scope: LibraryScope
     ) {
         guard !isImporting else {
             return
@@ -544,34 +980,144 @@ private final class LibraryViewModel: ObservableObject {
             importBook(
                 from: url,
                 importService: importService,
-                repository: repository
+                repository: repository,
+                scope: scope
             )
         case let .failure(error):
             importErrorMessage = error.localizedDescription
         }
     }
 
-    func loadIfNeededAfterPickerDismissal(repository: any LibraryRepository) {
+    func loadIfNeededAfterPickerDismissal(
+        repository: any LibraryRepository,
+        scope: LibraryScope
+    ) {
         guard !isImporting else {
             return
         }
 
         Task {
-            await loadBooks(repository: repository)
+            await loadBooks(repository: repository, scope: scope)
         }
+    }
+
+    func beginSelection(with bookID: UUID) {
+        selectedBookIDs = [bookID]
+    }
+
+    func toggleSelection(for bookID: UUID) {
+        if selectedBookIDs.contains(bookID) {
+            selectedBookIDs.remove(bookID)
+        } else {
+            selectedBookIDs.insert(bookID)
+        }
+    }
+
+    func invertSelection() {
+        let visibleIDs = Set(books.map(\.id))
+        selectedBookIDs = visibleIDs.subtracting(selectedBookIDs)
+    }
+
+    func exitSelection() {
+        selectedBookIDs.removeAll()
+    }
+
+    func toggleViewModeIfReady(repository: (any LibraryRepository)?) {
+        let nextMode: LibrarySettings.ViewMode = settings.viewMode == .list ? .grid : .list
+        settings.viewMode = nextMode
+        saveLibrarySettings(repository: repository)
+    }
+
+    func setSortOrder(
+        _ sortOrder: LibrarySettings.SortOrder,
+        repository: (any LibraryRepository)?,
+        onChange: @escaping () -> Void
+    ) {
+        guard settings.sortOrder != sortOrder else {
+            return
+        }
+
+        settings.sortOrder = sortOrder
+        saveLibrarySettings(repository: repository)
+        onChange()
+    }
+
+    func applyLibrarySettings(_ settings: LibrarySettings) {
+        self.settings = settings
+    }
+
+    func moveSelectedBooks(
+        to groupID: UUID?,
+        repository: any LibraryRepository,
+        scope: LibraryScope
+    ) {
+        let ids = selectedBookIDs
+        guard !ids.isEmpty else {
+            return
+        }
+
+        Task {
+            do {
+                try await repository.moveBooks(ids: ids, to: groupID)
+                await loadBooks(repository: repository, scope: scope)
+                exitSelection()
+            } catch {
+                importErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func deleteBooks(
+        ids: Set<UUID>,
+        repository: any LibraryRepository,
+        fileStore: AppFileStore,
+        scope: LibraryScope
+    ) {
+        let ids = ids.filter { id in
+            books.contains(where: { $0.id == id })
+        }
+        guard !ids.isEmpty else {
+            return
+        }
+
+        Task {
+            do {
+                for id in ids {
+                    try fileStore.removeBookFiles(id: id)
+                    try await repository.deleteBook(id: id)
+                }
+                await loadBooks(repository: repository, scope: scope)
+                exitSelection()
+            } catch {
+                importErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    func exportURLs(fileStore: AppFileStore) throws -> [URL] {
+        try books
+            .filter { selectedBookIDs.contains($0.id) }
+            .map { book in
+                try fileStore.url(forRelativePath: book.sourcePath)
+            }
     }
 
     private func importBook(
         from url: URL,
         importService: ImportService,
-        repository: any LibraryRepository
+        repository: any LibraryRepository,
+        scope: LibraryScope
     ) {
         isImporting = true
         currentImportTask = Task {
             do {
                 _ = try await importService.importBook(from: url)
                 try Task.checkCancellation()
-                books = try await repository.fetchBooks()
+                groups = try await repository.fetchGroups()
+                books = try await repository.fetchBooks(
+                    scope: scope,
+                    sortOrder: settings.sortOrder
+                )
                 currentImportTask = nil
             } catch {
                 if !Task.isCancelled {
@@ -585,13 +1131,76 @@ private final class LibraryViewModel: ObservableObject {
             }
         }
     }
+
+    private func saveLibrarySettings(repository: (any LibraryRepository)?) {
+        guard let repository else {
+            return
+        }
+
+        let settings = settings
+        Task {
+            do {
+                try await repository.saveLibrarySettings(settings)
+            } catch {
+                importErrorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func pruneSelection() {
+        let visibleIDs = Set(books.map(\.id))
+        selectedBookIDs.formIntersection(visibleIDs)
+    }
+}
+
+private struct BookShelfItemButton<Content: View>: View {
+    let isSelected: Bool
+    private let content: () -> Content
+    private let action: () -> Void
+    private let longPressAction: () -> Void
+
+    init(
+        book: Book,
+        isSelecting: Bool,
+        isSelected: Bool,
+        @ViewBuilder content: @escaping () -> Content,
+        action: @escaping () -> Void,
+        longPressAction: @escaping () -> Void
+    ) {
+        self.isSelected = isSelected
+        self.content = content
+        self.action = action
+        self.longPressAction = longPressAction
+    }
+
+    var body: some View {
+        Button(action: action) {
+            content()
+        }
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.45)
+                .onEnded { _ in
+                    longPressAction()
+                }
+        )
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
 }
 
 private struct BookRowView: View {
     let book: Book
+    let isSelecting: Bool
+    let isSelected: Bool
 
     var body: some View {
         HStack(spacing: 12) {
+            if isSelecting {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundColor(isSelected ? .accentColor : .secondary)
+                    .frame(width: 24, height: 44)
+            }
+
             Image(systemName: "doc.text")
                 .font(.title3)
                 .foregroundColor(.accentColor)
@@ -616,10 +1225,72 @@ private struct BookRowView: View {
 
             Spacer(minLength: 8)
 
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(.secondary)
+            if !isSelecting {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.secondary)
+            }
         }
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+    }
+
+    private var clampedProgress: Double {
+        min(max(book.progressPercentage, 0), 1)
+    }
+
+    private var progressText: String {
+        NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
+    }
+}
+
+private struct BookGridItemView: View {
+    let book: Book
+    let isSelecting: Bool
+    let isSelected: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack(alignment: .topTrailing) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(.secondarySystemBackground))
+                    .frame(height: 138)
+                    .overlay {
+                        Image(systemName: "doc.text")
+                            .font(.system(size: 42))
+                            .foregroundColor(.accentColor)
+                    }
+
+                if isSelecting {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.title3)
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                        .padding(8)
+                }
+            }
+
+            Text(book.title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .frame(minHeight: 38, alignment: .topLeading)
+
+            ProgressView(value: clampedProgress)
+
+            Text(progressText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color(.systemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.accentColor.opacity(0.5) : Color(.separator), lineWidth: 1)
+        )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
@@ -643,29 +1314,199 @@ private extension NumberFormatter {
     }()
 }
 
-private struct GlobalSearchPlaceholderView: View {
+private struct GlobalBookSearchView: View {
     @Environment(\.dismiss) private var dismiss
+    let repository: (any LibraryRepository)?
+    let onOpenBook: (Book) -> Void
+
+    @State private var keyword = ""
+    @State private var results: [Book] = []
+    @State private var historyItems: [SearchHistoryItem] = []
+    @State private var errorMessage: String?
 
     var body: some View {
         NavigationView {
-            VStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 44))
-                    .foregroundColor(.secondary)
-                Text("search.title")
-                    .font(.headline)
-                Text("search.placeholder.message")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+
+                    TextField("search.field.placeholder", text: $keyword)
+                        .textInputAutocapitalization(.never)
+                        .disableAutocorrection(true)
+                        .submitLabel(.search)
+                        .onSubmit {
+                            performSearch()
+                        }
+
+                    if !keyword.isEmpty {
+                        Button {
+                            keyword = ""
+                            results = []
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                        .accessibilityLabel(Text("search.clearInput"))
+                    }
+                }
+                .padding(12)
+                .background(Color(.secondarySystemBackground))
+                .cornerRadius(8)
+
+                if !historyItems.isEmpty {
+                    historySection
+                }
+
+                resultList
             }
             .padding()
             .navigationTitle("search.title")
+            .task {
+                await reloadHistory()
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("common.close") {
                         dismiss()
                     }
                 }
+            }
+            .alert(
+                "search.error.title",
+                isPresented: Binding(
+                    get: { errorMessage != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            errorMessage = nil
+                        }
+                    }
+                )
+            ) {
+                Button("common.ok", role: .cancel) {
+                    errorMessage = nil
+                }
+            } message: {
+                Text(errorMessage ?? "")
+            }
+        }
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("search.history.title")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                Button("search.history.clear") {
+                    clearHistory()
+                }
+                .font(.footnote)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(historyItems) { item in
+                        Button {
+                            keyword = item.keyword
+                            performSearch()
+                        } label: {
+                            Text(verbatim: item.keyword)
+                                .font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                .background(Color.accentColor.opacity(0.12))
+                                .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var resultList: some View {
+        if keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Spacer(minLength: 0)
+        } else if results.isEmpty {
+            VStack(spacing: 10) {
+                Spacer(minLength: 0)
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 42))
+                    .foregroundColor(.secondary)
+                Text("search.empty.message")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: .infinity)
+        } else {
+            List(results) { book in
+                Button {
+                    onOpenBook(book)
+                } label: {
+                    BookRowView(
+                        book: book,
+                        isSelecting: false,
+                        isSelected: false
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            .listStyle(.plain)
+        }
+    }
+
+    private func performSearch() {
+        let keyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let repository,
+              !keyword.isEmpty
+        else {
+            results = []
+            return
+        }
+
+        Task {
+            do {
+                try await repository.saveSearchKeyword(keyword)
+                results = try await repository.searchBooks(keyword: keyword)
+                await reloadHistory()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    @MainActor
+    private func reloadHistory() async {
+        guard let repository else {
+            historyItems = []
+            return
+        }
+
+        do {
+            historyItems = try await repository.fetchSearchHistory()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func clearHistory() {
+        guard let repository else {
+            historyItems = []
+            return
+        }
+
+        Task {
+            do {
+                try await repository.clearSearchHistory()
+                historyItems = []
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }
@@ -680,6 +1521,11 @@ private enum LibrarySheet: Identifiable {
             return "search"
         }
     }
+}
+
+private struct ExportPayload: Identifiable {
+    let id = UUID()
+    let urls: [URL]
 }
 
 private enum LibraryDrawerSide: Equatable {

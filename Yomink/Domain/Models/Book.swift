@@ -16,3 +16,58 @@ struct Book: Identifiable, Equatable, Sendable {
     var sourcePath: String
     var normalizedPath: String?
 }
+
+enum LibraryScope: Equatable, Sendable {
+    case all
+    case ungrouped
+    case group(UUID)
+
+    var settingsKey: String {
+        switch self {
+        case .all:
+            return "all"
+        case .ungrouped:
+            return "ungrouped"
+        case let .group(id):
+            return "group-\(id.uuidString)"
+        }
+    }
+}
+
+struct LibrarySettings: Codable, Equatable, Sendable {
+    enum ViewMode: String, Codable, CaseIterable, Sendable {
+        case list
+        case grid
+    }
+
+    enum SortOrder: String, Codable, CaseIterable, Sendable {
+        case importedAt
+        case lastReadAt
+    }
+
+    var viewMode: ViewMode
+    var sortOrder: SortOrder
+
+    static let storageKey = "library.settings"
+
+    static var `default`: LibrarySettings {
+        LibrarySettings(
+            viewMode: .list,
+            sortOrder: .lastReadAt
+        )
+    }
+}
+
+struct SearchHistoryItem: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var keyword: String
+    var createdAt: Date
+}
+
+struct ReadingHistoryItem: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var book: Book
+    var chapterTitle: String?
+    var offset: Int
+    var readAt: Date
+}

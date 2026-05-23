@@ -107,6 +107,9 @@ final class AppFileStore: @unchecked Sendable {
     }
 
     static func removeBookFiles(at bookDirectoryURL: URL) throws {
+        guard FileManager.default.fileExists(atPath: bookDirectoryURL.path) else {
+            return
+        }
         try FileManager.default.removeItem(at: bookDirectoryURL)
     }
 

@@ -5,18 +5,39 @@
 "library.drawer.close" = "关闭侧边栏";
 "library.empty.title" = "还没有导入书籍";
 "library.empty.message" = "从本地文件导入 TXT，Yomink 会复制原文并生成 UTF-8 阅读缓存。";
+"library.count" = "%d 本书";
+"library.viewMode.toggle" = "切换书架视图";
+"library.sort.menu" = "排序";
+"library.sort.lastReadAt" = "最近阅读";
+"library.sort.importedAt" = "导入时间";
+"library.selection.title" = "多选";
+"library.selection.exit" = "退出多选";
+"library.selection.count" = "已选 %d 本";
+"library.selection.invert" = "反选";
+"library.selection.move" = "移动";
+"library.selection.export" = "导出";
+"library.delete" = "删除";
 
 "search.title" = "搜索";
-"search.placeholder.message" = "Phase 4 将实现书名模糊搜索和历史搜索气泡。";
+"search.field.placeholder" = "搜索书名";
+"search.clearInput" = "清空输入";
+"search.history.title" = "搜索历史";
+"search.history.clear" = "清空";
+"search.empty.message" = "没有找到匹配的书籍";
+"search.error.title" = "搜索失败";
 
 "bootstrap.error.message" = "初始化失败：%@";
 
 "common.close" = "关闭";
 "common.ok" = "好";
+"common.cancel" = "取消";
+"common.save" = "保存";
 
 "add.title" = "添加";
 "add.import.file" = "从文件导入";
 "add.reading.history" = "足迹";
+"history.empty.message" = "还没有阅读足迹。";
+"history.error.title" = "足迹加载失败";
 
 "sidebar.groups.section" = "书架分组";
 "sidebar.allBooks" = "全部书籍";
@@ -24,8 +45,19 @@
 "sidebar.manageGroups" = "管理分组";
 "sidebar.header.placeholder" = "待定";
 "sidebar.header.subtitle" = "书架导航";
+"sidebar.untitledGroup" = "未命名分组";
 "settings.title" = "设置";
-"groups.placeholder.message" = "Phase 4 将实现新增、编辑、删除分组。";
+"settings.sortOrder" = "书架排序";
+"settings.viewMode" = "书架视图";
+"settings.viewMode.list" = "列表";
+"settings.viewMode.grid" = "网格";
+"settings.error.title" = "设置保存失败";
+"groups.empty.message" = "还没有分组。";
+"groups.add" = "新增分组";
+"groups.rename" = "编辑分组";
+"groups.name.placeholder" = "分组名称";
+"groups.name.message" = "删除分组不会删除书籍，书籍会移至未分组。";
+"groups.error.title" = "分组操作失败";
 
 "add.header.placeholder" = "待定";
 "add.header.subtitle" = "导入与足迹";
