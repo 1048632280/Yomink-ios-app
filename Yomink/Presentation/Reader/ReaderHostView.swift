@@ -122,6 +122,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         startInitialLoad()
     }
 
+    override var prefersStatusBarHidden: Bool {
+        true
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 

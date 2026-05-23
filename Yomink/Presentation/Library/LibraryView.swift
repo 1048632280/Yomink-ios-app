@@ -6,62 +6,63 @@ struct LibraryView: View {
     @EnvironmentObject private var environment: AppEnvironment
     @StateObject private var viewModel = LibraryViewModel()
     @State private var activeSheet: LibrarySheet?
+    @State private var activeDrawer: LibraryDrawerSide?
+    @State private var activeReaderBook: Book?
     @State private var isImportPickerPresented = false
-    @State private var shouldOpenImportPickerAfterSheetDismisses = false
+    @State private var drawerDragOffset: CGFloat = 0
 
     var body: some View {
-        NavigationView {
-            ZStack {
-                contentView
-                    .padding(24)
+        ZStack {
+            NavigationView {
+                ZStack {
+                    contentView
+                        .padding(24)
 
-                if viewModel.isImporting {
-                    importingOverlay
-                }
-            }
-            .navigationTitle("library.title")
-            .disabled(viewModel.isImporting)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        activeSheet = .librarySidebar
-                    } label: {
-                        Image(systemName: "folder")
+                    if viewModel.isImporting {
+                        importingOverlay
                     }
-                    .accessibilityLabel(Text("library.sidebar.open"))
                 }
+                .navigationTitle("library.title")
+                .disabled(viewModel.isImporting)
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            openDrawer(.left)
+                        } label: {
+                            Image(systemName: "folder")
+                        }
+                        .accessibilityLabel(Text("library.sidebar.open"))
+                    }
 
-                ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    Button {
-                        activeSheet = .search
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                    }
-                    .accessibilityLabel(Text("library.search.open"))
+                    ToolbarItemGroup(placement: .navigationBarTrailing) {
+                        Button {
+                            activeSheet = .search
+                        } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
+                        .accessibilityLabel(Text("library.search.open"))
 
-                    Button {
-                        activeSheet = .addBook
-                    } label: {
-                        Image(systemName: "plus")
+                        Button {
+                            openDrawer(.right)
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                        .accessibilityLabel(Text("library.add.open"))
                     }
-                    .accessibilityLabel(Text("library.add.open"))
                 }
-            }
-            .sheet(
-                item: $activeSheet,
-                onDismiss: handleSheetDismiss
-            ) { sheet in
-                switch sheet {
-                case .librarySidebar:
-                    LibrarySidebarView()
-                case .addBook:
-                    AddBookSidebarView {
-                        shouldOpenImportPickerAfterSheetDismisses = true
-                        activeSheet = nil
+                .sheet(
+                    item: $activeSheet,
+                    onDismiss: handleSheetDismiss
+                ) { sheet in
+                    switch sheet {
+                    case .search:
+                        GlobalSearchPlaceholderView()
                     }
-                case .search:
-                    GlobalSearchPlaceholderView()
-                case let .reader(book):
+                }
+                .fullScreenCover(
+                    item: $activeReaderBook,
+                    onDismiss: reloadBooksIfReady
+                ) { book in
                     if case let .ready(services) = environment.bootstrapState {
                         ReaderHostView(
                             book: book,
@@ -69,62 +70,116 @@ struct LibraryView: View {
                             repository: services.libraryRepository
                         )
                         .ignoresSafeArea()
+                        .statusBar(hidden: true)
                     }
                 }
-            }
-            .background {
-                DocumentPickerPresenter(
-                    isPresented: $isImportPickerPresented,
-                    allowedContentTypes: [Self.txtContentType]
-                ) { result in
+                .background {
+                    DocumentPickerPresenter(
+                        isPresented: $isImportPickerPresented,
+                        allowedContentTypes: [Self.txtContentType]
+                    ) { result in
+                        guard case let .ready(services) = environment.bootstrapState else {
+                            return
+                        }
+                        viewModel.handleImportResult(
+                            result,
+                            importService: services.importService,
+                            repository: services.libraryRepository
+                        )
+                    }
+                    .frame(width: 0, height: 0)
+                }
+                .onChange(of: isImportPickerPresented) { isPresented in
                     guard case let .ready(services) = environment.bootstrapState else {
                         return
                     }
-                    viewModel.handleImportResult(
-                        result,
-                        importService: services.importService,
-                        repository: services.libraryRepository
-                    )
-                }
-                .frame(width: 0, height: 0)
-            }
-            .onChange(of: isImportPickerPresented) { isPresented in
-                guard case let .ready(services) = environment.bootstrapState else {
-                    return
-                }
-                if !isPresented {
-                    viewModel.loadIfNeededAfterPickerDismissal(repository: services.libraryRepository)
-                }
-            }
-            .alert(
-                "import.error.title",
-                isPresented: Binding(
-                    get: { viewModel.importErrorMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            viewModel.importErrorMessage = nil
-                        }
+                    if !isPresented {
+                        viewModel.loadIfNeededAfterPickerDismissal(repository: services.libraryRepository)
                     }
+                }
+                .alert(
+                    "import.error.title",
+                    isPresented: Binding(
+                        get: { viewModel.importErrorMessage != nil },
+                        set: { isPresented in
+                            if !isPresented {
+                                viewModel.importErrorMessage = nil
+                            }
+                        }
+                    )
+                ) {
+                    Button("common.ok", role: .cancel) {
+                        viewModel.importErrorMessage = nil
+                    }
+                } message: {
+                    Text(viewModel.importErrorMessage ?? "")
+                }
+                .refreshable {
+                    if case let .ready(services) = environment.bootstrapState {
+                        await viewModel.loadBooks(repository: services.libraryRepository)
+                    }
+                }
+                .task(id: bootstrapTaskID) {
+                    if case let .ready(services) = environment.bootstrapState {
+                        await viewModel.loadBooks(repository: services.libraryRepository)
+                    }
+                }
+            }
+            .navigationViewStyle(.stack)
+
+            drawerLayer
+        }
+    }
+
+    @ViewBuilder
+    private var drawerLayer: some View {
+        if let activeDrawer {
+            GeometryReader { proxy in
+                let width = drawerWidth(for: proxy.size)
+                let dimmingProgress = 1 - min(abs(drawerDragOffset) / max(width, 1), 1)
+
+                ZStack(alignment: activeDrawer.alignment) {
+                    Color.black
+                        .opacity(0.24 * dimmingProgress)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            closeDrawer()
+                        }
+
+                    drawerView(for: activeDrawer)
+                        .frame(width: width)
+                        .frame(maxHeight: .infinity)
+                        .background(Color(.systemBackground))
+                        .shadow(color: Color.black.opacity(0.22), radius: 18, x: activeDrawer.shadowX, y: 0)
+                        .offset(x: drawerDragOffset)
+                        .simultaneousGesture(drawerDragGesture(for: activeDrawer, width: width))
+                        .transition(.move(edge: activeDrawer.edge))
+                }
+                .frame(
+                    maxWidth: .infinity,
+                    maxHeight: .infinity,
+                    alignment: activeDrawer.alignment
                 )
-            ) {
-                Button("common.ok", role: .cancel) {
-                    viewModel.importErrorMessage = nil
-                }
-            } message: {
-                Text(viewModel.importErrorMessage ?? "")
             }
-            .refreshable {
-                if case let .ready(services) = environment.bootstrapState {
-                    await viewModel.loadBooks(repository: services.libraryRepository)
-                }
+            .transition(.opacity)
+            .zIndex(10)
+        }
+    }
+
+    @ViewBuilder
+    private func drawerView(for side: LibraryDrawerSide) -> some View {
+        switch side {
+        case .left:
+            if case let .ready(services) = environment.bootstrapState {
+                LibrarySidebarView(repository: services.libraryRepository)
+            } else {
+                LibrarySidebarView()
             }
-            .task(id: bootstrapTaskID) {
-                if case let .ready(services) = environment.bootstrapState {
-                    await viewModel.loadBooks(repository: services.libraryRepository)
-                }
+        case .right:
+            AddBookSidebarView {
+                requestImportFromDrawer()
             }
         }
-        .navigationViewStyle(.stack)
     }
 
     @ViewBuilder
@@ -147,7 +202,7 @@ struct LibraryView: View {
     private var bookListView: some View {
         List(viewModel.books) { book in
             Button {
-                activeSheet = .reader(book)
+                activeReaderBook = book
             } label: {
                 BookRowView(book: book)
             }
@@ -223,19 +278,83 @@ struct LibraryView: View {
     }
 
     private func handleSheetDismiss() {
+        reloadBooksIfReady()
+    }
+
+    private func reloadBooksIfReady() {
         if case let .ready(services) = environment.bootstrapState {
             Task {
                 await viewModel.loadBooks(repository: services.libraryRepository)
             }
         }
+    }
 
-        guard shouldOpenImportPickerAfterSheetDismisses else {
-            return
+    private func openDrawer(_ drawer: LibraryDrawerSide) {
+        drawerDragOffset = 0
+        withAnimation(.easeOut(duration: 0.24)) {
+            activeDrawer = drawer
         }
-        shouldOpenImportPickerAfterSheetDismisses = false
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+    }
+
+    private func closeDrawer() {
+        withAnimation(.easeInOut(duration: 0.22)) {
+            activeDrawer = nil
+            drawerDragOffset = 0
+        }
+    }
+
+    private func requestImportFromDrawer() {
+        closeDrawer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
             isImportPickerPresented = true
         }
+    }
+
+    private func drawerWidth(for size: CGSize) -> CGFloat {
+        let maximumWidth = min(size.width - 32, size.width >= 700 ? 380 : 340)
+        return min(max(size.width * 0.82, 280), max(maximumWidth, 0))
+    }
+
+    private func drawerDragGesture(
+        for side: LibraryDrawerSide,
+        width: CGFloat
+    ) -> some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    return
+                }
+                drawerDragOffset = side.dragOffset(
+                    for: value.translation.width,
+                    width: width
+                )
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        drawerDragOffset = 0
+                    }
+                    return
+                }
+                let offset = side.dragOffset(
+                    for: value.translation.width,
+                    width: width
+                )
+                let predictedOffset = side.dragOffset(
+                    for: value.predictedEndTranslation.width,
+                    width: width
+                )
+                let shouldClose = abs(offset) > width * 0.28
+                    || abs(predictedOffset) > width * 0.48
+
+                if shouldClose {
+                    closeDrawer()
+                } else {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        drawerDragOffset = 0
+                    }
+                }
+            }
     }
 
     // Use the system type directly. A dynamic "txt" UTType can make Files keep
@@ -506,21 +625,53 @@ private struct GlobalSearchPlaceholderView: View {
 }
 
 private enum LibrarySheet: Identifiable {
-    case librarySidebar
-    case addBook
     case search
-    case reader(Book)
 
     var id: String {
         switch self {
-        case .librarySidebar:
-            return "librarySidebar"
-        case .addBook:
-            return "addBook"
         case .search:
             return "search"
-        case let .reader(book):
-            return "reader-\(book.id.uuidString)"
+        }
+    }
+}
+
+private enum LibraryDrawerSide {
+    case left
+    case right
+
+    var alignment: Alignment {
+        switch self {
+        case .left:
+            return .leading
+        case .right:
+            return .trailing
+        }
+    }
+
+    var edge: Edge {
+        switch self {
+        case .left:
+            return .leading
+        case .right:
+            return .trailing
+        }
+    }
+
+    var shadowX: CGFloat {
+        switch self {
+        case .left:
+            return 8
+        case .right:
+            return -8
+        }
+    }
+
+    func dragOffset(for translation: CGFloat, width: CGFloat) -> CGFloat {
+        switch self {
+        case .left:
+            return min(max(translation, -width), 0)
+        case .right:
+            return max(min(translation, width), 0)
         }
     }
 }

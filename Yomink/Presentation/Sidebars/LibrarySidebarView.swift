@@ -1,37 +1,74 @@
 import SwiftUI
+import UIKit
 
 struct LibrarySidebarView: View {
-    @Environment(\.dismiss) private var dismiss
+    let repository: (any LibraryRepository)?
+    @State private var groups: [BookGroup] = []
+
+    init(repository: (any LibraryRepository)? = nil) {
+        self.repository = repository
+    }
 
     var body: some View {
         NavigationView {
-            List {
-                Section("sidebar.groups.section") {
-                    Label("sidebar.allBooks", systemImage: "book")
-                    Label("sidebar.ungrouped", systemImage: "tray")
-                }
+            VStack(spacing: 0) {
+                sidebarHeader
 
-                Section {
-                    NavigationLink {
-                        GroupManagementPlaceholderView()
-                    } label: {
-                        Label("sidebar.manageGroups", systemImage: "folder.badge.gearshape")
+                List {
+                    Section("sidebar.groups.section") {
+                        Label("sidebar.allBooks", systemImage: "book")
+                        Label("sidebar.ungrouped", systemImage: "tray")
+
+                        ForEach(groups) { group in
+                            Label {
+                                Text(verbatim: group.name)
+                            } icon: {
+                                Image(systemName: "folder")
+                            }
+                        }
+                    }
+
+                    Section {
+                        NavigationLink {
+                            GroupManagementPlaceholderView()
+                        } label: {
+                            Label("sidebar.manageGroups", systemImage: "folder.badge.gearshape")
+                        }
                     }
                 }
+                .listStyle(.insetGrouped)
 
-                Section {
-                    Label("settings.title", systemImage: "gearshape")
-                }
+                Divider()
+
+                Label("settings.title", systemImage: "gearshape")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
             }
-            .navigationTitle("library.title")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("common.close") {
-                        dismiss()
-                    }
+            .navigationBarHidden(true)
+            .task {
+                guard let repository else {
+                    return
                 }
+                groups = (try? await repository.fetchGroups()) ?? []
             }
         }
+        .navigationViewStyle(.stack)
+    }
+
+    private var sidebarHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("sidebar.header.placeholder")
+                .font(.headline)
+            Text("sidebar.header.subtitle")
+                .font(.footnote)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 16)
+        .background(Color(UIColor.secondarySystemBackground))
     }
 }
 
@@ -42,5 +79,6 @@ private struct GroupManagementPlaceholderView: View {
             .foregroundColor(.secondary)
             .padding()
             .navigationTitle("sidebar.manageGroups")
+            .navigationBarHidden(false)
     }
 }

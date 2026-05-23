@@ -21,9 +21,13 @@
 "sidebar.allBooks" = "全部书籍";
 "sidebar.ungrouped" = "未分组";
 "sidebar.manageGroups" = "管理分组";
+"sidebar.header.placeholder" = "待定";
+"sidebar.header.subtitle" = "书架导航";
 "settings.title" = "设置";
 "groups.placeholder.message" = "Phase 4 将实现新增、编辑、删除分组。";
 
+"add.header.placeholder" = "待定";
+"add.header.subtitle" = "导入与足迹";
 "reader.placeholder.title" = "阅读器核心容器";
 "reader.placeholder.message" = "UIKit 阅读器已接入分页、滚动、进度和阅读设置。";
 "reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@";
