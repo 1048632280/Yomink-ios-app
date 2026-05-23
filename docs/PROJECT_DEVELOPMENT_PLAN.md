@@ -621,6 +621,12 @@ Library/Application Support/
 - 设置变化后页面正确重排。
 - 章节跳转准确。
 
+暂缓记录：
+
+- 滚动模式下字体/主题切换仍依赖 `UITextView` 在主线程完成当前章节布局；若真机 Instruments 显示设置切换阻塞帧，再评估异步 attributed string 构造或 TextKit 方向优化。
+- 当前左右平移翻页先采用旧页滑出后切换内容的 MVP 动画；后续需要补双文本层/双视图过渡，让新页连续进入，再考虑仿真翻页效果。
+- 滚动模式下相邻章节预取检查会在 active scrolling 期间被触发；若 Instruments 显示滚动时主线程压力偏高，再加冷却时间或改到拖拽/减速结束时触发。
+
 ### Phase 4：书架管理与搜索
 
 目标：

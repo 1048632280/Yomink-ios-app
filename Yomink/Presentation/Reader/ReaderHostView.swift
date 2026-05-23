@@ -63,13 +63,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var currentPaginator: ChapterPaginator?
     private var currentPageIndex = 0
     private var currentProgress: ReadingProgress?
+    private var pendingAnchorByteOffset: Int?
     private var loadTask: Task<Void, Never>?
     private var paginateTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var settingsSaveTask: Task<Void, Never>?
+    private var settingsRenderTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
     private var saveGeneration = 0
     private var settingsSaveGeneration = 0
+    private var settingsRenderGeneration = 0
     private var paginateGeneration = 0
     private var prefetchGeneration = 0
     private var readerSettings = ReaderSettings.default
@@ -103,6 +106,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         paginateTask?.cancel()
         saveTask?.cancel()
         settingsSaveTask?.cancel()
+        settingsRenderTask?.cancel()
         prefetchTask?.cancel()
     }
 
@@ -370,6 +374,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         loadTask?.cancel()
         paginateTask?.cancel()
         saveTask?.cancel()
+        cancelSettingsRender()
         prefetchTask?.cancel()
         paginateGeneration += 1
         prefetchGeneration += 1
@@ -381,6 +386,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentChapterIndex = 0
         currentPageIndex = 0
         currentProgress = nil
+        pendingAnchorByteOffset = nil
         titleLabel.text = book.title
         textView.text = nil
         showLoading(true, message: NSLocalizedString("reader.loading", comment: ""))
@@ -452,6 +458,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
         loadTask?.cancel()
         paginateTask?.cancel()
+        cancelSettingsRender()
         prefetchTask?.cancel()
         paginateGeneration += 1
         prefetchGeneration += 1
@@ -502,6 +509,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentChapterText = text
         currentPaginator = nil
         currentPageIndex = 0
+        pendingAnchorByteOffset = startOffset
+        setProvisionalProgress(chapterOffset: startOffset)
         if prefetchedChapter?.chapter.id != chapters[chapterIndex].id {
             prefetchedChapter = nil
             prefetchingChapterID = nil
@@ -563,6 +572,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentChapterText = prefetchedChapter.text
         currentPaginator = nil
         currentPageIndex = 0
+        pendingAnchorByteOffset = startOffset
+        setProvisionalProgress(chapterOffset: startOffset)
         lastPaginationSize = textView.bounds.size
         applyTheme()
         textView.transform = .identity
@@ -814,6 +825,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
         showLoading(false, message: nil)
         textView.isScrollEnabled = true
+        // Phase 7 performance: scroll mode still lets UITextView lay out the
+        // current chapter on the main thread; revisit if Instruments shows
+        // setting changes blocking frames on large chunks.
         textView.attributedText = ReaderTypography(settings: readerSettings)
             .attributedString(for: currentChapterText)
         view.layoutIfNeeded()
@@ -963,21 +977,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             return
         }
 
+        pendingAnchorByteOffset = nil
+        setProvisionalProgress(chapterOffset: chapterOffset)
         let chapter = chapters[currentChapterIndex]
         let pageStartByteOffset = min(max(chapterOffset, 0), max(chapter.byteLength - 1, 0))
-        let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
-        let absoluteOffset = chapter.startOffset + pageStartByteOffset
-        let globalProgress = min(max(Double(absoluteOffset) / Double(totalByteLength), 0), 1)
         let chapterProgress = chapter.byteLength > 0
             ? min(max(Double(pageStartByteOffset) / Double(chapter.byteLength), 0), 1)
             : 0
-
-        currentProgress = ReadingProgress(
-            bookID: book.id,
-            chapterID: chapter.id,
-            chapterOffset: Int64(pageStartByteOffset),
-            globalProgress: globalProgress
-        )
+        let globalProgress = currentProgress?.globalProgress ?? 0
 
         progressLabel.text = progressText(
             chapter: chapter,
@@ -987,6 +994,26 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         if !isTrackingProgressSlider {
             progressSlider.value = Float(globalProgress)
         }
+    }
+
+    private func setProvisionalProgress(chapterOffset: Int) {
+        guard chapters.indices.contains(currentChapterIndex) else {
+            currentProgress = nil
+            return
+        }
+
+        let chapter = chapters[currentChapterIndex]
+        let pageStartByteOffset = min(max(chapterOffset, 0), max(chapter.byteLength - 1, 0))
+        let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
+        let absoluteOffset = chapter.startOffset + pageStartByteOffset
+        let globalProgress = min(max(Double(absoluteOffset) / Double(totalByteLength), 0), 1)
+
+        currentProgress = ReadingProgress(
+            bookID: book.id,
+            chapterID: chapter.id,
+            chapterOffset: Int64(pageStartByteOffset),
+            globalProgress: globalProgress
+        )
     }
 
     private func progressText(
@@ -1019,6 +1046,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let ratio = min(max(Double(yOffset / maxOffset), 0), 1)
         let chapterOffset = Int(Double(chapter.byteLength) * ratio)
         updateProgress(chapterOffset: chapterOffset)
+        // Phase 7 performance: prefetch checks are cheap but run during active
+        // scrolling; throttle or move them to scroll-end callbacks if needed.
         prefetchAdjacentChapterIfNeeded()
     }
 
@@ -1065,9 +1094,18 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
 
         let anchorByteOffset = currentDisplayByteOffset()
+        let isFontOnlyChange = oldSettings.pageMode == normalizedSettings.pageMode
+            && oldSettings.theme == normalizedSettings.theme
+            && oldSettings.fontSize != normalizedSettings.fontSize
         readerSettings = normalizedSettings
         invalidatePrefetch()
-        renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
+        applyTheme()
+        if isFontOnlyChange {
+            scheduleSettingsRender()
+        } else {
+            cancelSettingsRender()
+            renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
+        }
         scheduleSettingsSave()
     }
 
@@ -1076,6 +1114,38 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         prefetchGeneration += 1
         prefetchedChapter = nil
         prefetchingChapterID = nil
+    }
+
+    private func scheduleSettingsRender() {
+        settingsRenderGeneration += 1
+        let generation = settingsRenderGeneration
+        settingsRenderTask?.cancel()
+        settingsRenderTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                try Task.checkCancellation()
+                await self?.finishSettingsRender(generation: generation)
+            } catch {
+            }
+        }
+    }
+
+    private func finishSettingsRender(generation: Int) {
+        guard generation == settingsRenderGeneration else {
+            return
+        }
+
+        settingsRenderTask = nil
+        renderContent(
+            anchorByteOffset: currentDisplayByteOffset(),
+            savingProgress: false
+        )
+    }
+
+    private func cancelSettingsRender() {
+        settingsRenderGeneration += 1
+        settingsRenderTask?.cancel()
+        settingsRenderTask = nil
     }
 
     private func scheduleSettingsSave() {
@@ -1170,6 +1240,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             let shouldMoveNext = translation.x < -width * 0.22 || velocity < -520
             let shouldMovePrevious = translation.x > width * 0.22 || velocity > 520
 
+            // Phase 3 polish: replace this outgoing-page animation with a dual
+            // text/layer transition so the incoming page moves in continuously.
             UIView.animate(
                 withDuration: 0.16,
                 delay: 0,
@@ -1268,6 +1340,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             }
         }
         let navigationController = UINavigationController(rootViewController: listViewController)
+        navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         navigationController.modalPresentationStyle = .pageSheet
         present(navigationController, animated: true)
     }
@@ -1279,11 +1352,15 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             self?.applyReaderSettings(settings)
         }
         let navigationController = UINavigationController(rootViewController: settingsViewController)
+        navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         navigationController.modalPresentationStyle = .pageSheet
         present(navigationController, animated: true)
     }
 
     private func currentDisplayByteOffset() -> Int {
+        if let pendingAnchorByteOffset = pendingAnchorByteOffset {
+            return pendingAnchorByteOffset
+        }
         if let progress = currentProgress {
             return Int(progress.chapterOffset)
         }
@@ -1354,6 +1431,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         guard let panGesture = gestureRecognizer as? UIPanGestureRecognizer else {
             return true
+        }
+
+        guard readerSettings.pageMode != .scroll else {
+            return false
         }
 
         let location = panGesture.location(in: view)
