@@ -10,6 +10,7 @@ struct LibrarySidebarView: View {
     let onSelectScope: (LibraryScope) -> Void
     let onGroupsChanged: () -> Void
     let onSettingsChanged: (LibrarySettings) -> Void
+    let onDisplayOptionChanged: () -> Void
 
     @State private var librarySettings = LibrarySettings.default
     @State private var activeSheet: SidebarSheet?
@@ -23,7 +24,8 @@ struct LibrarySidebarView: View {
         settings: LibrarySettings? = nil,
         onSelectScope: @escaping (LibraryScope) -> Void = { _ in },
         onGroupsChanged: @escaping () -> Void = {},
-        onSettingsChanged: @escaping (LibrarySettings) -> Void = { _ in }
+        onSettingsChanged: @escaping (LibrarySettings) -> Void = { _ in },
+        onDisplayOptionChanged: @escaping () -> Void = {}
     ) {
         self.repository = repository
         self.groups = groups
@@ -33,20 +35,23 @@ struct LibrarySidebarView: View {
         self.onSelectScope = onSelectScope
         self.onGroupsChanged = onGroupsChanged
         self.onSettingsChanged = onSettingsChanged
+        self.onDisplayOptionChanged = onDisplayOptionChanged
         _librarySettings = State(initialValue: settings ?? .default)
     }
 
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                sidebarHeader
-                sidebarControls
+                displayControls
+
+                Divider()
+                    .background(SidebarStyle.rowBackground)
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         Text("sidebar.groups.section")
                             .font(.footnote.weight(.semibold))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(SidebarStyle.secondaryText)
                             .padding(.horizontal, 24)
                             .padding(.top, 18)
                             .padding(.bottom, 4)
@@ -101,6 +106,7 @@ struct LibrarySidebarView: View {
                 }
 
                 Divider()
+                    .background(SidebarStyle.rowBackground)
 
                 Button {
                     activeSheet = .settings
@@ -115,7 +121,7 @@ struct LibrarySidebarView: View {
                 .buttonStyle(.plain)
             }
             .navigationBarHidden(true)
-            .background(Color(.systemGray6))
+            .background(SidebarStyle.background)
             .task {
                 await reloadSettings()
             }
@@ -164,63 +170,30 @@ struct LibrarySidebarView: View {
         .navigationViewStyle(.stack)
     }
 
-    private var sidebarControls: some View {
-        HStack(spacing: 12) {
-            Menu {
-                Button {
-                    updateSortOrder(.lastReadAt)
-                } label: {
-                    Label {
-                        Text("library.sort.lastReadAt")
-                    } icon: {
-                        Image(systemName: "clock")
-                    }
-                }
-
-                Button {
-                    updateSortOrder(.importedAt)
-                } label: {
-                    Label {
-                        Text("library.sort.importedAt")
-                    } icon: {
-                        Image(systemName: "tray.and.arrow.down")
-                    }
-                }
+    private var displayControls: some View {
+        VStack(spacing: 8) {
+            Button {
+                toggleSortOrder()
             } label: {
-                Image(systemName: "arrow.up.arrow.down")
-                    .frame(width: 36, height: 36)
+                SidebarItemRow(
+                    localizedTitle: librarySettings.sortOrder.sidebarTitle,
+                    systemImage: "arrow.up.arrow.down"
+                )
             }
-            .accessibilityLabel(Text("library.sort.menu"))
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
 
             Button {
                 toggleViewMode()
             } label: {
-                Image(systemName: librarySettings.viewMode == .list ? "square.grid.2x2" : "list.bullet")
-                    .frame(width: 36, height: 36)
+                SidebarItemRow(
+                    localizedTitle: librarySettings.viewMode.sidebarTitle,
+                    systemImage: librarySettings.viewMode == .list ? "list.bullet" : "square.grid.2x2"
+                )
             }
-            .accessibilityLabel(Text("library.viewMode.toggle"))
-            .buttonStyle(.borderless)
-
-            Spacer(minLength: 0)
+            .buttonStyle(.plain)
         }
-        .padding(.horizontal, 20)
-        .padding(.bottom, 8)
-    }
-
-    private var sidebarHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("sidebar.header.placeholder")
-                .font(.headline)
-            Text("sidebar.header.subtitle")
-                .font(.footnote)
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 20)
         .padding(.top, 18)
-        .padding(.bottom, 16)
-        .background(Color(.systemGray6))
+        .padding(.bottom, 10)
     }
 
     private func groupTitle(_ group: BookGroup) -> String {
@@ -233,21 +206,20 @@ struct LibrarySidebarView: View {
 
     private func toggleViewMode() {
         librarySettings.viewMode = librarySettings.viewMode == .list ? .grid : .list
-        persistLibrarySettings()
+        persistLibrarySettings(returningToShelf: true)
     }
 
-    private func updateSortOrder(_ sortOrder: LibrarySettings.SortOrder) {
-        guard librarySettings.sortOrder != sortOrder else {
-            return
-        }
-
-        librarySettings.sortOrder = sortOrder
-        persistLibrarySettings()
+    private func toggleSortOrder() {
+        librarySettings.sortOrder = librarySettings.sortOrder == .lastReadAt ? .importedAt : .lastReadAt
+        persistLibrarySettings(returningToShelf: true)
     }
 
-    private func persistLibrarySettings() {
+    private func persistLibrarySettings(returningToShelf: Bool = false) {
         let settings = librarySettings
         onSettingsChanged(settings)
+        if returningToShelf {
+            onDisplayOptionChanged()
+        }
         guard let repository else {
             return
         }
@@ -310,19 +282,19 @@ struct SidebarItemRow: View {
         Label {
             titleText
                 .font(.body.weight(.medium))
-                .foregroundColor(.primary)
+                .foregroundColor(SidebarStyle.primaryText)
                 .lineLimit(1)
         } icon: {
             Image(systemName: systemImage)
                 .font(.system(size: 19, weight: .regular))
-                .foregroundColor(.accentColor)
+                .foregroundColor(SidebarStyle.icon)
                 .frame(width: 28)
         }
         .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
         .padding(.horizontal, 24)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
+                .fill(isSelected ? SidebarStyle.selectedRowBackground : SidebarStyle.rowBackground)
                 .padding(.horizontal, 12)
         )
         .contentShape(Rectangle())
@@ -632,6 +604,15 @@ private extension LibrarySettings.SortOrder {
             return "library.sort.lastReadAt"
         }
     }
+
+    var sidebarTitle: LocalizedStringKey {
+        switch self {
+        case .importedAt:
+            return "library.sort.importedAt"
+        case .lastReadAt:
+            return "library.sort.lastReadAt"
+        }
+    }
 }
 
 private extension LibrarySettings.ViewMode {
@@ -641,6 +622,15 @@ private extension LibrarySettings.ViewMode {
             return "settings.viewMode.list"
         case .grid:
             return "settings.viewMode.grid"
+        }
+    }
+
+    var sidebarTitle: LocalizedStringKey {
+        switch self {
+        case .list:
+            return "settings.viewMode.listMode"
+        case .grid:
+            return "settings.viewMode.gridMode"
         }
     }
 }

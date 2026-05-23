@@ -15,6 +15,10 @@ struct LibraryView: View {
     @State private var selectedScope: LibraryScope = .all
     @State private var exportPayload: ExportPayload?
 
+    init() {
+        Self.configureNavigationBarAppearance()
+    }
+
     var body: some View {
         GeometryReader { proxy in
             let drawerWidth = drawerWidth(for: proxy.size)
@@ -47,7 +51,7 @@ struct LibraryView: View {
                         .frame(width: width)
                         .padding(.top, safeAreaInsets.top)
                         .padding(.bottom, safeAreaInsets.bottom)
-                        .background(Color(.systemGray6))
+                        .background(SidebarStyle.background)
                         .offset(x: isDrawerOpen ? 0 : -width * 0.18)
                         .allowsHitTesting(isDrawerOpen)
 
@@ -63,13 +67,13 @@ struct LibraryView: View {
                         .frame(width: width)
                         .padding(.top, safeAreaInsets.top)
                         .padding(.bottom, safeAreaInsets.bottom)
-                        .background(Color(.systemGray6))
+                        .background(SidebarStyle.background)
                         .offset(x: isDrawerOpen ? 0 : width * 0.18)
                         .allowsHitTesting(isDrawerOpen)
                 }
             }
         }
-        .background(Color(.systemGray6))
+        .background(SidebarStyle.background)
         .ignoresSafeArea()
         .animation(Self.drawerAnimation, value: isDrawerOpen)
     }
@@ -94,6 +98,9 @@ struct LibraryView: View {
     private var libraryNavigationView: some View {
         NavigationView {
             ZStack {
+                Color(.systemGray6)
+                    .ignoresSafeArea()
+
                 contentView
                     .padding(24)
 
@@ -101,9 +108,16 @@ struct LibraryView: View {
                     importingOverlay
                 }
             }
-            .navigationTitle(navigationTitleKey)
+            .navigationTitle("app.title")
+            .navigationBarTitleDisplayMode(.inline)
             .disabled(viewModel.isImporting)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("app.title")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+                }
+
                 ToolbarItem(placement: .navigationBarLeading) {
                     libraryLeadingToolbarContent
                 }
@@ -301,6 +315,8 @@ struct LibraryView: View {
                 } onSettingsChanged: { settings in
                     viewModel.applyLibrarySettings(settings)
                     reloadBooksIfReady()
+                } onDisplayOptionChanged: {
+                    closeDrawer()
                 }
             } else {
                 LibrarySidebarView(
@@ -340,10 +356,6 @@ struct LibraryView: View {
                 shelfContentView
             }
         }
-    }
-
-    private var navigationTitleKey: LocalizedStringKey {
-        viewModel.isSelecting ? "library.selection.title" : "app.title"
     }
 
     @ViewBuilder
@@ -388,11 +400,13 @@ struct LibraryView: View {
                 }
             }
             .buttonStyle(.plain)
+            .listRowBackground(Color(.systemGray6))
             .listRowInsets(
                 EdgeInsets(top: 10, leading: 12, bottom: 10, trailing: 12)
             )
         }
         .listStyle(.plain)
+        .background(Color(.systemGray6))
         .padding(.horizontal, -24)
         .padding(.vertical, -24)
     }
@@ -728,6 +742,23 @@ struct LibraryView: View {
     // Use the system type directly. A dynamic "txt" UTType can make Files keep
     // .txt documents disabled on some iOS versions.
     private static let txtContentType = UTType.plainText
+
+    private static func configureNavigationBarAppearance() {
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = .systemBackground
+        appearance.shadowColor = .separator
+        appearance.titleTextAttributes = [
+            .foregroundColor: UIColor.label
+        ]
+
+        let navigationBar = UINavigationBar.appearance()
+        navigationBar.prefersLargeTitles = false
+        navigationBar.standardAppearance = appearance
+        navigationBar.scrollEdgeAppearance = appearance
+        navigationBar.compactAppearance = appearance
+        navigationBar.compactScrollEdgeAppearance = appearance
+    }
 }
 
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {

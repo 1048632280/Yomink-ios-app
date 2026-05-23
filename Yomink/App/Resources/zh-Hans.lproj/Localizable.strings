@@ -30,6 +30,7 @@
 "bootstrap.error.message" = "初始化失败：%@";
 
 "common.close" = "关闭";
+"common.back" = "返回";
 "common.ok" = "好";
 "common.cancel" = "取消";
 "common.save" = "保存";
@@ -45,14 +46,14 @@
 "sidebar.allBooks" = "全部书籍";
 "sidebar.ungrouped" = "未分组";
 "sidebar.manageGroups" = "管理分组";
-"sidebar.header.placeholder" = "待定";
-"sidebar.header.subtitle" = "书架导航";
 "sidebar.untitledGroup" = "未命名分组";
 "settings.title" = "设置";
 "settings.sortOrder" = "书架排序";
 "settings.viewMode" = "书架视图";
 "settings.viewMode.list" = "列表";
 "settings.viewMode.grid" = "网格";
+"settings.viewMode.listMode" = "列表模式";
+"settings.viewMode.gridMode" = "网格模式";
 "settings.error.title" = "设置保存失败";
 "groups.empty.message" = "还没有分组。";
 "groups.add" = "新增分组";
@@ -61,8 +62,6 @@
 "groups.name.message" = "删除分组不会删除书籍，书籍会移至未分组。";
 "groups.error.title" = "分组操作失败";
 
-"add.header.placeholder" = "待定";
-"add.header.subtitle" = "导入与足迹";
 "reader.placeholder.title" = "阅读器核心容器";
 "reader.placeholder.message" = "UIKit 阅读器已接入分页、滚动、进度和阅读设置。";
 "reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@";
