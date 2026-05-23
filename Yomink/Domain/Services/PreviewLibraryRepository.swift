@@ -102,6 +102,8 @@ struct PreviewLibraryRepository: LibraryRepository {
         }
     }
 
+    func clearReadingHistory() async throws {}
+
     func fetchLibrarySettings() async throws -> LibrarySettings {
         .default
     }

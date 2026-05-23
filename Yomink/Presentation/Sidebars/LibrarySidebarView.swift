@@ -8,24 +8,24 @@ struct LibrarySidebarView: View {
     let selectedScope: LibraryScope
     let settings: LibrarySettings?
     let onSelectScope: (LibraryScope) -> Void
-    let onGroupsChanged: () -> Void
     let onSettingsChanged: (LibrarySettings) -> Void
     let onDisplayOptionChanged: () -> Void
+    let onOpenGroupsPage: () -> Void
 
     @State private var librarySettings = LibrarySettings.default
-    @State private var activeSheet: SidebarSheet?
+    @State private var isSettingsPresented = false
     @State private var groupErrorMessage: String?
 
     init(
         repository: (any LibraryRepository)? = nil,
         groups: [BookGroup] = [],
         books: [Book] = [],
-        selectedScope: LibraryScope = .all,
+        selectedScope: LibraryScope = .ungrouped,
         settings: LibrarySettings? = nil,
         onSelectScope: @escaping (LibraryScope) -> Void = { _ in },
-        onGroupsChanged: @escaping () -> Void = {},
         onSettingsChanged: @escaping (LibrarySettings) -> Void = { _ in },
-        onDisplayOptionChanged: @escaping () -> Void = {}
+        onDisplayOptionChanged: @escaping () -> Void = {},
+        onOpenGroupsPage: @escaping () -> Void = {}
     ) {
         self.repository = repository
         self.groups = groups
@@ -33,9 +33,9 @@ struct LibrarySidebarView: View {
         self.selectedScope = selectedScope
         self.settings = settings
         self.onSelectScope = onSelectScope
-        self.onGroupsChanged = onGroupsChanged
         self.onSettingsChanged = onSettingsChanged
         self.onDisplayOptionChanged = onDisplayOptionChanged
+        self.onOpenGroupsPage = onOpenGroupsPage
         _librarySettings = State(initialValue: settings ?? .default)
     }
 
@@ -47,16 +47,6 @@ struct LibrarySidebarView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         groupHeader
-
-                        Button {
-                            onSelectScope(.all)
-                        } label: {
-                            SidebarItemRow(
-                                localizedTitle: "sidebar.allBooks",
-                                isSelected: selectedScope == .all
-                            )
-                        }
-                        .buttonStyle(.plain)
 
                         Button {
                             onSelectScope(.ungrouped)
@@ -81,7 +71,7 @@ struct LibrarySidebarView: View {
                         }
 
                         Button {
-                            activeSheet = .groups
+                            onOpenGroupsPage()
                         } label: {
                             SidebarItemRow(
                                 localizedTitle: "sidebar.manageGroups"
@@ -95,7 +85,7 @@ struct LibrarySidebarView: View {
                 sectionGap
 
                 Button {
-                    activeSheet = .settings
+                    openSettings()
                 } label: {
                     SidebarItemRow(
                         localizedTitle: "settings.title"
@@ -111,25 +101,17 @@ struct LibrarySidebarView: View {
             .onChange(of: settings) { nextSettings in
                 librarySettings = nextSettings ?? .default
             }
-            .sheet(item: $activeSheet, onDismiss: {
+            .sheet(isPresented: $isSettingsPresented, onDismiss: {
                 Task {
                     await reloadSettings()
                 }
-            }) { sheet in
-                switch sheet {
-                case .groups:
-                    GroupManagementView(
-                        repository: repository,
-                        onGroupsChanged: onGroupsChanged
-                    )
-                case .settings:
-                    AppSettingsView(
-                        repository: repository,
-                        settings: librarySettings
-                    ) { settings in
-                        librarySettings = settings
-                        onSettingsChanged(settings)
-                    }
+            }) {
+                AppSettingsView(
+                    repository: repository,
+                    settings: librarySettings
+                ) { settings in
+                    librarySettings = settings
+                    onSettingsChanged(settings)
                 }
             }
             .alert(
@@ -229,6 +211,10 @@ struct LibrarySidebarView: View {
         }
     }
 
+    private func openSettings() {
+        isSettingsPresented = true
+    }
+
     @MainActor
     private func reloadSettings() async {
         guard let repository else {
@@ -302,187 +288,6 @@ struct SidebarItemRow: View {
             Text(title)
         case let .verbatim(title):
             Text(verbatim: title)
-        }
-    }
-}
-
-private struct GroupManagementView: View {
-    let repository: (any LibraryRepository)?
-    let onGroupsChanged: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var groups: [BookGroup] = []
-    @State private var editingGroup: BookGroup?
-    @State private var isAddingGroup = false
-    @State private var nameDraft = ""
-    @State private var errorMessage: String?
-
-    var body: some View {
-        NavigationView {
-            List {
-                if groups.isEmpty {
-                    Text("groups.empty.message")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                } else {
-                    ForEach(groups) { group in
-                        Button {
-                            beginRename(group)
-                        } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: "folder")
-                                    .foregroundColor(.accentColor)
-                                Text(verbatim: group.name)
-                                    .foregroundColor(.primary)
-                                Spacer()
-                                Image(systemName: "pencil")
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .onDelete(perform: deleteGroups)
-                }
-            }
-            .navigationTitle("sidebar.manageGroups")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("common.close") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        beginAdd()
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                    .accessibilityLabel(Text("groups.add"))
-                }
-            }
-            .task {
-                await reloadGroups()
-            }
-            .alert(
-                editTitle,
-                isPresented: Binding(
-                    get: { isAddingGroup || editingGroup != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            cancelEditing()
-                        }
-                    }
-                )
-            ) {
-                TextField("groups.name.placeholder", text: $nameDraft)
-                Button("common.cancel", role: .cancel) {
-                    cancelEditing()
-                }
-                Button("common.save") {
-                    saveGroup()
-                }
-            } message: {
-                Text("groups.name.message")
-            }
-            .alert(
-                "groups.error.title",
-                isPresented: Binding(
-                    get: { errorMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            errorMessage = nil
-                        }
-                    }
-                )
-            ) {
-                Button("common.ok", role: .cancel) {
-                    errorMessage = nil
-                }
-            } message: {
-                Text(errorMessage ?? "")
-            }
-        }
-    }
-
-    private var editTitle: LocalizedStringKey {
-        isAddingGroup ? "groups.add" : "groups.rename"
-    }
-
-    @MainActor
-    private func reloadGroups() async {
-        guard let repository else {
-            groups = []
-            return
-        }
-
-        do {
-            groups = try await repository.fetchGroups()
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-    }
-
-    private func beginAdd() {
-        nameDraft = ""
-        editingGroup = nil
-        isAddingGroup = true
-    }
-
-    private func beginRename(_ group: BookGroup) {
-        nameDraft = group.name
-        editingGroup = group
-        isAddingGroup = false
-    }
-
-    private func cancelEditing() {
-        isAddingGroup = false
-        editingGroup = nil
-        nameDraft = ""
-    }
-
-    private func saveGroup() {
-        guard let repository else {
-            cancelEditing()
-            return
-        }
-
-        let group = editingGroup
-        let name = nameDraft
-        Task {
-            do {
-                if let group {
-                    try await repository.renameGroup(id: group.id, name: name)
-                } else {
-                    _ = try await repository.createGroup(name: name)
-                }
-                cancelEditing()
-                await reloadGroups()
-                onGroupsChanged()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func deleteGroups(at offsets: IndexSet) {
-        guard let repository else {
-            return
-        }
-
-        let ids = offsets.compactMap { index in
-            groups.indices.contains(index) ? groups[index].id : nil
-        }
-
-        Task {
-            do {
-                for id in ids {
-                    try await repository.deleteGroup(id: id)
-                }
-                await reloadGroups()
-                onGroupsChanged()
-            } catch {
-                errorMessage = error.localizedDescription
-            }
         }
     }
 }
@@ -626,20 +431,6 @@ private extension LibrarySettings.ViewMode {
             return "settings.viewMode.gridMode"
         case .grid:
             return "settings.viewMode.listMode"
-        }
-    }
-}
-
-private enum SidebarSheet: Identifiable {
-    case groups
-    case settings
-
-    var id: String {
-        switch self {
-        case .groups:
-            return "groups"
-        case .settings:
-            return "settings"
         }
     }
 }

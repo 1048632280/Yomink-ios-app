@@ -11,8 +11,8 @@ struct LibraryView: View {
     @State private var pendingReaderBook: Book?
     @State private var isImportPickerPresented = false
     @State private var isDrawerOpen = false
-    @State private var drawerRevealToken = 0
-    @State private var selectedScope: LibraryScope = .all
+    @State private var selectedScope: LibraryScope = .ungrouped
+    @State private var activeRoute: LibraryRoute?
     @State private var exportPayload: ExportPayload?
 
     init() {
@@ -103,6 +103,8 @@ struct LibraryView: View {
 
                 contentView
                     .padding(24)
+
+                routeLinks
 
                 if viewModel.isImporting {
                     importingOverlay
@@ -310,13 +312,13 @@ struct LibraryView: View {
                     viewModel.exitSelection()
                     closeDrawer()
                     reloadBooks(for: scope)
-                } onGroupsChanged: {
-                    reloadBooksIfReady()
                 } onSettingsChanged: { settings in
                     viewModel.applyLibrarySettings(settings)
                     reloadBooksIfReady()
                 } onDisplayOptionChanged: {
                     closeDrawer()
+                } onOpenGroupsPage: {
+                    openRouteFromDrawer(.groups)
                 }
             } else {
                 LibrarySidebarView(
@@ -328,16 +330,54 @@ struct LibraryView: View {
             }
         case .right:
             AddBookSidebarView(
-                repository: currentRepository,
-                revealToken: drawerRevealToken,
                 onImportFromFile: {
                     requestImportFromDrawer()
                 },
-                onOpenBook: { book in
-                    closeDrawer()
-                    activeReaderBook = book
+                onOpenHistoryPage: {
+                    openRouteFromDrawer(.history)
                 }
             )
+        }
+    }
+
+    @ViewBuilder
+    private var routeLinks: some View {
+        if case let .ready(services) = environment.bootstrapState {
+            NavigationLink(
+                tag: LibraryRoute.groups,
+                selection: $activeRoute
+            ) {
+                LibraryGroupsPage(
+                    repository: services.libraryRepository,
+                    onGroupsChanged: { deletedGroupID in
+                        if let deletedGroupID,
+                           selectedScope == .group(deletedGroupID) {
+                            selectedScope = .ungrouped
+                        }
+                        reloadBooksIfReady()
+                    }
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
+
+            NavigationLink(
+                tag: LibraryRoute.history,
+                selection: $activeRoute
+            ) {
+                ReadingHistoryPage(
+                    repository: services.libraryRepository,
+                    onOpenBook: { book in
+                        openBookAfterRouteDismissal(book)
+                    }
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
         }
     }
 
@@ -665,7 +705,6 @@ struct LibraryView: View {
 
     private func openDrawer(_ drawer: LibraryDrawerSide) {
         activeDrawer = drawer
-        drawerRevealToken += 1
         withAnimation(Self.drawerAnimation) {
             isDrawerOpen = true
         }
@@ -685,6 +724,20 @@ struct LibraryView: View {
         closeDrawer()
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerAnimationDuration + 0.02) {
             isImportPickerPresented = true
+        }
+    }
+
+    private func openRouteFromDrawer(_ route: LibraryRoute) {
+        closeDrawer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerAnimationDuration + 0.02) {
+            activeRoute = route
+        }
+    }
+
+    private func openBookAfterRouteDismissal(_ book: Book) {
+        activeRoute = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
+            activeReaderBook = book
         }
     }
 
@@ -762,6 +815,11 @@ struct LibraryView: View {
         navigationBar.compactAppearance = appearance
         navigationBar.compactScrollEdgeAppearance = appearance
     }
+}
+
+private enum LibraryRoute: Hashable {
+    case groups
+    case history
 }
 
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {

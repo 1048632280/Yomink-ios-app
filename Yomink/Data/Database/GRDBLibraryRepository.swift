@@ -309,6 +309,12 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func clearReadingHistory() async throws {
+        try await database.writer.write { db in
+            try db.execute(sql: "DELETE FROM reading_history")
+        }
+    }
+
     func fetchLibrarySettings() async throws -> LibrarySettings {
         try await database.writer.read { db in
             guard let value = try String.fetchOne(
