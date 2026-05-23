@@ -1,3 +1,4 @@
+"app.title" = "Yomink";
 "library.title" = "书架";
 "library.sidebar.open" = "打开分组";
 "library.search.open" = "搜索";
@@ -40,6 +41,7 @@
 "history.error.title" = "足迹加载失败";
 
 "sidebar.groups.section" = "书架分组";
+"sidebar.groupWithCount" = "%@(%d本)";
 "sidebar.allBooks" = "全部书籍";
 "sidebar.ungrouped" = "未分组";
 "sidebar.manageGroups" = "管理分组";

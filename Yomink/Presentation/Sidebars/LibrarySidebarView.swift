@@ -4,6 +4,7 @@ import UIKit
 struct LibrarySidebarView: View {
     let repository: (any LibraryRepository)?
     let groups: [BookGroup]
+    let books: [Book]
     let selectedScope: LibraryScope
     let settings: LibrarySettings?
     let onSelectScope: (LibraryScope) -> Void
@@ -17,6 +18,7 @@ struct LibrarySidebarView: View {
     init(
         repository: (any LibraryRepository)? = nil,
         groups: [BookGroup] = [],
+        books: [Book] = [],
         selectedScope: LibraryScope = .all,
         settings: LibrarySettings? = nil,
         onSelectScope: @escaping (LibraryScope) -> Void = { _ in },
@@ -25,6 +27,7 @@ struct LibrarySidebarView: View {
     ) {
         self.repository = repository
         self.groups = groups
+        self.books = books
         self.selectedScope = selectedScope
         self.settings = settings
         self.onSelectScope = onSelectScope
@@ -37,6 +40,7 @@ struct LibrarySidebarView: View {
         NavigationView {
             VStack(spacing: 0) {
                 sidebarHeader
+                sidebarControls
 
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
@@ -74,7 +78,7 @@ struct LibrarySidebarView: View {
                                 onSelectScope(.group(group.id))
                             } label: {
                                 SidebarItemRow(
-                                    verbatimTitle: group.name,
+                                    verbatimTitle: groupTitle(group),
                                     systemImage: "folder",
                                     isSelected: selectedScope == .group(group.id)
                                 )
@@ -160,6 +164,50 @@ struct LibrarySidebarView: View {
         .navigationViewStyle(.stack)
     }
 
+    private var sidebarControls: some View {
+        HStack(spacing: 12) {
+            Menu {
+                Button {
+                    updateSortOrder(.lastReadAt)
+                } label: {
+                    Label {
+                        Text("library.sort.lastReadAt")
+                    } icon: {
+                        Image(systemName: "clock")
+                    }
+                }
+
+                Button {
+                    updateSortOrder(.importedAt)
+                } label: {
+                    Label {
+                        Text("library.sort.importedAt")
+                    } icon: {
+                        Image(systemName: "tray.and.arrow.down")
+                    }
+                }
+            } label: {
+                Image(systemName: "arrow.up.arrow.down")
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel(Text("library.sort.menu"))
+            .buttonStyle(.borderless)
+
+            Button {
+                toggleViewMode()
+            } label: {
+                Image(systemName: librarySettings.viewMode == .list ? "square.grid.2x2" : "list.bullet")
+                    .frame(width: 36, height: 36)
+            }
+            .accessibilityLabel(Text("library.viewMode.toggle"))
+            .buttonStyle(.borderless)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 8)
+    }
+
     private var sidebarHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("sidebar.header.placeholder")
@@ -173,6 +221,44 @@ struct LibrarySidebarView: View {
         .padding(.top, 18)
         .padding(.bottom, 16)
         .background(Color(.systemGray6))
+    }
+
+    private func groupTitle(_ group: BookGroup) -> String {
+        String(
+            format: NSLocalizedString("sidebar.groupWithCount", comment: ""),
+            group.name,
+            books.filter { $0.groupID == group.id }.count
+        )
+    }
+
+    private func toggleViewMode() {
+        librarySettings.viewMode = librarySettings.viewMode == .list ? .grid : .list
+        persistLibrarySettings()
+    }
+
+    private func updateSortOrder(_ sortOrder: LibrarySettings.SortOrder) {
+        guard librarySettings.sortOrder != sortOrder else {
+            return
+        }
+
+        librarySettings.sortOrder = sortOrder
+        persistLibrarySettings()
+    }
+
+    private func persistLibrarySettings() {
+        let settings = librarySettings
+        onSettingsChanged(settings)
+        guard let repository else {
+            return
+        }
+
+        Task {
+            do {
+                try await repository.saveLibrarySettings(settings)
+            } catch {
+                groupErrorMessage = error.localizedDescription
+            }
+        }
     }
 
     @MainActor

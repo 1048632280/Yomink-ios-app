@@ -205,6 +205,11 @@ struct LibraryView: View {
                     )
                 }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if viewModel.isSelecting {
+                    selectionActionBar
+                }
+            }
         }
         .navigationViewStyle(.stack)
     }
@@ -248,13 +253,6 @@ struct LibraryView: View {
                 .accessibilityLabel(Text("library.search.open"))
 
                 Button {
-                    viewModel.toggleViewModeIfReady(repository: currentRepository)
-                } label: {
-                    Image(systemName: viewModel.settings.viewMode == .list ? "square.grid.2x2" : "list.bullet")
-                }
-                .accessibilityLabel(Text("library.viewMode.toggle"))
-
-                Button {
                     openDrawer(.right)
                 } label: {
                     Image(systemName: "plus")
@@ -290,6 +288,7 @@ struct LibraryView: View {
                 LibrarySidebarView(
                     repository: services.libraryRepository,
                     groups: viewModel.groups,
+                    books: viewModel.allBooks,
                     selectedScope: selectedScope,
                     settings: viewModel.settings
                 ) { scope in
@@ -306,6 +305,7 @@ struct LibraryView: View {
             } else {
                 LibrarySidebarView(
                     groups: viewModel.groups,
+                    books: viewModel.allBooks,
                     selectedScope: selectedScope,
                     settings: viewModel.settings
                 )
@@ -337,19 +337,13 @@ struct LibraryView: View {
             if viewModel.books.isEmpty {
                 emptyShelfView
             } else {
-                VStack(spacing: 12) {
-                    shelfHeader
-                    shelfContentView
-                    if viewModel.isSelecting {
-                        selectionActionBar
-                    }
-                }
+                shelfContentView
             }
         }
     }
 
     private var navigationTitleKey: LocalizedStringKey {
-        viewModel.isSelecting ? "library.selection.title" : "library.title"
+        viewModel.isSelecting ? "library.selection.title" : "app.title"
     }
 
     @ViewBuilder
@@ -359,50 +353,6 @@ struct LibraryView: View {
             bookListView
         case .grid:
             bookGridView
-        }
-    }
-
-    private var shelfHeader: some View {
-        HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                scopeTitle
-                    .font(.headline)
-                Text(viewModel.bookCountText)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer(minLength: 8)
-
-            Menu {
-                Button {
-                    viewModel.setSortOrder(.lastReadAt, repository: currentRepository) {
-                        reloadBooksIfReady()
-                    }
-                } label: {
-                    Label {
-                        Text("library.sort.lastReadAt")
-                    } icon: {
-                        Image(systemName: "clock")
-                    }
-                }
-
-                Button {
-                    viewModel.setSortOrder(.importedAt, repository: currentRepository) {
-                        reloadBooksIfReady()
-                    }
-                } label: {
-                    Label {
-                        Text("library.sort.importedAt")
-                    } icon: {
-                        Image(systemName: "tray.and.arrow.down")
-                    }
-                }
-            } label: {
-                Image(systemName: "arrow.up.arrow.down")
-                    .frame(width: 34, height: 34)
-            }
-            .accessibilityLabel(Text("library.sort.menu"))
         }
     }
 
@@ -482,76 +432,71 @@ struct LibraryView: View {
     }
 
     private var selectionActionBar: some View {
-        HStack(spacing: 12) {
-            Button {
-                viewModel.invertSelection()
+        HStack(spacing: 0) {
+            Button(role: .destructive) {
+                deleteBooks(viewModel.selectedBookIDs)
             } label: {
-                Label {
-                    Text("library.selection.invert")
-                } icon: {
-                    Image(systemName: "checkmark.circle")
-                }
+                Text("library.delete")
+                    .frame(maxWidth: .infinity, minHeight: 54)
             }
+            .foregroundColor(
+                viewModel.selectedBookIDs.isEmpty ? Color(.tertiaryLabel) : .red.opacity(0.82)
+            )
+            .disabled(viewModel.selectedBookIDs.isEmpty)
 
             Menu {
                 Button {
                     moveSelectedBooks(to: nil)
                 } label: {
-                    Label {
-                        Text("sidebar.ungrouped")
-                    } icon: {
-                        Image(systemName: "tray")
-                    }
+                    Text("sidebar.ungrouped")
                 }
 
                 ForEach(viewModel.groups) { group in
                     Button {
                         moveSelectedBooks(to: group.id)
                     } label: {
-                        Label {
-                            Text(verbatim: group.name)
-                        } icon: {
-                            Image(systemName: "folder")
-                        }
+                        Text(verbatim: group.name)
                     }
                 }
             } label: {
-                Label {
-                    Text("library.selection.move")
-                } icon: {
-                    Image(systemName: "folder")
-                }
+                Text("library.selection.move")
+                    .frame(maxWidth: .infinity, minHeight: 54)
             }
+            .foregroundColor(
+                viewModel.selectedBookIDs.isEmpty ? Color(.tertiaryLabel) : .accentColor
+            )
             .disabled(viewModel.selectedBookIDs.isEmpty)
+
+            Button {
+                viewModel.invertSelection()
+            } label: {
+                Text("library.selection.invert")
+                    .frame(maxWidth: .infinity, minHeight: 54)
+            }
+            .foregroundColor(.accentColor)
 
             Button {
                 exportSelectedBooks()
             } label: {
-                Label {
-                    Text("library.selection.export")
-                } icon: {
-                    Image(systemName: "square.and.arrow.up")
-                }
+                Text("library.selection.export")
+                    .frame(maxWidth: .infinity, minHeight: 54)
             }
-            .disabled(viewModel.selectedBookIDs.isEmpty)
-
-            Button(role: .destructive) {
-                deleteBooks(viewModel.selectedBookIDs)
-            } label: {
-                Label {
-                    Text("library.delete")
-                } icon: {
-                    Image(systemName: "trash")
-                }
-            }
+            .foregroundColor(
+                viewModel.selectedBookIDs.isEmpty ? Color(.tertiaryLabel) : .accentColor
+            )
             .disabled(viewModel.selectedBookIDs.isEmpty)
         }
-        .font(.footnote.weight(.semibold))
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
+        .font(.body)
+        .buttonStyle(.plain)
+        .tint(.accentColor)
         .frame(maxWidth: .infinity)
-        .background(.regularMaterial)
-        .cornerRadius(8)
+        .background(Color(.systemBackground))
+        .overlay(alignment: .top) {
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(height: 0.5)
+        }
+        .ignoresSafeArea(.container, edges: .bottom)
     }
 
     private var emptyShelfView: some View {
@@ -597,20 +542,6 @@ struct LibraryView: View {
             .padding(20)
             .background(.regularMaterial)
             .cornerRadius(8)
-        }
-    }
-
-    private var scopeTitle: Text {
-        switch selectedScope {
-        case .all:
-            return Text("sidebar.allBooks")
-        case .ungrouped:
-            return Text("sidebar.ungrouped")
-        case let .group(groupID):
-            if let group = viewModel.groups.first(where: { $0.id == groupID }) {
-                return Text(verbatim: group.name)
-            }
-            return Text("sidebar.allBooks")
         }
     }
 
@@ -915,6 +846,7 @@ private struct ActivityPresenter: UIViewControllerRepresentable {
 @MainActor
 private final class LibraryViewModel: ObservableObject {
     @Published var books: [Book] = []
+    @Published var allBooks: [Book] = []
     @Published var groups: [BookGroup] = []
     @Published var settings = LibrarySettings.default
     @Published var selectedBookIDs: Set<UUID> = []
@@ -933,13 +865,6 @@ private final class LibraryViewModel: ObservableObject {
         )
     }
 
-    var bookCountText: String {
-        String(
-            format: NSLocalizedString("library.count", comment: ""),
-            books.count
-        )
-    }
-
     func bootstrap(
         repository: any LibraryRepository,
         scope: LibraryScope
@@ -953,6 +878,10 @@ private final class LibraryViewModel: ObservableObject {
             async let fetchedGroups = repository.fetchGroups()
             settings = try await fetchedSettings
             groups = try await fetchedGroups
+            allBooks = try await repository.fetchBooks(
+                scope: .all,
+                sortOrder: settings.sortOrder
+            )
             books = try await repository.fetchBooks(
                 scope: scope,
                 sortOrder: settings.sortOrder
@@ -973,11 +902,16 @@ private final class LibraryViewModel: ObservableObject {
 
         do {
             async let fetchedGroups = repository.fetchGroups()
+            async let fetchedAllBooks = repository.fetchBooks(
+                scope: .all,
+                sortOrder: settings.sortOrder
+            )
             async let fetchedBooks = repository.fetchBooks(
                 scope: scope,
                 sortOrder: settings.sortOrder
             )
             groups = try await fetchedGroups
+            allBooks = try await fetchedAllBooks
             books = try await fetchedBooks
             pruneSelection()
         } catch {
@@ -1043,26 +977,6 @@ private final class LibraryViewModel: ObservableObject {
 
     func exitSelection() {
         selectedBookIDs.removeAll()
-    }
-
-    func toggleViewModeIfReady(repository: (any LibraryRepository)?) {
-        let nextMode: LibrarySettings.ViewMode = settings.viewMode == .list ? .grid : .list
-        settings.viewMode = nextMode
-        saveLibrarySettings(repository: repository)
-    }
-
-    func setSortOrder(
-        _ sortOrder: LibrarySettings.SortOrder,
-        repository: (any LibraryRepository)?,
-        onChange: @escaping () -> Void
-    ) {
-        guard settings.sortOrder != sortOrder else {
-            return
-        }
-
-        settings.sortOrder = sortOrder
-        saveLibrarySettings(repository: repository)
-        onChange()
     }
 
     func applyLibrarySettings(_ settings: LibrarySettings) {
@@ -1145,6 +1059,10 @@ private final class LibraryViewModel: ObservableObject {
                 _ = try await importService.importBook(from: url)
                 try Task.checkCancellation()
                 groups = try await repository.fetchGroups()
+                allBooks = try await repository.fetchBooks(
+                    scope: .all,
+                    sortOrder: settings.sortOrder
+                )
                 books = try await repository.fetchBooks(
                     scope: scope,
                     sortOrder: settings.sortOrder
@@ -1205,14 +1123,19 @@ private struct BookShelfItemButton<Content: View>: View {
     }
 
     var body: some View {
-        Button(action: action) {
-            content()
-        }
-        .simultaneousGesture(
-            LongPressGesture(minimumDuration: 0.45)
-                .onEnded { _ in
-                    longPressAction()
-                }
+        content()
+            .contentShape(Rectangle())
+            .gesture(
+                LongPressGesture(minimumDuration: 0.45)
+                    .exclusively(before: TapGesture())
+                    .onEnded { value in
+                        switch value {
+                        case .first:
+                            longPressAction()
+                        case .second:
+                            action()
+                        }
+                    }
         )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
