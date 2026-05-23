@@ -9,161 +9,187 @@ struct LibraryView: View {
     @State private var activeDrawer: LibraryDrawerSide?
     @State private var activeReaderBook: Book?
     @State private var isImportPickerPresented = false
-    @State private var drawerDragOffset: CGFloat = 0
+    @State private var isDrawerOpen = false
+    @State private var closeDragOffset: CGFloat = 0
+    @State private var drawerAnimationGeneration = 0
 
     var body: some View {
-        ZStack {
-            NavigationView {
-                ZStack {
-                    contentView
-                        .padding(24)
+        GeometryReader { proxy in
+            let drawerWidth = drawerWidth(for: proxy.size)
 
-                    if viewModel.isImporting {
-                        importingOverlay
-                    }
-                }
-                .navigationTitle("library.title")
-                .disabled(viewModel.isImporting)
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        Button {
-                            openDrawer(.left)
-                        } label: {
-                            Image(systemName: "folder")
-                        }
-                        .accessibilityLabel(Text("library.sidebar.open"))
-                    }
+            ZStack {
+                drawerRevealLayer(width: drawerWidth)
 
-                    ToolbarItemGroup(placement: .navigationBarTrailing) {
-                        Button {
-                            activeSheet = .search
-                        } label: {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        .accessibilityLabel(Text("library.search.open"))
-
-                        Button {
-                            openDrawer(.right)
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                        .accessibilityLabel(Text("library.add.open"))
-                    }
-                }
-                .sheet(
-                    item: $activeSheet,
-                    onDismiss: handleSheetDismiss
-                ) { sheet in
-                    switch sheet {
-                    case .search:
-                        GlobalSearchPlaceholderView()
-                    }
-                }
-                .fullScreenCover(
-                    item: $activeReaderBook,
-                    onDismiss: reloadBooksIfReady
-                ) { book in
-                    if case let .ready(services) = environment.bootstrapState {
-                        ReaderHostView(
-                            book: book,
-                            fileStore: services.fileStore,
-                            repository: services.libraryRepository
-                        )
-                        .ignoresSafeArea()
-                        .statusBar(hidden: true)
-                    }
-                }
-                .background {
-                    DocumentPickerPresenter(
-                        isPresented: $isImportPickerPresented,
-                        allowedContentTypes: [Self.txtContentType]
-                    ) { result in
-                        guard case let .ready(services) = environment.bootstrapState else {
-                            return
-                        }
-                        viewModel.handleImportResult(
-                            result,
-                            importService: services.importService,
-                            repository: services.libraryRepository
-                        )
-                    }
-                    .frame(width: 0, height: 0)
-                }
-                .onChange(of: isImportPickerPresented) { isPresented in
-                    guard case let .ready(services) = environment.bootstrapState else {
-                        return
-                    }
-                    if !isPresented {
-                        viewModel.loadIfNeededAfterPickerDismissal(repository: services.libraryRepository)
-                    }
-                }
-                .alert(
-                    "import.error.title",
-                    isPresented: Binding(
-                        get: { viewModel.importErrorMessage != nil },
-                        set: { isPresented in
-                            if !isPresented {
-                                viewModel.importErrorMessage = nil
-                            }
-                        }
-                    )
-                ) {
-                    Button("common.ok", role: .cancel) {
-                        viewModel.importErrorMessage = nil
-                    }
-                } message: {
-                    Text(viewModel.importErrorMessage ?? "")
-                }
-                .refreshable {
-                    if case let .ready(services) = environment.bootstrapState {
-                        await viewModel.loadBooks(repository: services.libraryRepository)
-                    }
-                }
-                .task(id: bootstrapTaskID) {
-                    if case let .ready(services) = environment.bootstrapState {
-                        await viewModel.loadBooks(repository: services.libraryRepository)
-                    }
-                }
+                mainSurface(width: drawerWidth)
+                    .offset(x: mainOffset(width: drawerWidth))
+                    .animation(Self.drawerAnimation, value: isDrawerOpen)
             }
-            .navigationViewStyle(.stack)
-
-            drawerLayer
+            .background(Color(.systemGray6))
+            .clipped()
         }
     }
 
     @ViewBuilder
-    private var drawerLayer: some View {
-        if let activeDrawer {
-            GeometryReader { proxy in
-                let width = drawerWidth(for: proxy.size)
-                let dimmingProgress = 1 - min(abs(drawerDragOffset) / max(width, 1), 1)
-
-                ZStack(alignment: activeDrawer.alignment) {
-                    Color.black
-                        .opacity(0.24 * dimmingProgress)
-                        .ignoresSafeArea()
-                        .onTapGesture {
-                            closeDrawer()
-                        }
-
-                    drawerView(for: activeDrawer)
+    private func drawerRevealLayer(width: CGFloat) -> some View {
+        ZStack {
+            if activeDrawer == .left {
+                HStack(spacing: 0) {
+                    drawerView(for: .left)
                         .frame(width: width)
-                        .frame(maxHeight: .infinity)
-                        .background(Color(.systemBackground))
-                        .shadow(color: Color.black.opacity(0.22), radius: 18, x: activeDrawer.shadowX, y: 0)
-                        .offset(x: drawerDragOffset)
-                        .simultaneousGesture(drawerDragGesture(for: activeDrawer, width: width))
-                        .transition(.move(edge: activeDrawer.edge))
+                        .offset(x: isDrawerOpen ? 0 : -width * 0.18)
+                        .allowsHitTesting(isDrawerOpen)
+
+                    Spacer(minLength: 0)
                 }
-                .frame(
-                    maxWidth: .infinity,
-                    maxHeight: .infinity,
-                    alignment: activeDrawer.alignment
-                )
             }
-            .transition(.opacity)
-            .zIndex(10)
+
+            if activeDrawer == .right {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+
+                    drawerView(for: .right)
+                        .frame(width: width)
+                        .offset(x: isDrawerOpen ? 0 : width * 0.18)
+                        .allowsHitTesting(isDrawerOpen)
+                }
+            }
         }
+        .background(Color(.systemGray6))
+        .ignoresSafeArea()
+        .animation(Self.drawerAnimation, value: isDrawerOpen)
+    }
+
+    private func mainSurface(width: CGFloat) -> some View {
+        ZStack {
+            libraryNavigationView
+                .allowsHitTesting(activeDrawer == nil)
+
+            if activeDrawer != nil {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        closeDrawer()
+                    }
+                    .gesture(closeDragGesture(width: width))
+                    .accessibilityLabel(Text("library.drawer.close"))
+            }
+        }
+    }
+
+    private var libraryNavigationView: some View {
+        NavigationView {
+            ZStack {
+                contentView
+                    .padding(24)
+
+                if viewModel.isImporting {
+                    importingOverlay
+                }
+            }
+            .navigationTitle("library.title")
+            .disabled(viewModel.isImporting)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button {
+                        openDrawer(.left)
+                    } label: {
+                        Image(systemName: "folder")
+                    }
+                    .accessibilityLabel(Text("library.sidebar.open"))
+                }
+
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        activeSheet = .search
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel(Text("library.search.open"))
+
+                    Button {
+                        openDrawer(.right)
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                    .accessibilityLabel(Text("library.add.open"))
+                }
+            }
+            .sheet(
+                item: $activeSheet,
+                onDismiss: handleSheetDismiss
+            ) { sheet in
+                switch sheet {
+                case .search:
+                    GlobalSearchPlaceholderView()
+                }
+            }
+            .fullScreenCover(
+                item: $activeReaderBook,
+                onDismiss: reloadBooksIfReady
+            ) { book in
+                if case let .ready(services) = environment.bootstrapState {
+                    ReaderHostView(
+                        book: book,
+                        fileStore: services.fileStore,
+                        repository: services.libraryRepository
+                    )
+                    .ignoresSafeArea()
+                    .statusBar(hidden: true)
+                }
+            }
+            .background {
+                DocumentPickerPresenter(
+                    isPresented: $isImportPickerPresented,
+                    allowedContentTypes: [Self.txtContentType]
+                ) { result in
+                    guard case let .ready(services) = environment.bootstrapState else {
+                        return
+                    }
+                    viewModel.handleImportResult(
+                        result,
+                        importService: services.importService,
+                        repository: services.libraryRepository
+                    )
+                }
+                .frame(width: 0, height: 0)
+            }
+            .onChange(of: isImportPickerPresented) { isPresented in
+                guard case let .ready(services) = environment.bootstrapState else {
+                    return
+                }
+                if !isPresented {
+                    viewModel.loadIfNeededAfterPickerDismissal(repository: services.libraryRepository)
+                }
+            }
+            .alert(
+                "import.error.title",
+                isPresented: Binding(
+                    get: { viewModel.importErrorMessage != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            viewModel.importErrorMessage = nil
+                        }
+                    }
+                )
+            ) {
+                Button("common.ok", role: .cancel) {
+                    viewModel.importErrorMessage = nil
+                }
+            } message: {
+                Text(viewModel.importErrorMessage ?? "")
+            }
+            .refreshable {
+                if case let .ready(services) = environment.bootstrapState {
+                    await viewModel.loadBooks(repository: services.libraryRepository)
+                }
+            }
+            .task(id: bootstrapTaskID) {
+                if case let .ready(services) = environment.bootstrapState {
+                    await viewModel.loadBooks(repository: services.libraryRepository)
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
     }
 
     @ViewBuilder
@@ -290,57 +316,73 @@ struct LibraryView: View {
     }
 
     private func openDrawer(_ drawer: LibraryDrawerSide) {
-        drawerDragOffset = 0
-        withAnimation(.easeOut(duration: 0.24)) {
-            activeDrawer = drawer
+        drawerAnimationGeneration += 1
+        closeDragOffset = 0
+        activeDrawer = drawer
+        withAnimation(Self.drawerAnimation) {
+            isDrawerOpen = true
         }
     }
 
     private func closeDrawer() {
-        withAnimation(.easeInOut(duration: 0.22)) {
+        guard activeDrawer != nil else {
+            return
+        }
+
+        drawerAnimationGeneration += 1
+        let generation = drawerAnimationGeneration
+        withAnimation(Self.drawerAnimation) {
+            isDrawerOpen = false
+            closeDragOffset = 0
+        }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerCloseDuration) {
+            guard generation == drawerAnimationGeneration else {
+                return
+            }
             activeDrawer = nil
-            drawerDragOffset = 0
         }
     }
 
     private func requestImportFromDrawer() {
         closeDrawer()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.26) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerCloseDuration + 0.02) {
             isImportPickerPresented = true
         }
     }
 
     private func drawerWidth(for size: CGSize) -> CGFloat {
-        let maximumWidth = min(size.width - 32, size.width >= 700 ? 380 : 340)
-        return min(max(size.width * 0.82, 280), max(maximumWidth, 0))
+        let visibleMainWidth: CGFloat = size.width >= 700 ? 96 : 64
+        let maximumWidth = max(size.width - visibleMainWidth, 0)
+        let preferredWidth: CGFloat = size.width >= 700 ? 380 : 320
+        return min(preferredWidth, maximumWidth)
     }
 
-    private func drawerDragGesture(
-        for side: LibraryDrawerSide,
-        width: CGFloat
-    ) -> some Gesture {
+    private func closeDragGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else {
+                guard let activeDrawer,
+                      abs(value.translation.width) > abs(value.translation.height)
+                else {
                     return
                 }
-                drawerDragOffset = side.dragOffset(
+                closeDragOffset = activeDrawer.closeOffset(
                     for: value.translation.width,
                     width: width
                 )
             }
             .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        drawerDragOffset = 0
-                    }
+                guard let activeDrawer,
+                      abs(value.translation.width) > abs(value.translation.height)
+                else {
+                    resetCloseDragOffset()
                     return
                 }
-                let offset = side.dragOffset(
+                let offset = activeDrawer.closeOffset(
                     for: value.translation.width,
                     width: width
                 )
-                let predictedOffset = side.dragOffset(
+                let predictedOffset = activeDrawer.closeOffset(
                     for: value.predictedEndTranslation.width,
                     width: width
                 )
@@ -350,12 +392,34 @@ struct LibraryView: View {
                 if shouldClose {
                     closeDrawer()
                 } else {
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        drawerDragOffset = 0
-                    }
+                    resetCloseDragOffset()
                 }
             }
     }
+
+    private func resetCloseDragOffset() {
+        withAnimation(Self.drawerAnimation) {
+            closeDragOffset = 0
+        }
+    }
+
+    private func mainOffset(width: CGFloat) -> CGFloat {
+        guard let activeDrawer,
+              isDrawerOpen
+        else {
+            return 0
+        }
+
+        return activeDrawer.openOffset(width: width) + closeDragOffset
+    }
+
+    private static let drawerCloseDuration = 0.28
+
+    private static let drawerAnimation = Animation.spring(
+        response: 0.28,
+        dampingFraction: 0.9,
+        blendDuration: 0.02
+    )
 
     // Use the system type directly. A dynamic "txt" UTType can make Files keep
     // .txt documents disabled on some iOS versions.
@@ -635,38 +699,20 @@ private enum LibrarySheet: Identifiable {
     }
 }
 
-private enum LibraryDrawerSide {
+private enum LibraryDrawerSide: Equatable {
     case left
     case right
 
-    var alignment: Alignment {
+    func openOffset(width: CGFloat) -> CGFloat {
         switch self {
         case .left:
-            return .leading
+            return width
         case .right:
-            return .trailing
+            return -width
         }
     }
 
-    var edge: Edge {
-        switch self {
-        case .left:
-            return .leading
-        case .right:
-            return .trailing
-        }
-    }
-
-    var shadowX: CGFloat {
-        switch self {
-        case .left:
-            return 8
-        case .right:
-            return -8
-        }
-    }
-
-    func dragOffset(for translation: CGFloat, width: CGFloat) -> CGFloat {
+    func closeOffset(for translation: CGFloat, width: CGFloat) -> CGFloat {
         switch self {
         case .left:
             return min(max(translation, -width), 0)

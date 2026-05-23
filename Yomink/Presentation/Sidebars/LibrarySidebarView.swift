@@ -14,38 +14,56 @@ struct LibrarySidebarView: View {
             VStack(spacing: 0) {
                 sidebarHeader
 
-                List {
-                    Section("sidebar.groups.section") {
-                        Label("sidebar.allBooks", systemImage: "book")
-                        Label("sidebar.ungrouped", systemImage: "tray")
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        Text("sidebar.groups.section")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 24)
+                            .padding(.top, 18)
+                            .padding(.bottom, 4)
+
+                        SidebarItemRow(
+                            title: "sidebar.allBooks",
+                            systemImage: "book"
+                        )
+                        SidebarItemRow(
+                            title: "sidebar.ungrouped",
+                            systemImage: "tray"
+                        )
 
                         ForEach(groups) { group in
-                            Label {
-                                Text(verbatim: group.name)
-                            } icon: {
-                                Image(systemName: "folder")
-                            }
+                            SidebarItemRow(
+                                title: group.name,
+                                systemImage: "folder",
+                                isLocalized: false
+                            )
                         }
-                    }
 
-                    Section {
                         NavigationLink {
                             GroupManagementPlaceholderView()
                         } label: {
-                            Label("sidebar.manageGroups", systemImage: "folder.badge.gearshape")
+                            SidebarItemRow(
+                                title: "sidebar.manageGroups",
+                                systemImage: "folder.badge.gearshape"
+                            )
                         }
+                        .buttonStyle(.plain)
+                        .padding(.top, 10)
                     }
+                    .padding(.bottom, 16)
                 }
-                .listStyle(.insetGrouped)
 
                 Divider()
 
-                Label("settings.title", systemImage: "gearshape")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
+                SidebarItemRow(
+                    title: "settings.title",
+                    systemImage: "gearshape"
+                )
+                .padding(.vertical, 10)
             }
             .navigationBarHidden(true)
+            .background(Color(.systemGray6))
             .task {
                 guard let repository else {
                     return
@@ -68,7 +86,39 @@ struct LibrarySidebarView: View {
         .padding(.horizontal, 20)
         .padding(.top, 24)
         .padding(.bottom, 16)
-        .background(Color(UIColor.secondarySystemBackground))
+        .background(Color(.systemGray6))
+    }
+}
+
+struct SidebarItemRow: View {
+    let title: String
+    let systemImage: String
+    var isLocalized = true
+
+    var body: some View {
+        Label {
+            titleText
+                .font(.body.weight(.medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+        } icon: {
+            Image(systemName: systemImage)
+                .font(.system(size: 19, weight: .regular))
+                .foregroundColor(.accentColor)
+                .frame(width: 28)
+        }
+        .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+        .padding(.horizontal, 24)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder
+    private var titleText: some View {
+        if isLocalized {
+            Text(title)
+        } else {
+            Text(verbatim: title)
+        }
     }
 }
 

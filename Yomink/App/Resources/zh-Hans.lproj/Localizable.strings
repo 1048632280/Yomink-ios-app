@@ -2,6 +2,7 @@
 "library.sidebar.open" = "打开分组";
 "library.search.open" = "搜索";
 "library.add.open" = "添加";
+"library.drawer.close" = "关闭侧边栏";
 "library.empty.title" = "还没有导入书籍";
 "library.empty.message" = "从本地文件导入 TXT，Yomink 会复制原文并生成 UTF-8 阅读缓存。";
 

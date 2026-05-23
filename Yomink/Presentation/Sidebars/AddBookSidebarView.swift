@@ -13,21 +13,29 @@ struct AddBookSidebarView: View {
             VStack(spacing: 0) {
                 sidebarHeader
 
-                List {
-                    Section {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
                         Button {
                             onImportFromFile()
                         } label: {
-                            Label("add.import.file", systemImage: "square.and.arrow.down")
+                            SidebarItemRow(
+                                title: "add.import.file",
+                                systemImage: "square.and.arrow.down"
+                            )
                         }
-                        .foregroundColor(.primary)
+                        .buttonStyle(.plain)
 
-                        Label("add.reading.history", systemImage: "clock")
+                        SidebarItemRow(
+                            title: "add.reading.history",
+                            systemImage: "clock"
+                        )
                     }
+                    .padding(.top, 18)
+                    .padding(.bottom, 16)
                 }
-                .listStyle(.insetGrouped)
             }
             .navigationBarHidden(true)
+            .background(Color(.systemGray6))
         }
         .navigationViewStyle(.stack)
     }
@@ -44,6 +52,6 @@ struct AddBookSidebarView: View {
         .padding(.horizontal, 20)
         .padding(.top, 24)
         .padding(.bottom, 16)
-        .background(Color(UIColor.secondarySystemBackground))
+        .background(Color(.systemGray6))
     }
 }
