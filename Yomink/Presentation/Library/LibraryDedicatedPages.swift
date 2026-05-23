@@ -8,38 +8,72 @@ struct LibraryGroupsPage: View {
     let onGroupsChanged: (UUID?) -> Void
 
     @State private var groups: [BookGroup] = []
+    @State private var books: [Book] = []
     @State private var isEditing = false
-    @State private var isAddingGroup = false
-    @State private var editingGroup: BookGroup?
+    @State private var groupNameEditor: GroupNameEditor?
     @State private var groupPendingDeletion: BookGroup?
     @State private var nameDraft = ""
     @State private var errorMessage: String?
+    @State private var pressedGroupID: UUID?
 
     var body: some View {
         ZStack {
             Color(.systemGray6)
                 .ignoresSafeArea()
 
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    DedicatedListRow(title: NSLocalizedString("sidebar.ungrouped", comment: ""))
+            List {
+                DedicatedGroupListRow(
+                    title: groupTitle(
+                        name: NSLocalizedString("sidebar.ungrouped", comment: ""),
+                        count: books.filter { $0.groupID == nil }.count
+                    )
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                .moveDisabled(true)
 
-                    ForEach(groups) { group in
-                        DedicatedListRow(
-                            title: group.name,
-                            showsDeleteControl: isEditing,
-                            deleteAction: {
-                                groupPendingDeletion = group
-                            }
-                        )
-                        .onLongPressGesture {
+                ForEach(groups) { group in
+                    DedicatedGroupListRow(
+                        title: groupTitle(
+                            name: group.name,
+                            count: books.filter { $0.groupID == group.id }.count
+                        ),
+                        showsDeleteControl: isEditing,
+                        isPressed: pressedGroupID == group.id,
+                        deleteAction: {
+                            groupPendingDeletion = group
+                        }
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+                    .moveDisabled(!isEditing)
+                    .onLongPressGesture(
+                        minimumDuration: 0.45,
+                        pressing: { isPressing in
+                            pressedGroupID = isPressing ? group.id : nil
+                        },
+                        perform: {
+                            pressedGroupID = nil
                             beginRename(group)
                         }
-                    }
+                    )
                 }
-                .frame(maxWidth: .infinity)
+                .onMove(perform: moveGroups)
             }
+            .listStyle(.plain)
+            .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .background(Color(.systemGray6))
+            .animation(.easeInOut(duration: 0.18), value: isEditing)
+
+            if groupNameEditor != nil {
+                groupNameOverlay
+            }
+
+            if groupPendingDeletion != nil {
+                deleteConfirmationOverlay
+            }
         }
         .navigationBarBackButtonHidden(true)
         .background(InteractivePopGestureRestorer())
@@ -53,7 +87,7 @@ struct LibraryGroupsPage: View {
             }
 
             ToolbarItemGroup(placement: .navigationBarTrailing) {
-                Button("common.add") {
+                Button("common.new") {
                     beginAdd()
                 }
 
@@ -66,47 +100,6 @@ struct LibraryGroupsPage: View {
         }
         .task {
             await reloadGroups()
-        }
-        .alert(
-            editTitle,
-            isPresented: Binding(
-                get: { isAddingGroup || editingGroup != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        cancelEditing()
-                    }
-                }
-            )
-        ) {
-            TextField("groups.name.placeholder", text: $nameDraft)
-            Button("common.cancel", role: .cancel) {
-                cancelEditing()
-            }
-            Button("common.save") {
-                saveGroup()
-            }
-        } message: {
-            Text("groups.name.message")
-        }
-        .alert(
-            "groups.delete.title",
-            isPresented: Binding(
-                get: { groupPendingDeletion != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        groupPendingDeletion = nil
-                    }
-                }
-            )
-        ) {
-            Button("common.cancel", role: .cancel) {
-                groupPendingDeletion = nil
-            }
-            Button("library.delete", role: .destructive) {
-                deletePendingGroup()
-            }
-        } message: {
-            Text("groups.delete.message")
         }
         .alert(
             "groups.error.title",
@@ -128,17 +121,44 @@ struct LibraryGroupsPage: View {
     }
 
     private var editTitle: LocalizedStringKey {
-        isAddingGroup ? "groups.add" : "groups.rename"
+        groupNameEditor?.title ?? "groups.new"
     }
 
     private var editButtonTitle: LocalizedStringKey {
         isEditing ? "common.done" : "common.edit"
     }
 
+    private var groupNameOverlay: some View {
+        DedicatedPromptOverlay(
+            title: editTitle,
+            message: "groups.name.message",
+            text: $nameDraft,
+            placeholder: NSLocalizedString("groups.name.placeholder", comment: ""),
+            confirmTitle: "common.save",
+            confirmRole: nil,
+            confirmAction: saveGroup,
+            cancelAction: cancelEditing
+        )
+    }
+
+    private var deleteConfirmationOverlay: some View {
+        DedicatedConfirmationOverlay(
+            title: "groups.delete.title",
+            message: "groups.delete.message",
+            confirmTitle: "library.delete",
+            confirmRole: .destructive,
+            confirmAction: deletePendingGroup,
+            cancelAction: {
+                groupPendingDeletion = nil
+            }
+        )
+    }
+
     @MainActor
     private func reloadGroups() async {
         do {
             groups = try await repository.fetchGroups()
+            books = try await repository.fetchBooks(scope: .all, sortOrder: .lastReadAt)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -146,29 +166,26 @@ struct LibraryGroupsPage: View {
 
     private func beginAdd() {
         nameDraft = ""
-        editingGroup = nil
-        isAddingGroup = true
+        groupNameEditor = .new
     }
 
     private func beginRename(_ group: BookGroup) {
         nameDraft = group.name
-        editingGroup = group
-        isAddingGroup = false
+        groupNameEditor = .rename(group)
     }
 
     private func cancelEditing() {
-        isAddingGroup = false
-        editingGroup = nil
+        groupNameEditor = nil
         nameDraft = ""
     }
 
     private func saveGroup() {
-        let group = editingGroup
+        let editor = groupNameEditor
         let name = nameDraft
 
         Task {
             do {
-                if let group {
+                if case let .rename(group) = editor {
                     try await repository.renameGroup(id: group.id, name: name)
                 } else {
                     _ = try await repository.createGroup(name: name)
@@ -196,6 +213,43 @@ struct LibraryGroupsPage: View {
             } catch {
                 errorMessage = error.localizedDescription
             }
+        }
+    }
+
+    private func moveGroups(from source: IndexSet, to destination: Int) {
+        groups.move(fromOffsets: source, toOffset: destination)
+        let ids = groups.map(\.id)
+
+        Task {
+            do {
+                try await repository.reorderGroups(ids: ids)
+                await reloadGroups()
+                onGroupsChanged(nil)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func groupTitle(name: String, count: Int) -> String {
+        String(
+            format: NSLocalizedString("sidebar.groupWithCount", comment: ""),
+            name,
+            count
+        )
+    }
+}
+
+private enum GroupNameEditor {
+    case new
+    case rename(BookGroup)
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .new:
+            return "groups.new"
+        case .rename:
+            return "groups.rename"
         }
     }
 }
@@ -496,6 +550,142 @@ private struct BackTextButton: View {
     }
 }
 
+private struct DedicatedPromptOverlay: View {
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
+    @Binding var text: String
+    let placeholder: String
+    let confirmTitle: LocalizedStringKey
+    let confirmRole: ButtonRole?
+    let confirmAction: () -> Void
+    let cancelAction: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        DedicatedModalBackdrop {
+            VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                TextField(placeholder, text: $text)
+                    .textInputAutocapitalization(.never)
+                    .disableAutocorrection(true)
+                    .focused($isFocused)
+                    .padding(.horizontal, 12)
+                    .frame(height: 40)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+                HStack(spacing: 0) {
+                    Button("common.cancel", role: .cancel, action: cancelAction)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+
+                    Rectangle()
+                        .fill(Color(.systemGray4))
+                        .frame(width: 0.5, height: 44)
+
+                    Button(confirmTitle, role: confirmRole, action: confirmAction)
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color(.systemGray4))
+                        .frame(height: 0.5)
+                }
+                .padding(.horizontal, -18)
+                .padding(.bottom, -14)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+        }
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                isFocused = true
+            }
+        }
+    }
+}
+
+private struct DedicatedConfirmationOverlay: View {
+    let title: LocalizedStringKey
+    let message: LocalizedStringKey
+    let confirmTitle: LocalizedStringKey
+    let confirmRole: ButtonRole?
+    let confirmAction: () -> Void
+    let cancelAction: () -> Void
+
+    var body: some View {
+        DedicatedModalBackdrop {
+            VStack(spacing: 16) {
+                VStack(spacing: 6) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text(message)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                HStack(spacing: 0) {
+                    Button("common.cancel", role: .cancel, action: cancelAction)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+
+                    Rectangle()
+                        .fill(Color(.systemGray4))
+                        .frame(width: 0.5, height: 44)
+
+                    Button(confirmTitle, role: confirmRole, action: confirmAction)
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .overlay(alignment: .top) {
+                    Rectangle()
+                        .fill(Color(.systemGray4))
+                        .frame(height: 0.5)
+                }
+                .padding(.horizontal, -18)
+                .padding(.bottom, -14)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 18)
+            .padding(.bottom, 14)
+        }
+    }
+}
+
+private struct DedicatedModalBackdrop<Content: View>: View {
+    private let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        Color.black.opacity(0.28)
+            .ignoresSafeArea()
+            .overlay {
+                content()
+                    .frame(width: 270)
+                    .background(Color(.systemBackground))
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+    }
+}
+
 private struct InteractivePopGestureRestorer: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -588,6 +778,44 @@ private struct DedicatedListRow: View {
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.rowHeight, alignment: .leading)
         .background(Color.white)
+        .overlay(alignment: .bottom) {
+            DedicatedPageStyle.separator
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+private struct DedicatedGroupListRow: View {
+    let title: String
+    var showsDeleteControl = false
+    var isPressed = false
+    var deleteAction: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            if showsDeleteControl {
+                Button(role: .destructive) {
+                    deleteAction?()
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.red)
+                        .frame(width: 28, height: 28)
+                }
+                .buttonStyle(.plain)
+                .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+
+            Text(verbatim: title)
+                .font(.body)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.rowHeight, alignment: .leading)
+        .background(isPressed ? Color(.systemGray5) : Color.white)
         .overlay(alignment: .bottom) {
             DedicatedPageStyle.separator
         }

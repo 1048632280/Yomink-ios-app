@@ -37,6 +37,7 @@
 "common.done" = "完成";
 "common.edit" = "编辑";
 "common.add" = "新增";
+"common.new" = "新建";
 "common.ok" = "好";
 "common.cancel" = "取消";
 "common.save" = "保存";
@@ -45,7 +46,7 @@
 "add.import.file" = "从文件导入";
 "add.reading.history" = "足迹";
 "history.clear" = "清空";
-"history.empty.message" = "还没有阅读足迹。";
+"history.empty.message" = "还没有阅读记录";
 "history.error.title" = "足迹加载失败";
 
 "sidebar.groups.section" = "书架分组";
@@ -63,8 +64,9 @@
 "settings.error.title" = "设置保存失败";
 "groups.empty.message" = "还没有分组。";
 "groups.page.title" = "书架分组";
-"groups.add" = "新增分组";
-"groups.rename" = "编辑分组";
+"groups.add" = "新建分组";
+"groups.new" = "新建分组";
+"groups.rename" = "重命名分组";
 "groups.name.placeholder" = "分组名称";
 "groups.name.message" = "请输入分组名称。";
 "groups.delete.title" = "删除分组";

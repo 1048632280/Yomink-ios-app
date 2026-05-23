@@ -194,6 +194,24 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func reorderGroups(ids: [UUID]) async throws {
+        try await database.writer.write { db in
+            for (index, id) in ids.enumerated() {
+                try db.execute(
+                    sql: """
+                    UPDATE book_groups
+                    SET sortOrder = ?
+                    WHERE id = ?
+                    """,
+                    arguments: [
+                        index,
+                        id.uuidString
+                    ]
+                )
+            }
+        }
+    }
+
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws {
         guard !ids.isEmpty else {
             return

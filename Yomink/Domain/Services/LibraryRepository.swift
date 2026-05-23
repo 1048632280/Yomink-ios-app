@@ -10,6 +10,7 @@ protocol LibraryRepository: Sendable {
     func createGroup(name: String) async throws -> BookGroup
     func renameGroup(id: UUID, name: String) async throws
     func deleteGroup(id: UUID) async throws
+    func reorderGroups(ids: [UUID]) async throws
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws
     func fetchChapters(bookID: UUID) async throws -> [Chapter]
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress?

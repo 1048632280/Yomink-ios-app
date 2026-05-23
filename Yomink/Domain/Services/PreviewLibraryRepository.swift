@@ -63,6 +63,8 @@ struct PreviewLibraryRepository: LibraryRepository {
 
     func deleteGroup(id: UUID) async throws {}
 
+    func reorderGroups(ids: [UUID]) async throws {}
+
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws {}
 
     func fetchChapters(bookID: UUID) async throws -> [Chapter] {
