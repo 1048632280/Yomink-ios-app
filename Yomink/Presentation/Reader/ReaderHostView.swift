@@ -1504,9 +1504,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             guard let self else {
                 return
             }
-            self.dismiss(animated: true) {
-                self.jumpTo(target)
-            }
+            self.jumpTo(target)
+            self.dismiss(animated: true)
         }
         let navigationController = UINavigationController(rootViewController: listViewController)
         navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
@@ -1566,11 +1565,77 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         guard let index = chapters.firstIndex(where: { $0.id == target.chapterID }) else {
             return
         }
+
+        let chapter = chapters[index]
+        let offset = min(max(target.offset, 0), max(chapter.byteLength - 1, 0))
+        guard index != currentChapterIndex || currentChapterText.isEmpty else {
+            jumpWithinCurrentChapter(to: offset, saveAfterRender: true)
+            return
+        }
+
         loadChapter(
             at: index,
-            startOffset: target.offset,
+            startOffset: offset,
             saveAfterRender: true
         )
+    }
+
+    private func jumpWithinCurrentChapter(
+        to offset: Int,
+        saveAfterRender: Bool
+    ) {
+        loadTask?.cancel()
+        paginateTask?.cancel()
+        cancelSettingsRender()
+        pendingAnchorByteOffset = offset
+        setProvisionalProgress(chapterOffset: offset)
+
+        switch readerSettings.pageMode {
+        case .paged:
+            textView.isScrollEnabled = false
+            guard let paginator = currentPaginator else {
+                rebuildPaginator(anchorByteOffset: offset, savingProgress: saveAfterRender)
+                return
+            }
+
+            currentPageIndex = paginator.pageIndex(containingByteOffset: offset)
+            showLoading(false, message: nil)
+            renderCurrentPage(savingProgress: saveAfterRender)
+        case .scroll:
+            scrollLoadedCurrentChapter(to: offset, saveAfterRender: saveAfterRender)
+        }
+    }
+
+    private func scrollLoadedCurrentChapter(
+        to offset: Int,
+        saveAfterRender: Bool
+    ) {
+        guard currentChapterText.isEmpty == false,
+              chapters.indices.contains(currentChapterIndex)
+        else {
+            renderScrollContent(anchorByteOffset: offset, savingProgress: saveAfterRender)
+            return
+        }
+
+        showLoading(false, message: nil)
+        textView.isScrollEnabled = true
+        view.layoutIfNeeded()
+
+        let chapter = chapters[currentChapterIndex]
+        let ratio = min(max(Double(offset) / Double(max(chapter.byteLength, 1)), 0), 1)
+        let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
+        isApplyingProgrammaticScroll = true
+        textView.setContentOffset(
+            CGPoint(x: 0, y: CGFloat(ratio) * maxOffset),
+            animated: false
+        )
+        isApplyingProgrammaticScroll = false
+        updateProgress(chapterOffset: offset)
+        prefetchAdjacentChapterIfNeeded()
+
+        if saveAfterRender {
+            scheduleProgressSave()
+        }
     }
 
     private func bookmarkPreview(near offset: Int) -> String {
@@ -1773,7 +1838,7 @@ private enum ReaderLoadError: LocalizedError {
 
 private extension ReaderViewController {
     static let bookmarkMatchTolerance = 8
-    static let bookmarkPreviewCharacterLimit = 36
+    static let bookmarkPreviewCharacterLimit = 120
 }
 
 private struct PrefetchedChapter: @unchecked Sendable {
@@ -1872,10 +1937,21 @@ private extension ReaderSettings.Theme {
     }
 }
 
-private final class ReaderContentsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+private final class ReaderContentsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
     private enum Mode: Int, CaseIterable {
         case chapters
         case bookmarks
+    }
+
+    private enum Layout {
+        static let searchHeaderHeight: CGFloat = 56
+        static let catalogEstimatedRowHeight: CGFloat = 52
+        static let bookmarkEstimatedRowHeight: CGFloat = 118
+    }
+
+    private struct ChapterListItem {
+        let chapter: Chapter
+        let originalIndex: Int
     }
 
     private let bookID: UUID
@@ -1885,6 +1961,15 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
     private let onBookmarksChanged: ([Bookmark]) -> Void
     private let onSelect: (ReaderContentTarget) -> Void
     private let tableView = UITableView(frame: .zero, style: .plain)
+    private let searchHeaderView = UIView(
+        frame: CGRect(
+            x: 0,
+            y: 0,
+            width: 0,
+            height: Layout.searchHeaderHeight
+        )
+    )
+    private let searchBar = UISearchBar(frame: .zero)
     private lazy var segmentedControl = UISegmentedControl(items: [
         NSLocalizedString("reader.catalog.title", comment: ""),
         NSLocalizedString("reader.bookmarks.title", comment: "")
@@ -1892,6 +1977,25 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
     private var bookmarks: [Bookmark] = []
     private var currentMode: Mode = .chapters
     private var isCatalogJumpingToBottom = false
+    private var searchText = ""
+    private var needsSelectedChapterScroll = true
+
+    private var displayedChapterItems: [ChapterListItem] {
+        let allItems = chapters.enumerated().map { index, chapter in
+            ChapterListItem(chapter: chapter, originalIndex: index)
+        }
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.isEmpty == false else {
+            return allItems
+        }
+        return allItems.filter { item in
+            item.chapter.title.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var isCatalogSearchActive: Bool {
+        searchBar.isFirstResponder || searchText.isEmpty == false
+    }
 
     init(
         bookID: UUID,
@@ -1921,21 +2025,23 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
 
         view.backgroundColor = .systemGroupedBackground
         configureNavigationBar()
-
-        tableView.backgroundColor = .systemGroupedBackground
-        tableView.separatorStyle = .singleLine
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(tableView)
-        NSLayoutConstraint.activate([
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
+        configureSearchBar()
+        configureTableView()
+        updateModeChrome()
 
         reloadBookmarks()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+
+        updateSearchHeaderFrame()
+        guard needsSelectedChapterScroll else {
+            return
+        }
+
+        needsSelectedChapterScroll = false
+        scrollToSelectedChapter(animated: false)
     }
 
     private func configureNavigationBar() {
@@ -1957,6 +2063,44 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         updateCatalogJumpButton()
     }
 
+    private func configureSearchBar() {
+        searchHeaderView.backgroundColor = .systemGroupedBackground
+
+        searchBar.delegate = self
+        searchBar.placeholder = NSLocalizedString("reader.catalog.search.placeholder", comment: "")
+        searchBar.searchBarStyle = .minimal
+        searchBar.autocapitalizationType = .none
+        searchBar.autocorrectionType = .no
+        searchBar.returnKeyType = .search
+        searchBar.translatesAutoresizingMaskIntoConstraints = false
+        searchHeaderView.addSubview(searchBar)
+
+        NSLayoutConstraint.activate([
+            searchBar.leadingAnchor.constraint(equalTo: searchHeaderView.leadingAnchor, constant: 8),
+            searchBar.trailingAnchor.constraint(equalTo: searchHeaderView.trailingAnchor, constant: -8),
+            searchBar.topAnchor.constraint(equalTo: searchHeaderView.topAnchor, constant: 4),
+            searchBar.bottomAnchor.constraint(equalTo: searchHeaderView.bottomAnchor, constant: -4)
+        ])
+    }
+
+    private func configureTableView() {
+        tableView.backgroundColor = .systemGroupedBackground
+        tableView.separatorStyle = .singleLine
+        tableView.rowHeight = UITableView.automaticDimension
+        tableView.estimatedRowHeight = Layout.catalogEstimatedRowHeight
+        tableView.keyboardDismissMode = .onDrag
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
     @objc private func closeButtonTapped() {
         dismiss(animated: true)
     }
@@ -1967,8 +2111,12 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         }
 
         currentMode = mode
+        isCatalogJumpingToBottom = false
+        if mode == .bookmarks {
+            clearCatalogSearch(animated: true)
+        }
+        updateModeChrome()
         tableView.reloadData()
-        updateCatalogJumpButton()
         if mode == .chapters {
             scrollToSelectedChapter()
         }
@@ -1976,15 +2124,14 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
 
     @objc private func catalogJumpButtonTapped() {
         guard currentMode == .chapters,
-              chapters.isEmpty == false
+              displayedChapterItems.isEmpty == false
         else {
             return
         }
 
         isCatalogJumpingToBottom.toggle()
-        let row = isCatalogJumpingToBottom ? chapters.count - 1 : 0
-        tableView.scrollToRow(
-            at: IndexPath(row: row, section: 0),
+        scrollToChapterRow(
+            isCatalogJumpingToBottom ? displayedChapterItems.count - 1 : 0,
             at: isCatalogJumpingToBottom ? .bottom : .top,
             animated: true
         )
@@ -1999,7 +2146,9 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
             } catch {
                 bookmarks = []
             }
-            tableView.reloadData()
+            if currentMode == .bookmarks {
+                tableView.reloadData()
+            }
             onBookmarksChanged(bookmarks)
         }
     }
@@ -2016,7 +2165,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
 
     private func updateCatalogJumpButton() {
         guard currentMode == .chapters,
-              chapters.isEmpty == false
+              displayedChapterItems.isEmpty == false
         else {
             navigationItem.rightBarButtonItem = nil
             return
@@ -2035,18 +2184,119 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         )
     }
 
-    private func scrollToSelectedChapter() {
-        guard chapters.indices.contains(selectedChapterIndex) else {
+    private func updateModeChrome() {
+        updateSearchHeaderAvailability()
+        updateCatalogJumpButton()
+    }
+
+    private func updateSearchHeaderAvailability() {
+        switch currentMode {
+        case .chapters:
+            if tableView.tableHeaderView !== searchHeaderView {
+                tableView.tableHeaderView = searchHeaderView
+            }
+            updateSearchHeaderFrame()
+        case .bookmarks:
+            tableView.tableHeaderView = nil
+        }
+    }
+
+    private func updateSearchHeaderFrame() {
+        guard tableView.tableHeaderView === searchHeaderView else {
+            return
+        }
+
+        var frame = searchHeaderView.frame
+        let targetSize = CGSize(
+            width: tableView.bounds.width,
+            height: Layout.searchHeaderHeight
+        )
+        guard abs(frame.width - targetSize.width) > 0.5
+            || abs(frame.height - targetSize.height) > 0.5
+        else {
+            return
+        }
+
+        frame.size = targetSize
+        searchHeaderView.frame = frame
+        tableView.tableHeaderView = searchHeaderView
+    }
+
+    private func clearCatalogSearch(animated: Bool) {
+        searchText = ""
+        searchBar.text = nil
+        searchBar.resignFirstResponder()
+        searchBar.setShowsCancelButton(false, animated: animated)
+    }
+
+    private func scrollToSelectedChapter(animated: Bool = false) {
+        guard currentMode == .chapters,
+              displayedChapterItems.isEmpty == false,
+              let row = displayedChapterItems.firstIndex(where: { item in
+                  item.originalIndex == selectedChapterIndex
+              })
+        else {
+            hideSearchHeaderIfNeeded(animated: false)
+            return
+        }
+
+        scrollToChapterRow(row, at: .middle, animated: animated)
+    }
+
+    private func scrollToChapterRow(
+        _ row: Int,
+        at position: UITableView.ScrollPosition,
+        animated: Bool
+    ) {
+        guard displayedChapterItems.indices.contains(row) else {
+            return
+        }
+
+        tableView.layoutIfNeeded()
+        tableView.scrollToRow(
+            at: IndexPath(row: row, section: 0),
+            at: position,
+            animated: animated
+        )
+        guard isCatalogSearchActive == false else {
             return
         }
 
         DispatchQueue.main.async { [weak self] in
-            self?.tableView.scrollToRow(
-                at: IndexPath(row: self?.selectedChapterIndex ?? 0, section: 0),
-                at: .middle,
-                animated: false
-            )
+            self?.hideSearchHeaderIfNeeded(animated: false)
         }
+    }
+
+    private func hideSearchHeaderIfNeeded(animated: Bool) {
+        guard currentMode == .chapters,
+              tableView.tableHeaderView === searchHeaderView,
+              isCatalogSearchActive == false
+        else {
+            return
+        }
+
+        let hiddenOffset = -tableView.adjustedContentInset.top + Layout.searchHeaderHeight
+        guard tableView.contentOffset.y < hiddenOffset else {
+            return
+        }
+
+        tableView.setContentOffset(
+            CGPoint(x: 0, y: hiddenOffset),
+            animated: animated
+        )
+    }
+
+    private func revealSearchHeader(animated: Bool) {
+        guard currentMode == .chapters,
+              tableView.tableHeaderView === searchHeaderView
+        else {
+            return
+        }
+
+        tableView.setContentOffset(
+            CGPoint(x: 0, y: -tableView.adjustedContentInset.top),
+            animated: animated
+        )
     }
 
     func numberOfSections(in tableView: UITableView) -> Int {
@@ -2056,7 +2306,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         switch currentMode {
         case .chapters:
-            return max(chapters.count, 1)
+            return max(displayedChapterItems.count, 1)
         case .bookmarks:
             return max(bookmarks.count, 1)
         }
@@ -2071,6 +2321,11 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
             guard chapters.isEmpty == false else {
                 return emptyCell(
                     text: NSLocalizedString("reader.catalog.empty", comment: "")
+                )
+            }
+            guard displayedChapterItems.isEmpty == false else {
+                return emptyCell(
+                    text: NSLocalizedString("reader.catalog.search.empty", comment: "")
                 )
             }
             return chapterCell(for: indexPath)
@@ -2089,10 +2344,11 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
 
         switch currentMode {
         case .chapters:
-            guard chapters.indices.contains(indexPath.row) else {
+            let items = displayedChapterItems
+            guard items.indices.contains(indexPath.row) else {
                 return
             }
-            let chapter = chapters[indexPath.row]
+            let chapter = items[indexPath.row].chapter
             onSelect(ReaderContentTarget(chapterID: chapter.id, offset: 0))
         case .bookmarks:
             guard bookmarks.indices.contains(indexPath.row) else {
@@ -2132,11 +2388,65 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         return UISwipeActionsConfiguration(actions: [action])
     }
 
+    func tableView(
+        _ tableView: UITableView,
+        estimatedHeightForRowAt indexPath: IndexPath
+    ) -> CGFloat {
+        switch currentMode {
+        case .chapters:
+            return Layout.catalogEstimatedRowHeight
+        case .bookmarks:
+            return Layout.bookmarkEstimatedRowHeight
+        }
+    }
+
+    func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+        searchBar.setShowsCancelButton(true, animated: true)
+        revealSearchHeader(animated: true)
+    }
+
+    func searchBar(
+        _ searchBar: UISearchBar,
+        textDidChange searchText: String
+    ) {
+        self.searchText = searchText
+        isCatalogJumpingToBottom = false
+        tableView.reloadData()
+        updateCatalogJumpButton()
+        revealSearchHeader(animated: false)
+    }
+
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        searchBar.resignFirstResponder()
+        if searchText.isEmpty {
+            searchBar.setShowsCancelButton(false, animated: true)
+            hideSearchHeaderIfNeeded(animated: true)
+        }
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        clearCatalogSearch(animated: true)
+        isCatalogJumpingToBottom = false
+        tableView.reloadData()
+        updateCatalogJumpButton()
+        scrollToSelectedChapter(animated: false)
+    }
+
+    func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+        guard searchText.isEmpty else {
+            return
+        }
+
+        searchBar.setShowsCancelButton(false, animated: true)
+        hideSearchHeaderIfNeeded(animated: true)
+    }
+
     private func emptyCell(text: String) -> UITableViewCell {
         let reuseIdentifier = "empty"
         let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
             ?? UITableViewCell(style: .default, reuseIdentifier: reuseIdentifier)
         cell.textLabel?.text = text
+        cell.textLabel?.numberOfLines = 0
         cell.textLabel?.textColor = .secondaryLabel
         cell.selectionStyle = .none
         cell.accessoryType = .none
@@ -2146,49 +2456,131 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
     private func chapterCell(for indexPath: IndexPath) -> UITableViewCell {
         let reuseIdentifier = "chapter"
         let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
-            ?? UITableViewCell(style: .subtitle, reuseIdentifier: reuseIdentifier)
-        let chapter = chapters[indexPath.row]
-        cell.textLabel?.text = chapter.title
-        cell.detailTextLabel?.text = String(
-            format: NSLocalizedString("reader.catalog.chapterProgress", comment: ""),
-            NumberFormatter.readerPercent.string(
-                from: NSNumber(value: chapterStartProgress(for: chapter))
-            ) ?? "0%"
-        )
-        cell.accessoryType = indexPath.row == selectedChapterIndex ? .checkmark : .none
-        cell.selectionStyle = .default
-        return cell
-    }
-
-    private func bookmarkCell(for indexPath: IndexPath) -> UITableViewCell {
-        let reuseIdentifier = "bookmark"
-        let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
-            ?? UITableViewCell(style: .subtitle, reuseIdentifier: reuseIdentifier)
-        let bookmark = bookmarks[indexPath.row]
-        let chapterTitle = bookmark.chapterID
-            .flatMap { chapterID in chapters.first { $0.id == chapterID }?.title }
-            ?? NSLocalizedString("reader.bookmark.unknownChapter", comment: "")
-        cell.textLabel?.text = bookmark.preview
-        cell.detailTextLabel?.text = String(
-            format: NSLocalizedString("reader.bookmark.subtitle", comment: ""),
-            chapterTitle,
-            Self.dateFormatter.localizedString(for: bookmark.createdAt, relativeTo: Date())
-        )
+            ?? UITableViewCell(style: .default, reuseIdentifier: reuseIdentifier)
+        let item = displayedChapterItems[indexPath.row]
+        cell.textLabel?.text = "\(item.originalIndex + 1).\(item.chapter.title)"
+        cell.textLabel?.numberOfLines = 2
+        cell.textLabel?.font = .preferredFont(forTextStyle: .body)
+        cell.textLabel?.adjustsFontForContentSizeCategory = true
+        cell.textLabel?.textColor = item.originalIndex == selectedChapterIndex
+            ? .systemRed
+            : .label
         cell.accessoryType = .none
         cell.selectionStyle = .default
         return cell
     }
 
-    private func chapterStartProgress(for chapter: Chapter) -> Double {
-        let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
-        return min(max(Double(chapter.startOffset) / Double(totalByteLength), 0), 1)
+    private func bookmarkCell(for indexPath: IndexPath) -> UITableViewCell {
+        let cell = tableView.dequeueReusableCell(
+            withIdentifier: ReaderBookmarkCell.reuseIdentifier
+        ) as? ReaderBookmarkCell
+            ?? ReaderBookmarkCell(
+                style: .default,
+                reuseIdentifier: ReaderBookmarkCell.reuseIdentifier
+            )
+        let bookmark = bookmarks[indexPath.row]
+        let chapterTitle = bookmark.chapterID
+            .flatMap { chapterID in chapters.first { $0.id == chapterID }?.title }
+            ?? NSLocalizedString("reader.bookmark.unknownChapter", comment: "")
+        cell.configure(
+            chapterTitle,
+            time: Self.dateFormatter.string(from: bookmark.createdAt),
+            preview: bookmark.preview
+        )
+        return cell
     }
 
-    private static let dateFormatter: RelativeDateTimeFormatter = {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .short
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
         return formatter
     }()
+}
+
+private final class ReaderBookmarkCell: UITableViewCell {
+    static let reuseIdentifier = "readerBookmark"
+
+    private let chapterLabel = UILabel()
+    private let timeLabel = UILabel()
+    private let previewLabel = UILabel()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configureViews()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        chapterLabel.text = nil
+        timeLabel.text = nil
+        previewLabel.text = nil
+    }
+
+    func configure(
+        _ chapterTitle: String,
+        time: String,
+        preview: String
+    ) {
+        chapterLabel.text = chapterTitle
+        timeLabel.text = time
+        previewLabel.text = preview
+    }
+
+    private func configureViews() {
+        selectionStyle = .default
+        accessoryType = .none
+
+        chapterLabel.font = .preferredFont(forTextStyle: .subheadline)
+        chapterLabel.adjustsFontForContentSizeCategory = true
+        chapterLabel.textColor = .label
+        chapterLabel.numberOfLines = 1
+        chapterLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        timeLabel.font = .preferredFont(forTextStyle: .caption1)
+        timeLabel.adjustsFontForContentSizeCategory = true
+        timeLabel.textColor = .secondaryLabel
+        timeLabel.textAlignment = .right
+        timeLabel.numberOfLines = 1
+        timeLabel.setContentHuggingPriority(.required, for: .horizontal)
+        timeLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        previewLabel.font = .preferredFont(forTextStyle: .callout)
+        previewLabel.adjustsFontForContentSizeCategory = true
+        previewLabel.textColor = .secondaryLabel
+        previewLabel.numberOfLines = 3
+        previewLabel.lineBreakMode = .byTruncatingTail
+
+        let headerStackView = UIStackView(arrangedSubviews: [
+            chapterLabel,
+            timeLabel
+        ])
+        headerStackView.axis = .horizontal
+        headerStackView.alignment = .firstBaseline
+        headerStackView.spacing = 12
+
+        let contentStackView = UIStackView(arrangedSubviews: [
+            headerStackView,
+            previewLabel
+        ])
+        contentStackView.axis = .vertical
+        contentStackView.spacing = 6
+        contentStackView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(contentStackView)
+
+        let guide = contentView.layoutMarginsGuide
+        NSLayoutConstraint.activate([
+            contentStackView.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+            contentStackView.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+            contentStackView.topAnchor.constraint(equalTo: guide.topAnchor, constant: 6),
+            contentStackView.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -6)
+        ])
+    }
 }
 
 private final class ReaderSettingsViewController: UIViewController {

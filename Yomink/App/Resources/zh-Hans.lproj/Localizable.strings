@@ -91,14 +91,14 @@
 "reader.contents.title" = "目录与书签";
 "reader.catalog.title" = "目录";
 "reader.catalog.empty" = "暂无目录";
-"reader.catalog.chapterProgress" = "全书 %@";
+"reader.catalog.search.placeholder" = "搜索章节";
+"reader.catalog.search.empty" = "没有匹配的章节";
 "reader.catalog.jumpTop" = "顶部";
 "reader.catalog.jumpBottom" = "底部";
 "reader.bookmarks.title" = "书签";
 "reader.bookmarks.empty" = "暂无书签";
 "reader.bookmark.preview.empty" = "当前位置";
 "reader.bookmark.unknownChapter" = "未知章节";
-"reader.bookmark.subtitle" = "%@ · %@";
 "reader.settings.title" = "阅读设置";
 "reader.settings.pageMode" = "翻页";
 "reader.settings.pageMode.paged" = "分页";
