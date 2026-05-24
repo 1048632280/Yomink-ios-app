@@ -1671,8 +1671,14 @@ private struct GlobalBookSearchView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .listRowBackground(Color(.systemGray6))
+                .listRowInsets(
+                    EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                )
             }
             .listStyle(.plain)
+            .background(Color(.systemGray6))
+            .padding(.horizontal, -16)
         }
     }
 

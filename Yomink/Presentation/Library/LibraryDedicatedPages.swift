@@ -44,29 +44,31 @@ struct LibraryGroupsPage: View {
                             deleteAction: {
                                 groupPendingDeletion = group
                             },
-                            reorderDragChanged: { value in
-                                reorderGroup(group, with: value)
+                            reorderDragChanged: { translation in
+                                reorderGroup(group, translation: translation)
                             },
-                            reorderDragEnded: { _ in
+                            reorderDragEnded: {
                                 finishReordering()
                             }
                         )
                         .overlay {
-                            NonBlockingLongPressRecognizer(
-                                isEnabled: !isEditing,
-                                onBegan: {
-                                    pressedGroupID = group.id
-                                },
-                                onEnded: {
-                                    pressedGroupID = nil
-                                },
-                                onRecognized: {
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                            if !isEditing {
+                                NonBlockingLongPressRecognizer(
+                                    isEnabled: true,
+                                    onBegan: {
+                                        pressedGroupID = group.id
+                                    },
+                                    onEnded: {
                                         pressedGroupID = nil
-                                        beginRename(group)
+                                    },
+                                    onRecognized: {
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                            pressedGroupID = nil
+                                            beginRename(group)
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                 }
@@ -239,7 +241,7 @@ struct LibraryGroupsPage: View {
         }
     }
 
-    private func reorderGroup(_ group: BookGroup, with value: DragGesture.Value) {
+    private func reorderGroup(_ group: BookGroup, translation: CGSize) {
         if draggedGroupID != group.id {
             draggedGroupID = group.id
             reorderStartIndex = groups.firstIndex(of: group)
@@ -251,7 +253,7 @@ struct LibraryGroupsPage: View {
             return
         }
 
-        let offset = Int((value.translation.height / DedicatedPageStyle.rowHeight).rounded())
+        let offset = Int((translation.height / DedicatedPageStyle.rowHeight).rounded())
         let targetIndex = min(max(startIndex + offset, 0), max(groups.count - 1, 0))
 
         guard targetIndex != currentIndex else {
@@ -940,26 +942,26 @@ private struct DedicatedGroupListRow: View {
     var showsReorderControl = false
     var isPressed = false
     var deleteAction: (() -> Void)?
-    var reorderDragChanged: ((DragGesture.Value) -> Void)?
-    var reorderDragEnded: ((DragGesture.Value) -> Void)?
+    var reorderDragChanged: ((CGSize) -> Void)?
+    var reorderDragEnded: (() -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
             if showsDeleteControl {
-                Image(systemName: "minus.circle.fill")
-                    .font(.title3)
-                    .foregroundColor(.red)
-                    .frame(width: 28, height: DedicatedPageStyle.rowHeight)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(
-                        TapGesture()
-                            .onEnded {
-                                deleteAction?()
-                            }
-                    )
-                    .accessibilityAddTraits(.isButton)
-                    .accessibilityLabel(Text("library.delete"))
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+                Button(role: .destructive) {
+                    deleteAction?()
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.red)
+                        .frame(width: DedicatedPageStyle.controlHitWidth, height: DedicatedPageStyle.rowHeight)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("library.delete"))
+                .zIndex(2)
+                .allowsHitTesting(true)
+                .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
             Text(verbatim: title)
@@ -970,22 +972,18 @@ private struct DedicatedGroupListRow: View {
             Spacer(minLength: 0)
 
             if showsReorderControl {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 20, weight: .medium))
-                    .foregroundColor(Color(.systemGray2))
-                    .frame(width: 36, height: DedicatedPageStyle.rowHeight)
-                    .contentShape(Rectangle())
-                    .highPriorityGesture(
-                        DragGesture(minimumDistance: 0)
-                            .onChanged { value in
-                                reorderDragChanged?(value)
-                            }
-                            .onEnded { value in
-                                reorderDragEnded?(value)
-                            }
-                    )
-                    .accessibilityLabel(Text("groups.reorder"))
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                ReorderHandle(
+                    onChanged: { translation in
+                        reorderDragChanged?(translation)
+                    },
+                    onEnded: {
+                        reorderDragEnded?()
+                    }
+                )
+                .frame(width: DedicatedPageStyle.controlHitWidth, height: DedicatedPageStyle.rowHeight)
+                .zIndex(2)
+                .accessibilityLabel(Text("groups.reorder"))
+                .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
         .padding(.horizontal, 16)
@@ -995,6 +993,129 @@ private struct DedicatedGroupListRow: View {
             DedicatedPageStyle.separator
         }
         .contentShape(Rectangle())
+    }
+}
+
+private struct ReorderHandle: UIViewRepresentable {
+    let onChanged: (CGSize) -> Void
+    let onEnded: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onChanged: onChanged, onEnded: onEnded)
+    }
+
+    func makeUIView(context: Context) -> HandleView {
+        let view = HandleView()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = true
+
+        let imageView = UIImageView(image: UIImage(systemName: "line.3.horizontal"))
+        imageView.tintColor = .systemGray2
+        imageView.contentMode = .center
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(imageView)
+
+        NSLayoutConstraint.activate([
+            imageView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            imageView.topAnchor.constraint(equalTo: view.topAnchor),
+            imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        let panGesture = UIPanGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handlePan(_:))
+        )
+        panGesture.cancelsTouchesInView = true
+        panGesture.delaysTouchesBegan = false
+        panGesture.delegate = context.coordinator
+        view.addGestureRecognizer(panGesture)
+        view.panGesture = panGesture
+        context.coordinator.view = view
+
+        return view
+    }
+
+    func updateUIView(_ view: HandleView, context: Context) {
+        context.coordinator.onChanged = onChanged
+        context.coordinator.onEnded = onEnded
+        context.coordinator.view = view
+    }
+
+    final class HandleView: UIView {
+        weak var panGesture: UIPanGestureRecognizer?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard let panGesture else {
+                return
+            }
+            nearestScrollView()?.panGestureRecognizer.require(toFail: panGesture)
+        }
+
+        private func nearestScrollView() -> UIScrollView? {
+            var parent = superview
+            while let current = parent {
+                if let scrollView = current as? UIScrollView {
+                    return scrollView
+                }
+                parent = current.superview
+            }
+            return nil
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onChanged: (CGSize) -> Void
+        var onEnded: () -> Void
+        weak var view: UIView?
+
+        init(
+            onChanged: @escaping (CGSize) -> Void,
+            onEnded: @escaping () -> Void
+        ) {
+            self.onChanged = onChanged
+            self.onEnded = onEnded
+        }
+
+        @objc func handlePan(_ gesture: UIPanGestureRecognizer) {
+            let translation = gesture.translation(in: view)
+
+            switch gesture.state {
+            case .began:
+                setParentScrollEnabled(false)
+                onChanged(CGSize(width: translation.x, height: translation.y))
+            case .changed:
+                onChanged(CGSize(width: translation.x, height: translation.y))
+            case .ended, .cancelled, .failed:
+                setParentScrollEnabled(true)
+                onEnded()
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            false
+        }
+
+        private func setParentScrollEnabled(_ isEnabled: Bool) {
+            nearestScrollView(from: view)?.isScrollEnabled = isEnabled
+        }
+
+        private func nearestScrollView(from view: UIView?) -> UIScrollView? {
+            var parent = view?.superview
+            while let current = parent {
+                if let scrollView = current as? UIScrollView {
+                    return scrollView
+                }
+                parent = current.superview
+            }
+            return nil
+        }
     }
 }
 
@@ -1038,6 +1159,7 @@ private struct DedicatedHistoryRow: View {
 private enum DedicatedPageStyle {
     static let rowHeight: CGFloat = 54
     static let compactRowHeight: CGFloat = 44
+    static let controlHitWidth: CGFloat = 44
 
     static var separator: some View {
         Rectangle()
