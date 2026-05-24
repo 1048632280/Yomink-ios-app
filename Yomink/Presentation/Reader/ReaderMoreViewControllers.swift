@@ -799,10 +799,19 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     private let footerButton = UIButton(type: .system)
     private let footerHeight: CGFloat = 52
     private var results: [ReaderSearchResult] = []
+    private var resultSections: [SearchResultSection] = []
     private var searchTask: Task<Void, Never>?
     private var keyword = ""
+    private var resultHighlightKeyword = ""
     private var nextScanPosition = SearchPosition.start
     private var state: SearchState = .idle
+    private var isClearingSearchTextForCancel = false
+
+    private struct SearchResultSection {
+        let chapterID: UUID
+        let chapterTitle: String
+        var results: [ReaderSearchResult]
+    }
 
     init(
         book: Book,
@@ -848,16 +857,24 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     }
 
     private func configureViews() {
+        view.backgroundColor = .systemBackground
+
         searchBar.delegate = self
         searchBar.placeholder = NSLocalizedString("reader.search.placeholder", comment: "")
         searchBar.searchBarStyle = .minimal
+        searchBar.backgroundColor = .systemBackground
+        searchBar.barTintColor = .systemBackground
+        searchBar.backgroundImage = UIImage()
+        searchBar.searchTextField.backgroundColor = .systemBackground
         searchBar.translatesAutoresizingMaskIntoConstraints = false
 
+        tableView.backgroundColor = .systemBackground
         tableView.dataSource = self
         tableView.delegate = self
         tableView.keyboardDismissMode = .onDrag
         tableView.rowHeight = UITableView.automaticDimension
-        tableView.estimatedRowHeight = 86
+        tableView.estimatedRowHeight = 72
+        tableView.sectionHeaderTopPadding = 0
         tableView.translatesAutoresizingMaskIntoConstraints = false
 
         footerButton.addTarget(self, action: #selector(loadMoreButtonTapped), for: .touchUpInside)
@@ -878,64 +895,144 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         ])
     }
 
+    func numberOfSections(in tableView: UITableView) -> Int {
+        resultSections.count
+    }
+
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        results.count
+        resultSections[section].results.count
     }
 
     func tableView(
         _ tableView: UITableView,
         cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
-        let reuseIdentifier = "searchResult"
-        let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
-            ?? UITableViewCell(style: .subtitle, reuseIdentifier: reuseIdentifier)
-        let result = results[indexPath.row]
-        cell.textLabel?.text = result.chapterTitle
-        cell.textLabel?.font = .preferredFont(forTextStyle: .headline)
-        cell.detailTextLabel?.text = result.snippet
-        cell.detailTextLabel?.numberOfLines = 3
-        cell.detailTextLabel?.textColor = .secondaryLabel
+        let cell = tableView.dequeueReusableCell(
+            withIdentifier: ReaderSearchResultCell.reuseIdentifier
+        ) as? ReaderSearchResultCell
+            ?? ReaderSearchResultCell(
+                style: .default,
+                reuseIdentifier: ReaderSearchResultCell.reuseIdentifier
+            )
+        let result = resultSections[indexPath.section].results[indexPath.row]
+        cell.configure(snippet: result.snippet, keyword: resultHighlightKeyword)
         cell.accessoryType = .none
         return cell
     }
 
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let result = results[indexPath.row]
+        let result = resultSections[indexPath.section].results[indexPath.row]
         onSelect(ReaderContentTarget(chapterID: result.chapterID, offset: result.offset))
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        viewForHeaderInSection section: Int
+    ) -> UIView? {
+        guard resultSections.indices.contains(section) else {
+            return nil
+        }
+
+        let label = UILabel()
+        label.text = resultSections[section].chapterTitle
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 2
+        label.translatesAutoresizingMaskIntoConstraints = false
+
+        let container = UIView()
+        container.backgroundColor = .systemBackground
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: container.layoutMarginsGuide.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: container.layoutMarginsGuide.trailingAnchor),
+            label.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6)
+        ])
+        return container
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        heightForHeaderInSection section: Int
+    ) -> CGFloat {
+        UITableView.automaticDimension
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        estimatedHeightForHeaderInSection section: Int
+    ) -> CGFloat {
+        36
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         guard state == .canLoadMore,
-              scrollView.isDragging || scrollView.isDecelerating
+              scrollView.isDragging
         else {
             return
         }
-        let threshold = max(scrollView.contentSize.height - scrollView.bounds.height - 80, 0)
-        if scrollView.contentOffset.y >= threshold {
+        guard scrollView.contentSize.height > scrollView.bounds.height else {
+            return
+        }
+
+        let bottomOffset = scrollView.contentSize.height
+            - scrollView.bounds.height
+            + scrollView.adjustedContentInset.bottom
+        if scrollView.contentOffset.y > bottomOffset + 24 {
             loadNextBatch()
         }
     }
 
+    func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
+        updateSearchCancelButton(animated: true)
+    }
+
     func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
         keyword = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateSearchCancelButton(animated: true)
+        guard !isClearingSearchTextForCancel else {
+            return
+        }
         restartSearch()
     }
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
         searchBar.resignFirstResponder()
+        updateSearchCancelButton(animated: true)
+    }
+
+    func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchTask?.cancel()
+        keyword = ""
+        isClearingSearchTextForCancel = true
+        searchBar.text = nil
+        isClearingSearchTextForCancel = false
+        searchBar.resignFirstResponder()
+        state = .idle
+        updateSearchCancelButton(animated: true)
+        updateFooter()
+    }
+
+    func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
+        updateSearchCancelButton(animated: true)
     }
 
     private func restartSearch() {
         searchTask?.cancel()
         results = []
+        resultSections = []
         nextScanPosition = .start
         tableView.reloadData()
         guard !keyword.isEmpty else {
+            resultHighlightKeyword = ""
             state = .idle
             updateFooter()
             return
         }
+        resultHighlightKeyword = keyword
         loadNextBatch()
     }
 
@@ -981,6 +1078,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
                 }
                 self.nextScanPosition = batch.nextPosition
                 self.results.append(contentsOf: batch.results)
+                self.resultSections = Self.groupedSections(from: self.results)
                 self.tableView.reloadData()
                 self.state = batch.nextPosition.chapterIndex >= chapters.count
                     ? .finished
@@ -988,6 +1086,31 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
                 self.updateFooter()
             }
         }
+    }
+
+    private func updateSearchCancelButton(animated: Bool) {
+        searchBar.setShowsCancelButton(
+            searchBar.isFirstResponder || !(searchBar.text ?? "").isEmpty,
+            animated: animated
+        )
+    }
+
+    private static func groupedSections(from results: [ReaderSearchResult]) -> [SearchResultSection] {
+        var sections: [SearchResultSection] = []
+        for result in results {
+            if sections.last?.chapterID == result.chapterID {
+                sections[sections.count - 1].results.append(result)
+            } else {
+                sections.append(
+                    SearchResultSection(
+                        chapterID: result.chapterID,
+                        chapterTitle: result.chapterTitle,
+                        results: [result]
+                    )
+                )
+            }
+        }
+        return sections
     }
 
     private func updateFooter() {
@@ -1162,6 +1285,43 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    static func highlightedSnippet(
+        _ snippet: String,
+        keyword: String
+    ) -> NSAttributedString {
+        let headlineSize = UIFont.preferredFont(forTextStyle: .headline).pointSize
+        let baseFont = UIFontMetrics(forTextStyle: .headline).scaledFont(
+            for: .systemFont(ofSize: headlineSize, weight: .regular)
+        )
+        let attributed = NSMutableAttributedString(
+            string: snippet,
+            attributes: [
+                .font: baseFont,
+                .foregroundColor: UIColor.label
+            ]
+        )
+        let keyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty else {
+            return attributed
+        }
+
+        var searchRange = snippet.startIndex..<snippet.endIndex
+        while let matchRange = snippet.range(
+            of: keyword,
+            options: [.caseInsensitive, .diacriticInsensitive],
+            range: searchRange
+        ) {
+            let nsRange = NSRange(matchRange, in: snippet)
+            attributed.addAttribute(
+                .foregroundColor,
+                value: UIColor.systemRed,
+                range: nsRange
+            )
+            searchRange = matchRange.upperBound..<snippet.endIndex
+        }
+        return attributed
+    }
+
     private nonisolated static func readChapterText(
         book: Book,
         chapter: Chapter,
@@ -1186,6 +1346,57 @@ struct ReaderSearchResult: Sendable {
     let chapterTitle: String
     let offset: Int
     let snippet: String
+}
+
+private final class ReaderSearchResultCell: UITableViewCell {
+    static let reuseIdentifier = "readerSearchResult"
+
+    private let snippetLabel = UILabel()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configureViews()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        snippetLabel.attributedText = nil
+    }
+
+    func configure(
+        snippet: String,
+        keyword: String
+    ) {
+        snippetLabel.attributedText = ReaderContentSearchViewController.highlightedSnippet(
+            snippet,
+            keyword: keyword
+        )
+    }
+
+    private func configureViews() {
+        selectionStyle = .default
+        backgroundColor = .systemBackground
+        contentView.backgroundColor = .systemBackground
+
+        snippetLabel.numberOfLines = 2
+        snippetLabel.adjustsFontForContentSizeCategory = true
+        snippetLabel.lineBreakMode = .byTruncatingTail
+        snippetLabel.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(snippetLabel)
+
+        let guide = contentView.layoutMarginsGuide
+        NSLayoutConstraint.activate([
+            snippetLabel.leadingAnchor.constraint(equalTo: guide.leadingAnchor),
+            snippetLabel.trailingAnchor.constraint(equalTo: guide.trailingAnchor),
+            snippetLabel.topAnchor.constraint(equalTo: guide.topAnchor, constant: 4),
+            snippetLabel.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -4)
+        ])
+    }
 }
 
 private struct SearchPosition: Sendable {
