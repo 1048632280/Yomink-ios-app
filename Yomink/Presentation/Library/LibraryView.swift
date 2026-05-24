@@ -962,12 +962,13 @@ private final class LibraryViewModel: ObservableObject {
     @Published var groups: [BookGroup] = []
     @Published var settings = LibrarySettings.default
     @Published var selectedBookIDs: Set<UUID> = []
+    @Published var isSelectionMode = false
     @Published var isImporting = false
     @Published var importErrorMessage: String?
     private var currentImportTask: Task<Void, Never>?
 
     var isSelecting: Bool {
-        !selectedBookIDs.isEmpty
+        isSelectionMode
     }
 
     var selectionCountText: String {
@@ -1071,6 +1072,7 @@ private final class LibraryViewModel: ObservableObject {
     }
 
     func beginSelection(with bookID: UUID) {
+        isSelectionMode = true
         selectedBookIDs = [bookID]
     }
 
@@ -1083,11 +1085,13 @@ private final class LibraryViewModel: ObservableObject {
     }
 
     func invertSelection() {
+        isSelectionMode = true
         let visibleIDs = Set(books.map(\.id))
         selectedBookIDs = visibleIDs.subtracting(selectedBookIDs)
     }
 
     func exitSelection() {
+        isSelectionMode = false
         selectedBookIDs.removeAll()
     }
 
@@ -1267,17 +1271,18 @@ private struct BookRowView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(displayTitle)
-                    .font(.system(size: 16, weight: .regular))
+                    .font(.system(size: 17, weight: .regular))
                     .foregroundColor(.primary)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 6)
+                Spacer(minLength: 8)
 
                 HStack(spacing: 8) {
-                    ProgressView(value: clampedProgress)
+                    PreciseProgressBar(value: clampedProgress)
                         .frame(maxWidth: 120)
+                        .frame(height: BookListStyle.progressHeight)
 
                     Text(progressText)
                         .font(.system(size: 13))
@@ -1287,34 +1292,27 @@ private struct BookRowView: View {
                 }
             }
             .frame(maxWidth: .infinity, minHeight: BookListStyle.coverHeight, alignment: .topLeading)
+            .padding(.top, BookListStyle.textTopOffset)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
+        .padding(.vertical, BookListStyle.verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
     private var thumbnailView: some View {
-        ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: BookCoverStyle.cornerRadius)
-                .fill(BookCoverStyle.background)
-                .frame(
-                    width: BookListStyle.coverWidth,
-                    height: BookListStyle.coverHeight
-                )
-
-            if isSelecting {
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .symbolRenderingMode(.palette)
-                    .foregroundStyle(
-                        isSelected ? Color.accentColor : Color(.systemGray),
-                        Color.white
-                    )
-                    .padding(5)
-            }
-        }
+        BookCoverPlaceholder(
+            title: book.title,
+            isSelecting: isSelecting,
+            isSelected: isSelected,
+            initialFontSize: BookListStyle.coverInitialFontSize,
+            selectionPadding: 5
+        )
+        .frame(
+            width: BookListStyle.coverWidth,
+            height: BookListStyle.coverHeight
+        )
     }
 
     private var displayTitle: String {
@@ -1341,32 +1339,68 @@ private struct BookGridItemView: View {
             coverView
 
             Text(displayTitle)
-                .font(.subheadline)
+                .font(.system(size: 14))
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
 
             Text(progressText)
-                .font(.caption2)
+                .font(.system(size: 12))
                 .foregroundColor(BookCoverStyle.progressText)
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .monospacedDigit()
         }
+        .padding(.horizontal, BookGridStyle.coverHorizontalInset)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
 
     private var coverView: some View {
+        BookCoverPlaceholder(
+            title: book.title,
+            isSelecting: isSelecting,
+            isSelected: isSelected,
+            initialFontSize: BookGridStyle.coverInitialFontSize,
+            selectionPadding: 6
+        )
+        .aspectRatio(3.0 / 4.0, contentMode: .fit)
+    }
+
+    private var displayTitle: String {
+        let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+
+    private var clampedProgress: Double {
+        min(max(book.progressPercentage, 0), 1)
+    }
+
+    private var progressText: String {
+        let progress = NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
+        return String(
+            format: NSLocalizedString("library.grid.progress", comment: ""),
+            progress
+        )
+    }
+}
+
+private struct BookCoverPlaceholder: View {
+    let title: String
+    let isSelecting: Bool
+    let isSelected: Bool
+    let initialFontSize: CGFloat
+    let selectionPadding: CGFloat
+
+    var body: some View {
         ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: BookCoverStyle.cornerRadius)
                 .fill(BookCoverStyle.background)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .overlay {
                     Text(verbatim: coverInitial)
-                        .font(.system(size: 40, weight: .semibold))
+                        .font(.system(size: initialFontSize, weight: .semibold))
                         .foregroundColor(BookCoverStyle.coverText)
                         .minimumScaleFactor(0.7)
                         .lineLimit(1)
@@ -1386,47 +1420,61 @@ private struct BookGridItemView: View {
                         isSelected ? Color.accentColor : Color(.systemGray),
                         Color.white
                     )
-                    .padding(6)
+                    .padding(selectionPadding)
             }
         }
-        .padding(.horizontal, BookGridStyle.coverHorizontalInset)
-    }
-
-    private var displayTitle: String {
-        let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
     }
 
     private var coverInitial: String {
-        book.title
+        title
             .firstBookCoverCharacter
             .map(String.init)
             ?? NSLocalizedString("library.cover.fallbackInitial", comment: "")
     }
+}
 
-    private var clampedProgress: Double {
-        min(max(book.progressPercentage, 0), 1)
+private struct PreciseProgressBar: View {
+    let value: Double
+
+    var body: some View {
+        GeometryReader { proxy in
+            let clampedValue = min(max(value, 0), 1)
+            let fillWidth = proxy.size.width * clampedValue
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color(.systemGray5))
+
+                if fillWidth > 0 {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: fillWidth)
+                }
+            }
+        }
+        .accessibilityValue(Text(progressText))
     }
 
     private var progressText: String {
-        let progress = NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
-        return String(
-            format: NSLocalizedString("library.grid.progress", comment: ""),
-            progress
-        )
+        NumberFormatter.readingProgress.string(from: NSNumber(value: min(max(value, 0), 1))) ?? "0%"
     }
 }
 
 private enum BookListStyle {
-    static let coverWidth: CGFloat = 56
-    static let coverHeight: CGFloat = 76
+    static let coverWidth: CGFloat = 60
+    static let coverHeight: CGFloat = 84
+    static let coverInitialFontSize: CGFloat = 32
     static let coverTrailingSpacing: CGFloat = 14
+    static let progressHeight: CGFloat = 4
+    static let textTopOffset: CGFloat = 5
+    static let verticalPadding: CGFloat = 12
 }
 
 private enum BookGridStyle {
     static let columnSpacing: CGFloat = 14
     static let rowSpacing: CGFloat = 22
     static let coverHorizontalInset: CGFloat = 6
+    static let coverInitialFontSize: CGFloat = 40
 }
 
 private enum BookCoverStyle {
@@ -1466,7 +1514,7 @@ private struct GlobalBookSearchView: View {
     @State private var results: [Book] = []
     @State private var historyItems: [SearchHistoryItem] = []
     @State private var errorMessage: String?
-    @FocusState private var isSearchFieldFocused: Bool
+    @State private var searchFocusToken = 0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1475,15 +1523,14 @@ private struct GlobalBookSearchView: View {
                     .font(.system(size: 15, weight: .regular))
                     .foregroundColor(.secondary)
 
-                TextField("search.field.placeholder", text: $keyword)
-                    .font(.body)
-                    .textInputAutocapitalization(.never)
-                    .disableAutocorrection(true)
-                    .submitLabel(.search)
-                    .focused($isSearchFieldFocused)
-                    .onSubmit {
-                        performSearch()
-                    }
+                FocusableSearchTextField(
+                    text: $keyword,
+                    placeholder: NSLocalizedString("search.field.placeholder", comment: ""),
+                    focusToken: searchFocusToken
+                ) {
+                    performSearch()
+                }
+                .frame(height: SearchBarStyle.height)
 
                 if !keyword.isEmpty {
                     Button {
@@ -1660,7 +1707,99 @@ private struct GlobalBookSearchView: View {
 
     private func focusSearchField() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-            isSearchFieldFocused = true
+            searchFocusToken += 1
+        }
+    }
+}
+
+private struct FocusableSearchTextField: UIViewRepresentable {
+    @Binding var text: String
+    let placeholder: String
+    let focusToken: Int
+    let onSubmit: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(text: $text, onSubmit: onSubmit)
+    }
+
+    func makeUIView(context: Context) -> SearchTextField {
+        let textField = SearchTextField()
+        textField.borderStyle = .none
+        textField.backgroundColor = .clear
+        textField.font = .preferredFont(forTextStyle: .body)
+        textField.textColor = .label
+        textField.tintColor = .systemBlue
+        textField.returnKeyType = .search
+        textField.autocapitalizationType = .none
+        textField.autocorrectionType = .no
+        textField.clearButtonMode = .never
+        textField.delegate = context.coordinator
+        textField.addTarget(
+            context.coordinator,
+            action: #selector(Coordinator.textDidChange(_:)),
+            for: .editingChanged
+        )
+        return textField
+    }
+
+    func updateUIView(_ textField: SearchTextField, context: Context) {
+        if textField.text != text {
+            textField.text = text
+        }
+        textField.placeholder = placeholder
+
+        guard focusToken != context.coordinator.lastFocusToken else {
+            return
+        }
+        context.coordinator.lastFocusToken = focusToken
+        textField.focusWhenReady()
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        @Binding private var text: String
+        private let onSubmit: () -> Void
+        var lastFocusToken = 0
+
+        init(text: Binding<String>, onSubmit: @escaping () -> Void) {
+            _text = text
+            self.onSubmit = onSubmit
+        }
+
+        @objc func textDidChange(_ textField: UITextField) {
+            text = textField.text ?? ""
+        }
+
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            onSubmit()
+            return true
+        }
+    }
+
+    final class SearchTextField: UITextField {
+        private var needsFocus = false
+
+        func focusWhenReady() {
+            needsFocus = true
+            requestFocusIfPossible()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            requestFocusIfPossible()
+        }
+
+        private func requestFocusIfPossible() {
+            guard needsFocus,
+                  window != nil,
+                  !isFirstResponder
+            else {
+                return
+            }
+
+            needsFocus = false
+            DispatchQueue.main.async { [weak self] in
+                self?.becomeFirstResponder()
+            }
         }
     }
 }

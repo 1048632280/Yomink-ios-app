@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 struct LibraryGroupsPage: View {
     @Environment(\.dismiss) private var dismiss
@@ -15,55 +16,53 @@ struct LibraryGroupsPage: View {
     @State private var nameDraft = ""
     @State private var errorMessage: String?
     @State private var pressedGroupID: UUID?
+    @State private var draggingGroup: BookGroup?
 
     var body: some View {
         ZStack {
             Color(.systemGray6)
                 .ignoresSafeArea()
 
-            List {
-                DedicatedGroupListRow(
-                    title: groupTitle(
-                        name: NSLocalizedString("sidebar.ungrouped", comment: ""),
-                        count: books.filter { $0.groupID == nil }.count
-                    )
-                )
-                .listRowInsets(EdgeInsets())
-                .listRowSeparator(.hidden)
-                .listRowBackground(Color.clear)
-                .moveDisabled(true)
-
-                ForEach(groups) { group in
+            ScrollView {
+                LazyVStack(spacing: 0) {
                     DedicatedGroupListRow(
                         title: groupTitle(
-                            name: group.name,
-                            count: books.filter { $0.groupID == group.id }.count
-                        ),
-                        showsDeleteControl: isEditing,
-                        isPressed: pressedGroupID == group.id,
-                        deleteAction: {
-                            groupPendingDeletion = group
-                        }
+                            name: NSLocalizedString("sidebar.ungrouped", comment: ""),
+                            count: books.filter { $0.groupID == nil }.count
+                        )
                     )
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .moveDisabled(!isEditing)
-                    .onLongPressGesture(
-                        minimumDuration: 0.45,
-                        pressing: { isPressing in
-                            pressedGroupID = isPressing ? group.id : nil
-                        },
-                        perform: {
-                            pressedGroupID = nil
-                            beginRename(group)
-                        }
-                    )
+
+                    ForEach(groups) { group in
+                        DedicatedGroupListRow(
+                            title: groupTitle(
+                                name: group.name,
+                                count: books.filter { $0.groupID == group.id }.count
+                            ),
+                            showsDeleteControl: isEditing,
+                            showsReorderControl: isEditing,
+                            isPressed: pressedGroupID == group.id,
+                            deleteAction: {
+                                groupPendingDeletion = group
+                            },
+                            reorderProvider: {
+                                draggingGroup = group
+                                return NSItemProvider(object: group.id.uuidString as NSString)
+                            }
+                        )
+                        .simultaneousGesture(longPressGesture(for: group))
+                        .onDrop(
+                            of: [UTType.text],
+                            delegate: GroupReorderDropDelegate(
+                                item: group,
+                                groups: $groups,
+                                draggingGroup: $draggingGroup,
+                                persistOrder: persistGroupOrder
+                            )
+                        )
+                    }
                 }
-                .onMove(perform: moveGroups)
+                .frame(maxWidth: .infinity)
             }
-            .listStyle(.plain)
-            .environment(\.editMode, .constant(isEditing ? .active : .inactive))
             .background(Color(.systemGray6))
             .animation(.easeInOut(duration: 0.18), value: isEditing)
 
@@ -216,8 +215,7 @@ struct LibraryGroupsPage: View {
         }
     }
 
-    private func moveGroups(from source: IndexSet, to destination: Int) {
-        groups.move(fromOffsets: source, toOffset: destination)
+    private func persistGroupOrder() {
         let ids = groups.map(\.id)
 
         Task {
@@ -229,6 +227,17 @@ struct LibraryGroupsPage: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func longPressGesture(for group: BookGroup) -> some Gesture {
+        LongPressGesture(minimumDuration: 0.45)
+            .onChanged { _ in
+                pressedGroupID = group.id
+            }
+            .onEnded { _ in
+                pressedGroupID = nil
+                beginRename(group)
+            }
     }
 
     private func groupTitle(name: String, count: Int) -> String {
@@ -251,6 +260,44 @@ private enum GroupNameEditor {
         case .rename:
             return "groups.rename"
         }
+    }
+}
+
+private struct GroupReorderDropDelegate: DropDelegate {
+    let item: BookGroup
+    @Binding var groups: [BookGroup]
+    @Binding var draggingGroup: BookGroup?
+    let persistOrder: () -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggingGroup,
+              draggingGroup != item,
+              let fromIndex = groups.firstIndex(of: draggingGroup),
+              let toIndex = groups.firstIndex(of: item)
+        else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.18)) {
+            groups.move(
+                fromOffsets: IndexSet(integer: fromIndex),
+                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
+            )
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        DropProposal(operation: .move)
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard draggingGroup != nil else {
+            return false
+        }
+
+        draggingGroup = nil
+        persistOrder()
+        return true
     }
 }
 
@@ -788,8 +835,10 @@ private struct DedicatedListRow: View {
 private struct DedicatedGroupListRow: View {
     let title: String
     var showsDeleteControl = false
+    var showsReorderControl = false
     var isPressed = false
     var deleteAction: (() -> Void)?
+    var reorderProvider: (() -> NSItemProvider)?
 
     var body: some View {
         HStack(spacing: 12) {
@@ -812,6 +861,18 @@ private struct DedicatedGroupListRow: View {
                 .lineLimit(1)
 
             Spacer(minLength: 0)
+
+            if showsReorderControl {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundColor(Color(.systemGray2))
+                    .frame(width: 36, height: DedicatedPageStyle.rowHeight)
+                    .contentShape(Rectangle())
+                    .onDrag {
+                        reorderProvider?() ?? NSItemProvider()
+                    }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
         }
         .padding(.horizontal, 16)
         .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.rowHeight, alignment: .leading)
