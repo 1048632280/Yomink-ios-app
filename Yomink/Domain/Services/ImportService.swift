@@ -112,10 +112,7 @@ final class ImportService {
                     fileSize: Int64(data.count),
                     encoding: decodedText.encodingName,
                     wordCount: Self.visibleCharacterCount(in: decodedText.text),
-                    chapters: chapterIndexer.indexChapters(
-                        for: decodedText.text,
-                        fallbackTitle: sourceTitle
-                    ),
+                    chapters: chapterIndexer.indexChapters(for: decodedText.text),
                     importedAt: importedAt,
                     importSourceDisplayPath: sourceDisplayPath,
                     sourcePath: sourcePath,

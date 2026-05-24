@@ -105,6 +105,9 @@
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";
 "reader.preview.chapter.title" = "预览章节";
 
+"chapter.preface" = "序";
+"chapter.pseudo.numbered" = "第%d章";
+
 "book.untitled" = "未命名书籍";
 
 "import.progress.message" = "正在导入并生成阅读缓存...";

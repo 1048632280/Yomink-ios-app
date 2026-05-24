@@ -2,12 +2,11 @@ import Foundation
 
 struct ChapterIndexer: Sendable {
     func indexChapters(
-        for text: String,
-        fallbackTitle title: String
+        for text: String
     ) -> [ImportedChapterDraft] {
         let candidates = Self.chapterCandidates(in: text)
         guard candidates.isEmpty == false else {
-            return Self.pseudoChapters(for: text, title: title)
+            return Self.pseudoChapters(for: text)
         }
 
         let totalByteLength = text.utf8.count
@@ -48,12 +47,11 @@ struct ChapterIndexer: Sendable {
         }
 
         return chapters.isEmpty
-            ? Self.pseudoChapters(for: text, title: title)
+            ? Self.pseudoChapters(for: text)
             : chapters
     }
 
     private static func chapterCandidates(in text: String) -> [ChapterCandidate] {
-        let titleExpressions = makeTitleExpressions()
         var candidates: [ChapterCandidate] = []
         var lineStartIndex = text.startIndex
         var lineStartOffset = 0
@@ -67,12 +65,13 @@ struct ChapterIndexer: Sendable {
             }
 
             let rawLine = String(text[lineStartIndex..<lineEndIndex])
-            if Self.isChapterTitleLine(rawLine, titleExpressions: titleExpressions) {
+            if let kind = Self.chapterTitleKind(rawLine) {
                 candidates.append(
                     ChapterCandidate(
                         title: rawLine.trimmingCharacters(in: .whitespacesAndNewlines),
                         startOffset: lineStartOffset,
-                        lineStartIndex: lineStartIndex
+                        lineStartIndex: lineStartIndex,
+                        kind: kind
                     )
                 )
             }
@@ -99,25 +98,41 @@ struct ChapterIndexer: Sendable {
             lineStartIndex = nextLineStartIndex
         }
 
-        return candidates
+        return Self.filterNumberedListFalsePositives(candidates)
     }
 
-    private static func isChapterTitleLine(
-        _ rawLine: String,
-        titleExpressions: [NSRegularExpression]
-    ) -> Bool {
+    private static func chapterTitleKind(_ rawLine: String) -> ChapterCandidate.Kind? {
         let trimmedLine = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedLine.isEmpty == false,
               trimmedLine.count < maximumTitleCharacterCount,
               !endsWithSentencePunctuation(trimmedLine)
         else {
-            return false
+            return nil
         }
 
-        let range = NSRange(trimmedLine.startIndex..<trimmedLine.endIndex, in: trimmedLine)
-        return titleExpressions.contains { expression in
-            expression.firstMatch(in: trimmedLine, options: [], range: range) != nil
+        let matchingLine = normalizedLineForMatching(trimmedLine)
+        let range = NSRange(matchingLine.startIndex..<matchingLine.endIndex, in: matchingLine)
+        return titleExpressions.first { titleExpression in
+            titleExpression.expression.firstMatch(in: matchingLine, options: [], range: range) != nil
+        }?.kind
+    }
+
+    private static func filterNumberedListFalsePositives(
+        _ candidates: [ChapterCandidate]
+    ) -> [ChapterCandidate] {
+        let numberedCount = candidates.filter { $0.kind == .numbered }.count
+        guard numberedCount > 0 else {
+            return candidates
         }
+
+        let hasRegularCandidate = candidates.contains { $0.kind == .regular }
+        let shouldKeepNumberedCandidates = numberedCount >= minimumNumberedTitleCandidates
+            || !hasRegularCandidate
+        guard !shouldKeepNumberedCandidates else {
+            return candidates
+        }
+
+        return candidates.filter { $0.kind != .numbered }
     }
 
     private static func endsWithSentencePunctuation(_ line: String) -> Bool {
@@ -144,10 +159,13 @@ struct ChapterIndexer: Sendable {
         text.unicodeScalars.contains { !$0.properties.isWhitespace }
     }
 
-    private static func pseudoChapters(
-        for text: String,
-        title: String
-    ) -> [ImportedChapterDraft] {
+    private static func normalizedLineForMatching(_ line: String) -> String {
+        line
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{3000}", with: " ")
+    }
+
+    private static func pseudoChapters(for text: String) -> [ImportedChapterDraft] {
         var chapters: [ImportedChapterDraft] = []
         var chapterStartOffset = 0
         var currentOffset = 0
@@ -156,12 +174,13 @@ struct ChapterIndexer: Sendable {
             let characterByteCount = String(character).utf8.count
             if currentOffset > chapterStartOffset,
                currentOffset + characterByteCount - chapterStartOffset > pseudoChapterByteLength {
+                let sortOrder = chapters.count
                 chapters.append(
                     chapter(
-                        title: title,
+                        title: pseudoChapterTitle(sortOrder: sortOrder),
                         startOffset: chapterStartOffset,
                         endOffset: currentOffset,
-                        sortOrder: chapters.count,
+                        sortOrder: sortOrder,
                         source: .pseudo
                     )
                 )
@@ -170,25 +189,25 @@ struct ChapterIndexer: Sendable {
             currentOffset += characterByteCount
         }
 
+        let sortOrder = chapters.count
         chapters.append(
             chapter(
-                title: title,
+                title: pseudoChapterTitle(sortOrder: sortOrder),
                 startOffset: chapterStartOffset,
                 endOffset: currentOffset,
-                sortOrder: chapters.count,
+                sortOrder: sortOrder,
                 source: .pseudo
             )
         )
 
-        if chapters.count == 1 {
-            return chapters
-        }
+        return chapters
+    }
 
-        return chapters.map { chapter in
-            var chapter = chapter
-            chapter.title = "\(title) \(chapter.sortOrder + 1)"
-            return chapter
-        }
+    private static func pseudoChapterTitle(sortOrder: Int) -> String {
+        String(
+            format: NSLocalizedString("chapter.pseudo.numbered", comment: ""),
+            sortOrder + 1
+        )
     }
 
     private static func chapter(
@@ -219,26 +238,58 @@ struct ChapterIndexer: Sendable {
         }
     }
 
-    private static func makeTitleExpressions() -> [NSRegularExpression] {
+    private static func makeTitleExpressions() -> [TitleExpression] {
         [
-            makeExpression(#"^\s*第\s*([0-9零〇一二两三四五六七八九十百千万]+)\s*[章回节折卷部篇集]\s*(.*)$"#),
-            makeExpression(#"^\s*卷\s*([0-9零〇一二两三四五六七八九十百千万]+)\s*(.*)$"#),
-            makeExpression(#"^\s*Chapter\s+\d+.*$"#, options: [.caseInsensitive]),
-            makeExpression(#"^\s*\d+[\.\、]\s*.+$"#),
-            makeExpression(#"^\s*(前言|引子|序|序言|序章|楔子|后记)(\s+.*|[:：].*)?$"#),
-            makeExpression(#"^\s*番外\s*.*$"#)
+            TitleExpression(
+                expression: makeExpression(#"^\s*第\s*([0-9零〇一二两三四五六七八九十百千万]+(?:\s*[0-9零〇一二两三四五六七八九十百千万]+)*)\s*[章回节折卷部篇集]\s*(.*)$"#),
+                kind: .regular
+            ),
+            TitleExpression(
+                expression: makeExpression(#"^\s*卷\s*([0-9零〇一二两三四五六七八九十百千万]+(?:\s*[0-9零〇一二两三四五六七八九十百千万]+)*)\s*(.*)$"#),
+                kind: .regular
+            ),
+            TitleExpression(
+                expression: makeExpression(#"^\s*Chapter\s+\d+.*$"#, options: [.caseInsensitive]),
+                kind: .regular
+            ),
+            TitleExpression(
+                expression: makeExpression(#"^\s*\d+[\.\、]\s*.+$"#),
+                kind: .numbered
+            ),
+            TitleExpression(
+                expression: makeExpression(#"^\s*(前言|引子|序|序言|序章|楔子|后记)(\s+.*|[:：].*)?$"#),
+                kind: .special
+            ),
+            TitleExpression(
+                expression: makeExpression(#"^\s*番外\s*.*$"#),
+                kind: .special
+            )
         ]
     }
 
-    private static let prefaceTitle = "序"
+    private static let titleExpressions: [TitleExpression] = makeTitleExpressions()
+    private static let prefaceTitle = NSLocalizedString("chapter.preface", comment: "")
     private static let maximumTitleCharacterCount = 50
+    private static let minimumNumberedTitleCandidates = 3
     private static let pseudoChapterByteLength = 128 * 1_024
     private static let sentenceEndingScalars = Set("。！？!?".unicodeScalars)
     private static let trailingQuoteAndBracketScalars = Set("\"'”’」』》）)]}".unicodeScalars)
 }
 
+private struct TitleExpression {
+    let expression: NSRegularExpression
+    let kind: ChapterCandidate.Kind
+}
+
 private struct ChapterCandidate {
+    enum Kind {
+        case regular
+        case numbered
+        case special
+    }
+
     let title: String
     let startOffset: Int
     let lineStartIndex: String.Index
+    let kind: Kind
 }
