@@ -234,6 +234,62 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func updateBookDetails(
+        id: UUID,
+        title: String,
+        author: String?,
+        intro: String?
+    ) async throws -> Book {
+        let normalizedTitle = Self.normalizedBookTitle(title)
+        let normalizedAuthor = Self.normalizedOptionalText(author)
+        let normalizedIntro = Self.normalizedOptionalText(intro)
+
+        return try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE books
+                SET title = ?, author = ?, intro = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    normalizedTitle,
+                    normalizedAuthor,
+                    normalizedIntro,
+                    id.uuidString
+                ]
+            )
+
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT
+                    books.*,
+                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
+                FROM books
+                LEFT JOIN reading_progress
+                    ON reading_progress.bookId = books.id
+                WHERE books.id = ?
+                """,
+                arguments: [id.uuidString]
+            ),
+                let book = Book(row: row)
+            else {
+                throw NSError(
+                    domain: "Yomink.LibraryRepository",
+                    code: 404,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: NSLocalizedString(
+                            "library.error.bookNotFound",
+                            comment: ""
+                        )
+                    ]
+                )
+            }
+
+            return book
+        }
+    }
+
     func fetchChapters(bookID: UUID) async throws -> [Chapter] {
         try await database.writer.read { db in
             let rows = try Row.fetchAll(
@@ -308,6 +364,72 @@ struct GRDBLibraryRepository: LibraryRepository {
             try db.execute(
                 sql: """
                 DELETE FROM bookmarks
+                WHERE id = ?
+                """,
+                arguments: [id.uuidString]
+            )
+        }
+    }
+
+    func fetchFilterRules(bookID: UUID) async throws -> [TextFilterRule] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, bookId, source, replacement, createdAt
+                FROM filter_rules
+                WHERE bookId = ?
+                ORDER BY createdAt ASC
+                """,
+                arguments: [bookID.uuidString]
+            )
+            return rows.compactMap(TextFilterRule.init(row:))
+        }
+    }
+
+    func createFilterRule(
+        bookID: UUID,
+        source: String,
+        replacement: String?
+    ) async throws -> TextFilterRule {
+        let normalizedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let rule = TextFilterRule(
+            id: UUID(),
+            bookID: bookID,
+            source: normalizedSource,
+            replacement: Self.normalizedOptionalText(replacement),
+            createdAt: Date()
+        )
+        guard !rule.source.isEmpty else {
+            return rule
+        }
+
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO filter_rules (
+                    id, bookId, source, replacement, createdAt
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    rule.id.uuidString,
+                    rule.bookID.uuidString,
+                    rule.source,
+                    rule.replacement,
+                    DatabaseDateFormatter.string(from: rule.createdAt)
+                ]
+            )
+        }
+
+        return rule
+    }
+
+    func deleteFilterRule(id: UUID) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM filter_rules
                 WHERE id = ?
                 """,
                 arguments: [id.uuidString]
@@ -626,6 +748,16 @@ struct GRDBLibraryRepository: LibraryRepository {
         return trimmed.isEmpty ? NSLocalizedString("sidebar.untitledGroup", comment: "") : trimmed
     }
 
+    private static func normalizedBookTitle(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+
+    private static func normalizedOptionalText(_ text: String?) -> String? {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
     private static func likePattern(for keyword: String) -> String {
         let escaped = keyword
             .replacingOccurrences(of: "\\", with: "\\\\")
@@ -760,6 +892,30 @@ private extension Bookmark {
             chapterID: chapterIDString.flatMap(UUID.init(uuidString:)),
             offset: row["offset"],
             preview: row["preview"],
+            createdAt: createdAt
+        )
+    }
+}
+
+private extension TextFilterRule {
+    init?(row: Row) {
+        let idString: String = row["id"]
+        let bookIDString: String = row["bookId"]
+        let createdAtString: String = row["createdAt"]
+
+        guard
+            let id = UUID(uuidString: idString),
+            let bookID = UUID(uuidString: bookIDString),
+            let createdAt = DatabaseDateFormatter.date(from: createdAtString)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            bookID: bookID,
+            source: row["source"],
+            replacement: row["replacement"],
             createdAt: createdAt
         )
     }

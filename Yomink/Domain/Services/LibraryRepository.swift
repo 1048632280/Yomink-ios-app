@@ -12,6 +12,12 @@ protocol LibraryRepository: Sendable {
     func deleteGroup(id: UUID) async throws
     func reorderGroups(ids: [UUID]) async throws
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws
+    func updateBookDetails(
+        id: UUID,
+        title: String,
+        author: String?,
+        intro: String?
+    ) async throws -> Book
     func fetchChapters(bookID: UUID) async throws -> [Chapter]
     func fetchBookmarks(bookID: UUID) async throws -> [Bookmark]
     func createBookmark(
@@ -21,6 +27,13 @@ protocol LibraryRepository: Sendable {
         preview: String
     ) async throws -> Bookmark
     func deleteBookmark(id: UUID) async throws
+    func fetchFilterRules(bookID: UUID) async throws -> [TextFilterRule]
+    func createFilterRule(
+        bookID: UUID,
+        source: String,
+        replacement: String?
+    ) async throws -> TextFilterRule
+    func deleteFilterRule(id: UUID) async throws
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress?
     func saveReadingProgress(_ progress: ReadingProgress) async throws
     func fetchReadingHistory(limit: Int) async throws -> [ReadingHistoryItem]

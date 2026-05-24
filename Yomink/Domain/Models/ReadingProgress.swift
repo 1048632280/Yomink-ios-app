@@ -35,6 +35,14 @@ struct Bookmark: Identifiable, Equatable, Sendable {
     var createdAt: Date
 }
 
+struct TextFilterRule: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var bookID: UUID
+    var source: String
+    var replacement: String?
+    var createdAt: Date
+}
+
 struct ReaderSettings: Codable, Equatable, Sendable {
     enum PageMode: String, Codable, CaseIterable, Sendable {
         case paged

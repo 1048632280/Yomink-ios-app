@@ -67,6 +67,35 @@ struct PreviewLibraryRepository: LibraryRepository {
 
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws {}
 
+    func updateBookDetails(
+        id: UUID,
+        title: String,
+        author: String?,
+        intro: String?
+    ) async throws -> Book {
+        var book = try await fetchBooks(scope: .all, sortOrder: .lastReadAt)
+            .first { $0.id == id } ?? Book(
+                id: id,
+                title: title,
+                author: nil,
+                intro: nil,
+                fileName: "sample.txt",
+                fileSize: 0,
+                encoding: "utf-8",
+                wordCount: 0,
+                importedAt: Date(),
+                lastReadAt: nil,
+                groupID: nil,
+                progressPercentage: 0,
+                sourcePath: "Books/\(id.uuidString.lowercased())/source.txt",
+                normalizedPath: "Books/\(id.uuidString.lowercased())/normalized.txt"
+            )
+        book.title = title
+        book.author = author
+        book.intro = intro
+        return book
+    }
+
     func fetchChapters(bookID: UUID) async throws -> [Chapter] {
         [
             Chapter(
@@ -102,6 +131,26 @@ struct PreviewLibraryRepository: LibraryRepository {
     }
 
     func deleteBookmark(id: UUID) async throws {}
+
+    func fetchFilterRules(bookID: UUID) async throws -> [TextFilterRule] {
+        []
+    }
+
+    func createFilterRule(
+        bookID: UUID,
+        source: String,
+        replacement: String?
+    ) async throws -> TextFilterRule {
+        TextFilterRule(
+            id: UUID(),
+            bookID: bookID,
+            source: source,
+            replacement: replacement,
+            createdAt: Date()
+        )
+    }
+
+    func deleteFilterRule(id: UUID) async throws {}
 
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress? {
         ReadingProgress(

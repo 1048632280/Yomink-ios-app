@@ -48,6 +48,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     private let titleLabel = UILabel()
     private let bookmarkButton = UIButton(type: .system)
+    private let moreButton = UIButton(type: .system)
     private let statusLabel = UILabel()
     private let progressLabel = UILabel()
     private let progressSlider = UISlider()
@@ -74,8 +75,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var book: Book
     private var chapters: [Chapter] = []
     private var bookmarks: [Bookmark] = []
+    private var filterRules: [TextFilterRule] = []
     private var currentChapterIndex = 0
+    private var originalChapterText = ""
     private var currentChapterText = ""
+    private var currentFilteredText = FilteredReaderText(
+        displayText: "",
+        originalByteOffsetsByUTF16Index: [0]
+    )
     private var currentPaginator: ChapterPaginator?
     private var currentPageIndex = 0
     private var currentProgress: ReadingProgress?
@@ -253,8 +260,15 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         bookmarkButton.addTarget(self, action: #selector(bookmarkButtonTapped), for: .touchUpInside)
         bookmarkButton.translatesAutoresizingMaskIntoConstraints = false
 
+        moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        moreButton.accessibilityLabel = NSLocalizedString("reader.more", comment: "")
+        moreButton.showsMenuAsPrimaryAction = true
+        moreButton.menu = makeMoreMenu()
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
+
         let actionStack = UIStackView(arrangedSubviews: [
-            bookmarkButton
+            bookmarkButton,
+            moreButton
         ])
         actionStack.axis = .horizontal
         actionStack.alignment = .center
@@ -290,8 +304,35 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             actionStack.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
 
             bookmarkButton.widthAnchor.constraint(equalToConstant: 44),
-            bookmarkButton.heightAnchor.constraint(equalToConstant: 36)
+            bookmarkButton.heightAnchor.constraint(equalToConstant: 36),
+            moreButton.widthAnchor.constraint(equalToConstant: 44),
+            moreButton.heightAnchor.constraint(equalToConstant: 36)
         ])
+    }
+
+    private func makeMoreMenu() -> UIMenu {
+        UIMenu(
+            children: [
+                UIAction(
+                    title: NSLocalizedString("reader.more.bookDetail", comment: ""),
+                    image: UIImage(systemName: "book")
+                ) { [weak self] _ in
+                    self?.showBookDetail()
+                },
+                UIAction(
+                    title: NSLocalizedString("reader.more.contentSearch", comment: ""),
+                    image: UIImage(systemName: "magnifyingglass")
+                ) { [weak self] _ in
+                    self?.showContentSearch()
+                },
+                UIAction(
+                    title: NSLocalizedString("reader.more.contentFilter", comment: ""),
+                    image: UIImage(systemName: "line.3.horizontal.decrease.circle")
+                ) { [weak self] _ in
+                    self?.showFilterRules()
+                }
+            ]
+        )
     }
 
     private func configureBottomBar() {
@@ -465,7 +506,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         prefetchGeneration += 1
         chapters = []
         bookmarks = []
+        filterRules = []
+        originalChapterText = ""
         currentChapterText = ""
+        currentFilteredText = FilteredReaderText(
+            displayText: "",
+            originalByteOffsetsByUTF16Index: [0]
+        )
         currentPaginator = nil
         prefetchedChapter = nil
         prefetchingChapterID = nil
@@ -487,12 +534,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             do {
                 async let fetchedChapters = repository.fetchChapters(bookID: book.id)
                 async let fetchedBookmarks = repository.fetchBookmarks(bookID: book.id)
+                async let fetchedFilterRules = repository.fetchFilterRules(bookID: book.id)
                 async let fetchedProgress = repository.fetchReadingProgress(bookID: book.id)
                 async let fetchedSettings = repository.fetchReaderSettings()
                 async let markOpened: Void = repository.markBookOpened(id: book.id, at: Date())
 
                 let chapters = try await fetchedChapters
                 let bookmarks = try await fetchedBookmarks
+                let filterRules = try await fetchedFilterRules
                 let progress = try await fetchedProgress
                 let settings = try await fetchedSettings
                 try? await markOpened
@@ -516,6 +565,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 await self?.applyLoadedContent(
                     chapters: chapters,
                     bookmarks: bookmarks,
+                    filterRules: filterRules,
                     chapterIndex: selected.index,
                     text: text,
                     startOffset: selected.offset,
@@ -587,6 +637,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func applyLoadedContent(
         chapters: [Chapter],
         bookmarks: [Bookmark]? = nil,
+        filterRules: [TextFilterRule]? = nil,
         chapterIndex: Int,
         text: String,
         startOffset: Int,
@@ -597,11 +648,15 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         if let bookmarks {
             self.bookmarks = bookmarks
         }
+        if let filterRules {
+            self.filterRules = filterRules
+        }
         if let settings = settings {
             readerSettings = settings.normalized
         }
         currentChapterIndex = chapterIndex
-        currentChapterText = text
+        originalChapterText = text
+        applyCurrentFilters()
         currentPaginator = nil
         currentPageIndex = 0
         pendingAnchorByteOffset = startOffset
@@ -613,6 +668,27 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
         lastPaginationSize = textView.bounds.size
         renderContent(anchorByteOffset: startOffset, savingProgress: saveAfterRender)
+    }
+
+    private func applyCurrentFilters() {
+        currentFilteredText = ReaderTextFilter.apply(
+            rules: filterRules,
+            to: originalChapterText
+        )
+        currentChapterText = currentFilteredText.displayText
+    }
+
+    private func refreshCurrentChapterAfterFilterChange() {
+        guard originalChapterText.isEmpty == false else {
+            return
+        }
+
+        let anchorOffset = currentDisplayByteOffset()
+        applyCurrentFilters()
+        currentPaginator = nil
+        currentPageIndex = 0
+        invalidatePrefetch()
+        renderContent(anchorByteOffset: anchorOffset, savingProgress: false)
     }
 
     private func renderContent(anchorByteOffset: Int, savingProgress: Bool) {
@@ -665,7 +741,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         self.prefetchedChapter = nil
 
         currentChapterIndex = prefetchedChapter.index
-        currentChapterText = prefetchedChapter.text
+        originalChapterText = prefetchedChapter.text
+        applyCurrentFilters()
         currentPaginator = nil
         currentPageIndex = 0
         pendingAnchorByteOffset = startOffset
@@ -680,7 +757,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
            let paginator = prefetchedChapter.paginator {
             textView.isScrollEnabled = false
             currentPaginator = paginator
-            currentPageIndex = paginator.pageIndex(containingByteOffset: startOffset)
+            currentPageIndex = paginator.pageIndex(
+                containingDisplayUTF16Index: currentFilteredText
+                    .displayUTF16Index(containingOriginalByteOffset: startOffset)
+            )
             showLoading(false, message: nil)
             renderCurrentPage(savingProgress: saveAfterRender)
         } else {
@@ -748,6 +828,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let book = book
         let fileStore = fileStore
         let settings = readerSettings.normalized
+        let filterRules = filterRules
         let fittingSize = textView.bounds.size
         let typography = ReaderTypography(settings: settings)
         prefetchingChapterID = chapter.id
@@ -765,8 +846,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 if settings.pageMode == .paged {
                     paginator = try await Task.detached(priority: .utility) {
                         try Task.checkCancellation()
+                        let filteredText = ReaderTextFilter
+                            .apply(rules: filterRules, to: text)
+                            .displayText
                         let paginator = ChapterPaginator(
-                            text: text,
+                            text: filteredText,
                             typography: typography,
                             fittingSize: fittingSize
                         )
@@ -785,6 +869,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                         text: text,
                         paginator: paginator,
                         settings: settings,
+                        filterRules: filterRules,
                         fittingSize: fittingSize
                     ),
                     generation: generation
@@ -832,6 +917,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private func prefetchContextMatches(_ prefetchedChapter: PrefetchedChapter) -> Bool {
         prefetchedChapter.settings == readerSettings.normalized
+            && prefetchedChapter.filterRules == filterRules
             && abs(prefetchedChapter.fittingSize.width - textView.bounds.width) < 1
             && abs(prefetchedChapter.fittingSize.height - textView.bounds.height) < 1
     }
@@ -907,7 +993,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
 
         currentPaginator = paginator
-        currentPageIndex = paginator.pageIndex(containingByteOffset: anchorByteOffset)
+        currentPageIndex = paginator.pageIndex(
+            containingDisplayUTF16Index: currentFilteredText
+                .displayUTF16Index(containingOriginalByteOffset: anchorByteOffset)
+        )
         paginateTask = nil
         showLoading(false, message: nil)
         renderCurrentPage(savingProgress: savingProgress)
@@ -929,11 +1018,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             .attributedString(for: currentChapterText)
         view.layoutIfNeeded()
 
-        let chapter = chapters.indices.contains(currentChapterIndex)
-            ? chapters[currentChapterIndex]
-            : nil
-        let chapterLength = max(chapter?.byteLength ?? 0, 1)
-        let ratio = min(max(Double(anchorByteOffset) / Double(chapterLength), 0), 1)
+        let displayIndex = currentFilteredText
+            .displayUTF16Index(containingOriginalByteOffset: anchorByteOffset)
+        let displayLength = max(currentChapterText.utf16.count, 1)
+        let ratio = min(max(Double(displayIndex) / Double(displayLength), 0), 1)
         let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
         isApplyingProgrammaticScroll = true
         textView.setContentOffset(
@@ -941,7 +1029,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             animated: false
         )
         isApplyingProgrammaticScroll = false
-        updateProgress(chapterOffset: anchorByteOffset)
+        updateProgress(
+            chapterOffset: currentFilteredText.originalByteOffset(
+                atDisplayUTF16Index: displayIndex
+            )
+        )
         prefetchAdjacentChapterIfNeeded()
 
         if shouldSave {
@@ -963,7 +1055,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
         let page = paginator.page(at: currentPageIndex)
         textView.attributedText = page.attributedText
-        updateProgress(chapterOffset: page.startByteOffset)
+        updateProgress(
+            chapterOffset: currentFilteredText.originalByteOffset(
+                atDisplayUTF16Index: page.startDisplayUTF16Index
+            )
+        )
         prefetchAdjacentChapterIfNeeded()
 
         if shouldSave {
@@ -1143,11 +1239,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             return
         }
 
-        let chapter = chapters[currentChapterIndex]
         let maxOffset = max(textView.contentSize.height - textView.bounds.height, 1)
         let yOffset = min(max(textView.contentOffset.y, 0), maxOffset)
         let ratio = min(max(Double(yOffset / maxOffset), 0), 1)
-        let chapterOffset = Int(Double(chapter.byteLength) * ratio)
+        let displayIndex = Int(Double(max(currentChapterText.utf16.count, 1)) * ratio)
+        let chapterOffset = currentFilteredText.originalByteOffset(
+            atDisplayUTF16Index: displayIndex
+        )
         updateProgress(chapterOffset: chapterOffset)
         // Phase 7 performance: prefetch checks are cheap but run during active
         // scrolling; throttle or move them to scroll-end callbacks if needed.
@@ -1491,6 +1589,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     @objc private func catalogButtonTapped() {
         saveProgressImmediately()
+        presentContents()
+    }
+
+    private func presentContents() {
         let listViewController = ReaderContentsViewController(
             bookID: book.id,
             repository: repository,
@@ -1508,6 +1610,71 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             self.dismiss(animated: true)
         }
         let navigationController = UINavigationController(rootViewController: listViewController)
+        navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+        navigationController.modalPresentationStyle = .fullScreen
+        present(navigationController, animated: true)
+    }
+
+    @objc private func showBookDetail() {
+        saveProgressImmediately()
+        let detailViewController = ReaderBookDetailViewController(
+            book: book,
+            repository: repository,
+            fileStore: fileStore,
+            chapters: chapters,
+            selectedChapterIndex: currentChapterIndex,
+            onBookUpdated: { [weak self] updatedBook in
+                guard let self else {
+                    return
+                }
+                self.book = updatedBook
+                self.titleLabel.text = updatedBook.title
+            },
+            onShowCatalog: { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.presentedViewController?.dismiss(animated: false) {
+                    self.presentContents()
+                }
+            }
+        )
+        presentFullScreenNavigation(detailViewController)
+    }
+
+    @objc private func showContentSearch() {
+        let searchViewController = ReaderContentSearchViewController(
+            book: book,
+            fileStore: fileStore,
+            chapters: chapters,
+            filterRules: filterRules
+        ) { [weak self] target in
+            guard let self else {
+                return
+            }
+            self.jumpTo(target)
+            self.presentedViewController?.dismiss(animated: true)
+        }
+        presentFullScreenNavigation(searchViewController)
+    }
+
+    @objc private func showFilterRules() {
+        let filterViewController = ReaderFilterRulesViewController(
+            bookID: book.id,
+            repository: repository,
+            rules: filterRules
+        ) { [weak self] rules in
+            guard let self else {
+                return
+            }
+            self.filterRules = rules
+            self.refreshCurrentChapterAfterFilterChange()
+        }
+        presentFullScreenNavigation(filterViewController)
+    }
+
+    private func presentFullScreenNavigation(_ rootViewController: UIViewController) {
+        let navigationController = UINavigationController(rootViewController: rootViewController)
         navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         navigationController.modalPresentationStyle = .fullScreen
         present(navigationController, animated: true)
@@ -1598,7 +1765,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 return
             }
 
-            currentPageIndex = paginator.pageIndex(containingByteOffset: offset)
+            currentPageIndex = paginator.pageIndex(
+                containingDisplayUTF16Index: currentFilteredText
+                    .displayUTF16Index(containingOriginalByteOffset: offset)
+            )
             showLoading(false, message: nil)
             renderCurrentPage(savingProgress: saveAfterRender)
         case .scroll:
@@ -1621,8 +1791,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         textView.isScrollEnabled = true
         view.layoutIfNeeded()
 
-        let chapter = chapters[currentChapterIndex]
-        let ratio = min(max(Double(offset) / Double(max(chapter.byteLength, 1)), 0), 1)
+        let displayIndex = currentFilteredText
+            .displayUTF16Index(containingOriginalByteOffset: offset)
+        let ratio = min(
+            max(Double(displayIndex) / Double(max(currentChapterText.utf16.count, 1)), 0),
+            1
+        )
         let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
         isApplyingProgrammaticScroll = true
         textView.setContentOffset(
@@ -1643,22 +1817,18 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             return NSLocalizedString("reader.bookmark.preview.empty", comment: "")
         }
 
-        var currentOffset = 0
+        let displayOffset = currentFilteredText
+            .displayUTF16Index(containingOriginalByteOffset: offset)
+        let startIndex = stringIndex(
+            in: currentChapterText,
+            atUTF16Offset: displayOffset
+        )
         var preview = ""
-        var isCollecting = false
-        for character in currentChapterText {
-            let characterByteLength = String(character).utf8.count
-            if !isCollecting,
-               currentOffset + characterByteLength >= offset {
-                isCollecting = true
-            }
-            if isCollecting {
-                preview.append(character)
-                if preview.count >= Self.bookmarkPreviewCharacterLimit {
-                    break
-                }
-            }
-            currentOffset += characterByteLength
+        var index = startIndex
+        while index < currentChapterText.endIndex,
+              preview.count < Self.bookmarkPreviewCharacterLimit {
+            preview.append(currentChapterText[index])
+            index = currentChapterText.index(after: index)
         }
 
         let normalizedPreview = preview
@@ -1668,6 +1838,24 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         return normalizedPreview.isEmpty
             ? NSLocalizedString("reader.bookmark.preview.empty", comment: "")
             : normalizedPreview
+    }
+
+    private func stringIndex(
+        in text: String,
+        atUTF16Offset offset: Int
+    ) -> String.Index {
+        var candidateOffset = min(max(offset, 0), text.utf16.count)
+        while candidateOffset >= 0 {
+            let utf16Index = text.utf16.index(
+                text.utf16.startIndex,
+                offsetBy: candidateOffset
+            )
+            if let index = String.Index(utf16Index, within: text) {
+                return index
+            }
+            candidateOffset -= 1
+        }
+        return text.startIndex
     }
 
     @objc private func settingsButtonTapped() {
@@ -1689,7 +1877,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         if let progress = currentProgress {
             return Int(progress.chapterOffset)
         }
-        return currentPaginator?.pageStartByteOffset(at: currentPageIndex) ?? 0
+        return currentPaginator.map {
+            currentFilteredText.originalByteOffset(
+                atDisplayUTF16Index: $0.pageStartDisplayUTF16Index(at: currentPageIndex)
+            )
+        } ?? 0
     }
 
     private func targetChapter(
@@ -1847,10 +2039,11 @@ private struct PrefetchedChapter: @unchecked Sendable {
     let text: String
     let paginator: ChapterPaginator?
     let settings: ReaderSettings
+    let filterRules: [TextFilterRule]
     let fittingSize: CGSize
 }
 
-private struct ReaderContentTarget {
+struct ReaderContentTarget {
     let chapterID: UUID
     let offset: Int
 }
@@ -2790,14 +2983,13 @@ private extension ReaderSettings.Theme {
 private final class ChapterPaginator: @unchecked Sendable {
     struct Page {
         let attributedText: NSAttributedString
-        let startByteOffset: Int
-        let byteLength: Int
+        let startDisplayUTF16Index: Int
+        let displayUTF16Length: Int
     }
 
     private let attributedText: NSAttributedString
-    private let utf8OffsetsByCharacterIndex: [Int]
     private(set) var pageCharacterRanges: [NSRange] = []
-    private(set) var pageStartByteOffsets: [Int] = []
+    private(set) var pageStartDisplayUTF16Indexes: [Int] = []
 
     var pageCount: Int {
         pageCharacterRanges.count
@@ -2809,49 +3001,50 @@ private final class ChapterPaginator: @unchecked Sendable {
         fittingSize: CGSize
     ) {
         attributedText = typography.attributedString(for: text)
-        utf8OffsetsByCharacterIndex = Self.makeUTF8Offsets(for: text)
         buildPages(fittingSize: fittingSize)
     }
 
     func page(at index: Int) -> Page {
         guard pageCharacterRanges.isEmpty == false else {
-            return Page(attributedText: NSAttributedString(string: ""), startByteOffset: 0, byteLength: 0)
+            return Page(
+                attributedText: NSAttributedString(string: ""),
+                startDisplayUTF16Index: 0,
+                displayUTF16Length: 0
+            )
         }
 
         let safeIndex = min(max(index, 0), pageCharacterRanges.count - 1)
         let range = pageCharacterRanges[safeIndex]
-        let startOffset = pageStartByteOffset(at: safeIndex)
-        let endOffset = byteOffset(atCharacterIndex: range.location + range.length)
         let pageText = attributedText.attributedSubstring(from: range)
 
         return Page(
             attributedText: pageText,
-            startByteOffset: startOffset,
-            byteLength: max(endOffset - startOffset, 0)
+            startDisplayUTF16Index: range.location,
+            displayUTF16Length: range.length
         )
     }
 
-    func pageStartByteOffset(at index: Int) -> Int {
-        guard pageStartByteOffsets.isEmpty == false else {
+    func pageStartDisplayUTF16Index(at index: Int) -> Int {
+        guard pageStartDisplayUTF16Indexes.isEmpty == false else {
             return 0
         }
 
-        let safeIndex = min(max(index, 0), pageStartByteOffsets.count - 1)
-        return pageStartByteOffsets[safeIndex]
+        let safeIndex = min(max(index, 0), pageStartDisplayUTF16Indexes.count - 1)
+        return pageStartDisplayUTF16Indexes[safeIndex]
     }
 
-    func pageIndex(containingByteOffset byteOffset: Int) -> Int {
-        guard pageStartByteOffsets.isEmpty == false else {
+    func pageIndex(containingDisplayUTF16Index displayIndex: Int) -> Int {
+        guard pageStartDisplayUTF16Indexes.isEmpty == false else {
             return 0
         }
 
-        let clampedOffset = min(max(byteOffset, 0), utf8OffsetsByCharacterIndex.last ?? 0)
+        let clampedIndex = min(max(displayIndex, 0), attributedText.length)
         var lowerBound = 0
-        var upperBound = pageStartByteOffsets.count
+        var upperBound = pageStartDisplayUTF16Indexes.count
 
         while lowerBound < upperBound {
             let middle = (lowerBound + upperBound) / 2
-            if pageStartByteOffsets[middle] <= clampedOffset {
+            if pageStartDisplayUTF16Indexes[middle] <= clampedIndex {
                 lowerBound = middle + 1
             } else {
                 upperBound = middle
@@ -2936,7 +3129,7 @@ private final class ChapterPaginator: @unchecked Sendable {
             }
 
             pageCharacterRanges.append(characterRange)
-            pageStartByteOffsets.append(byteOffset(atCharacterIndex: characterRange.location))
+            pageStartDisplayUTF16Indexes.append(characterRange.location)
 
             if pageEndGlyphIndex >= glyphCount {
                 break
@@ -2946,34 +3139,7 @@ private final class ChapterPaginator: @unchecked Sendable {
 
         if pageCharacterRanges.isEmpty {
             pageCharacterRanges = [NSRange(location: 0, length: textLength)]
-            pageStartByteOffsets = [0]
+            pageStartDisplayUTF16Indexes = [0]
         }
-    }
-
-    private func byteOffset(atCharacterIndex characterIndex: Int) -> Int {
-        let safeIndex = min(max(characterIndex, 0), utf8OffsetsByCharacterIndex.count - 1)
-        return utf8OffsetsByCharacterIndex[safeIndex]
-    }
-
-    private static func makeUTF8Offsets(for text: String) -> [Int] {
-        var offsets: [Int] = []
-        offsets.reserveCapacity(text.utf16.count + 1)
-
-        var offset = 0
-        offsets.append(offset)
-        for character in text {
-            let characterText = String(character)
-            let previousOffset = offset
-            offset += characterText.utf8.count
-            let utf16Length = characterText.utf16.count
-            if utf16Length > 1 {
-                offsets.append(
-                    contentsOf: Array(repeating: previousOffset, count: utf16Length - 1)
-                )
-            }
-            offsets.append(offset)
-        }
-
-        return offsets
     }
 }
