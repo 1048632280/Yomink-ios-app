@@ -75,7 +75,8 @@ struct PreviewLibraryRepository: LibraryRepository {
                 title: NSLocalizedString("reader.preview.chapter.title", comment: ""),
                 startOffset: 0,
                 endOffset: Self.sampleText.utf8.count,
-                sortOrder: 0
+                sortOrder: 0,
+                source: .pseudo
             )
         ]
     }

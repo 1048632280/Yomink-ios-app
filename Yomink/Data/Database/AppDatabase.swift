@@ -193,6 +193,13 @@ final class AppDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v2_add_chapter_source") { db in
+            try db.execute(sql: """
+            ALTER TABLE chapters
+            ADD COLUMN source TEXT NOT NULL DEFAULT 'pseudo'
+            """)
+        }
+
         return migrator
     }
 }

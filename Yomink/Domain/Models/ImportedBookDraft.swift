@@ -22,4 +22,5 @@ struct ImportedChapterDraft: Equatable, Sendable {
     /// UTF-8 byte offset in normalized.txt, exclusive.
     var endOffset: Int
     var sortOrder: Int
+    var source: ChapterSource
 }

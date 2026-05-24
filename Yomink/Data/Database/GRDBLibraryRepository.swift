@@ -239,7 +239,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             let rows = try Row.fetchAll(
                 db,
                 sql: """
-                SELECT id, bookId, title, startOffset, endOffset, sortOrder
+                SELECT id, bookId, title, startOffset, endOffset, sortOrder, source
                 FROM chapters
                 WHERE bookId = ?
                 ORDER BY sortOrder
@@ -499,9 +499,9 @@ struct GRDBLibraryRepository: LibraryRepository {
                 try db.execute(
                     sql: """
                     INSERT INTO chapters (
-                        id, bookId, title, startOffset, endOffset, sortOrder
+                        id, bookId, title, startOffset, endOffset, sortOrder, source
                     )
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     """,
                     arguments: [
                         chapter.id.uuidString,
@@ -509,7 +509,8 @@ struct GRDBLibraryRepository: LibraryRepository {
                         chapter.title,
                         chapter.startOffset,
                         chapter.endOffset,
-                        chapter.sortOrder
+                        chapter.sortOrder,
+                        chapter.source.rawValue
                     ]
                 )
             }
@@ -634,6 +635,7 @@ private extension Chapter {
     init?(row: Row) {
         let idString: String = row["id"]
         let bookIDString: String = row["bookId"]
+        let sourceRawValue: String = row["source"]
 
         guard
             let id = UUID(uuidString: idString),
@@ -648,7 +650,8 @@ private extension Chapter {
             title: row["title"],
             startOffset: row["startOffset"],
             endOffset: row["endOffset"],
-            sortOrder: row["sortOrder"]
+            sortOrder: row["sortOrder"],
+            source: ChapterSource(rawValue: sourceRawValue) ?? .pseudo
         )
     }
 }

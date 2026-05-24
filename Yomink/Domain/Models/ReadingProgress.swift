@@ -7,6 +7,11 @@ struct ReadingProgress: Equatable, Sendable {
     var globalProgress: Double
 }
 
+enum ChapterSource: String, Codable, Equatable, Sendable {
+    case regex
+    case pseudo
+}
+
 struct Chapter: Identifiable, Equatable, Sendable {
     let id: UUID
     var bookID: UUID
@@ -14,6 +19,7 @@ struct Chapter: Identifiable, Equatable, Sendable {
     var startOffset: Int
     var endOffset: Int
     var sortOrder: Int
+    var source: ChapterSource
 
     var byteLength: Int {
         max(0, endOffset - startOffset)

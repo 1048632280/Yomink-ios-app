@@ -21,15 +21,18 @@ final class ImportService {
     private let fileStore: AppFileStore
     private let libraryRepository: any LibraryRepository
     private let decoder: TXTTextDecoder
+    private let chapterIndexer: ChapterIndexer
 
     init(
         fileStore: AppFileStore,
         libraryRepository: any LibraryRepository,
-        decoder: TXTTextDecoder = TXTTextDecoder()
+        decoder: TXTTextDecoder = TXTTextDecoder(),
+        chapterIndexer: ChapterIndexer = ChapterIndexer()
     ) {
         self.fileStore = fileStore
         self.libraryRepository = libraryRepository
         self.decoder = decoder
+        self.chapterIndexer = chapterIndexer
     }
 
     @discardableResult
@@ -49,6 +52,7 @@ final class ImportService {
     private func prepareImport(from sourceURL: URL) async throws -> PreparedImport {
         let fileStore = fileStore
         let decoder = decoder
+        let chapterIndexer = chapterIndexer
         let sourceDisplayPath = sourceURL.path
         let sourceFileName = sourceURL.lastPathComponent
         let sourceTitle = Self.title(from: sourceURL)
@@ -108,9 +112,9 @@ final class ImportService {
                     fileSize: Int64(data.count),
                     encoding: decodedText.encodingName,
                     wordCount: Self.visibleCharacterCount(in: decodedText.text),
-                    chapters: Self.pseudoChapters(
+                    chapters: chapterIndexer.indexChapters(
                         for: decodedText.text,
-                        title: sourceTitle
+                        fallbackTitle: sourceTitle
                     ),
                     importedAt: importedAt,
                     importSourceDisplayPath: sourceDisplayPath,
@@ -160,68 +164,6 @@ final class ImportService {
     private static func visibleCharacterCount(in text: String) -> Int {
         text.unicodeScalars.lazy.filter { !$0.properties.isWhitespace }.count
     }
-
-    private static func pseudoChapters(
-        for text: String,
-        title: String
-    ) -> [ImportedChapterDraft] {
-        var chapters: [ImportedChapterDraft] = []
-        var chapterStartOffset = 0
-        var currentOffset = 0
-
-        for character in text {
-            let characterByteCount = String(character).utf8.count
-            if currentOffset > chapterStartOffset,
-               currentOffset + characterByteCount - chapterStartOffset > pseudoChapterByteLength {
-                chapters.append(
-                    pseudoChapter(
-                        title: title,
-                        startOffset: chapterStartOffset,
-                        endOffset: currentOffset,
-                        sortOrder: chapters.count
-                    )
-                )
-                chapterStartOffset = currentOffset
-            }
-            currentOffset += characterByteCount
-        }
-
-        chapters.append(
-            pseudoChapter(
-                title: title,
-                startOffset: chapterStartOffset,
-                endOffset: currentOffset,
-                sortOrder: chapters.count
-            )
-        )
-
-        if chapters.count == 1 {
-            return chapters
-        }
-
-        return chapters.map { chapter in
-            var chapter = chapter
-            chapter.title = "\(title) \(chapter.sortOrder + 1)"
-            return chapter
-        }
-    }
-
-    private static func pseudoChapter(
-        title: String,
-        startOffset: Int,
-        endOffset: Int,
-        sortOrder: Int
-    ) -> ImportedChapterDraft {
-        ImportedChapterDraft(
-            id: UUID(),
-            title: title,
-            startOffset: startOffset,
-            endOffset: endOffset,
-            sortOrder: sortOrder
-        )
-    }
-
-    private static let pseudoChapterByteLength = 128 * 1_024
 }
 
 private struct PreparedImport {
