@@ -330,6 +330,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                     image: UIImage(systemName: "line.3.horizontal.decrease.circle")
                 ) { [weak self] _ in
                     self?.showFilterRules()
+                },
+                UIAction(
+                    title: NSLocalizedString("reader.more.pageTouchAreas", comment: ""),
+                    image: UIImage(systemName: "square.grid.3x3")
+                ) { [weak self] _ in
+                    self?.showPageTouchAreas()
                 }
             ]
         )
@@ -494,6 +500,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         panGesture.cancelsTouchesInView = false
         panGesture.delegate = self
         view.addGestureRecognizer(panGesture)
+
+        let edgeBackGesture = UIScreenEdgePanGestureRecognizer(
+            target: self,
+            action: #selector(handleEdgeBack(_:))
+        )
+        edgeBackGesture.edges = .left
+        edgeBackGesture.delegate = self
+        view.addGestureRecognizer(edgeBackGesture)
     }
 
     private func startInitialLoad() {
@@ -1539,6 +1553,20 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
     }
 
+    @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard gesture.state == .ended else {
+            return
+        }
+
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        guard translation.x > view.bounds.width * 0.18 || velocity.x > 520 else {
+            return
+        }
+
+        closeButtonTapped()
+    }
+
     @objc private func previousChapterButtonTapped() {
         let previousChapterIndex = currentChapterIndex - 1
         guard chapters.indices.contains(previousChapterIndex) else {
@@ -1674,6 +1702,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             self.refreshCurrentChapterAfterFilterChange()
         }
         presentFullScreenNavigation(filterViewController)
+    }
+
+    @objc private func showPageTouchAreas() {
+        presentFullScreenNavigation(ReaderPageTouchAreasViewController())
     }
 
     private func presentFullScreenNavigation(_ rootViewController: UIViewController) {

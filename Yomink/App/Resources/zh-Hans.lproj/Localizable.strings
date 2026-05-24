@@ -116,6 +116,7 @@
 "reader.more.bookDetail" = "书籍详情";
 "reader.more.contentSearch" = "内容搜索";
 "reader.more.contentFilter" = "内容过滤";
+"reader.more.pageTouchAreas" = "翻页区域";
 "reader.bookDetail.title" = "书籍详情";
 "reader.bookDetail.unknownAuthor" = "未知作者";
 "reader.bookDetail.wordCount" = "%d 字";
@@ -141,6 +142,10 @@
 "reader.filter.replacement" = "替换为的内容 (可空)";
 "reader.filter.empty" = "暂无过滤规则";
 "reader.filter.error.ruleNotFound" = "找不到这条过滤规则";
+"reader.touchAreas.previousPage" = "上一页";
+"reader.touchAreas.menu" = "菜单";
+"reader.touchAreas.nextPage" = "下一页";
+"reader.touchAreas.edgeBackHint" = "侧滑返回书架";
 "reader.error.title" = "操作失败";
 "reader.error.invalidUTF8Cache" = "阅读缓存无法按 UTF-8 解码。";
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";

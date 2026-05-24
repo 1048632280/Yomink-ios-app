@@ -1444,6 +1444,129 @@ final class ReaderBookCoverView: UIView {
     }
 }
 
+@MainActor
+final class ReaderPageTouchAreasViewController: UIViewController {
+    private enum TouchArea {
+        case previousPage
+        case menu
+        case nextPage
+
+        var titleKey: String {
+            switch self {
+            case .previousPage:
+                return "reader.touchAreas.previousPage"
+            case .menu:
+                return "reader.touchAreas.menu"
+            case .nextPage:
+                return "reader.touchAreas.nextPage"
+            }
+        }
+
+        var color: UIColor {
+            switch self {
+            case .previousPage:
+                return UIColor(red: 0.29, green: 0.33, blue: 0.58, alpha: 1)
+            case .menu:
+                return UIColor(red: 0.70, green: 0.48, blue: 0.30, alpha: 1)
+            case .nextPage:
+                return UIColor(red: 0.36, green: 0.54, blue: 0.24, alpha: 1)
+            }
+        }
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = NSLocalizedString("reader.more.pageTouchAreas", comment: "")
+        view.backgroundColor = .systemBackground
+        edgesForExtendedLayout = [.top, .bottom]
+        extendedLayoutIncludesOpaqueBars = true
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.back", comment: ""),
+            style: .plain,
+            target: self,
+            action: #selector(closeButtonTapped)
+        )
+        configureGrid()
+    }
+
+    private func configureGrid() {
+        let gridStack = UIStackView(arrangedSubviews: [
+            columnView(for: .previousPage, includeEdgeHint: true),
+            columnView(for: .menu, includeEdgeHint: false),
+            columnView(for: .nextPage, includeEdgeHint: false)
+        ])
+        gridStack.axis = .horizontal
+        gridStack.distribution = .fillEqually
+        gridStack.alignment = .fill
+        gridStack.spacing = 0
+        gridStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(gridStack)
+
+        NSLayoutConstraint.activate([
+            gridStack.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            gridStack.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            gridStack.topAnchor.constraint(equalTo: view.topAnchor),
+            gridStack.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func columnView(
+        for area: TouchArea,
+        includeEdgeHint: Bool
+    ) -> UIView {
+        let container = UIView()
+        container.backgroundColor = area.color
+
+        let titleLabel = UILabel()
+        titleLabel.text = NSLocalizedString(area.titleKey, comment: "")
+        titleLabel.textColor = .white
+        titleLabel.font = .preferredFont(forTextStyle: .title2)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textAlignment = .center
+        titleLabel.numberOfLines = 2
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(titleLabel)
+
+        NSLayoutConstraint.activate([
+            titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 12),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -12)
+        ])
+
+        if includeEdgeHint {
+            addEdgeHint(to: container)
+        }
+
+        return container
+    }
+
+    private func addEdgeHint(to container: UIView) {
+        let hintLabel = UILabel()
+        hintLabel.text = NSLocalizedString("reader.touchAreas.edgeBackHint", comment: "")
+            .map(String.init)
+            .joined(separator: "\n")
+        hintLabel.textColor = UIColor.white.withAlphaComponent(0.68)
+        hintLabel.font = .preferredFont(forTextStyle: .caption2)
+        hintLabel.adjustsFontForContentSizeCategory = true
+        hintLabel.textAlignment = .center
+        hintLabel.numberOfLines = 0
+        hintLabel.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hintLabel)
+
+        NSLayoutConstraint.activate([
+            hintLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 4),
+            hintLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            hintLabel.widthAnchor.constraint(equalToConstant: 18),
+            hintLabel.heightAnchor.constraint(lessThanOrEqualTo: container.heightAnchor, multiplier: 0.7)
+        ])
+    }
+
+    @objc private func closeButtonTapped() {
+        dismiss(animated: true)
+    }
+}
+
 private extension Collection {
     subscript(safe index: Index) -> Element? {
         indices.contains(index) ? self[index] : nil
