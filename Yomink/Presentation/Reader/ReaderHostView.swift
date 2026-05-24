@@ -1630,13 +1630,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 self.book = updatedBook
                 self.titleLabel.text = updatedBook.title
             },
-            onShowCatalog: { [weak self] in
+            onBookmarksChanged: { [weak self] bookmarks in
+                self?.bookmarks = bookmarks
+                self?.refreshBookmarkState()
+            },
+            onSelectCatalogTarget: { [weak self] target in
                 guard let self else {
                     return
                 }
-                self.presentedViewController?.dismiss(animated: false) {
-                    self.presentContents()
-                }
+                self.jumpTo(target)
+                self.presentedViewController?.dismiss(animated: true)
             }
         )
         presentFullScreenNavigation(detailViewController)
@@ -2130,7 +2133,7 @@ private extension ReaderSettings.Theme {
     }
 }
 
-private final class ReaderContentsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
+final class ReaderContentsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
     private enum Mode: Int, CaseIterable {
         case chapters
         case bookmarks
@@ -2247,12 +2250,14 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
     }
 
     private func configureNavigationBar() {
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.back", comment: ""),
-            style: .plain,
-            target: self,
-            action: #selector(closeButtonTapped)
-        )
+        if navigationController?.viewControllers.first === self {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(
+                title: NSLocalizedString("common.back", comment: ""),
+                style: .plain,
+                target: self,
+                action: #selector(closeButtonTapped)
+            )
+        }
 
         segmentedControl.selectedSegmentIndex = currentMode.rawValue
         segmentedControl.addTarget(

@@ -33,6 +33,11 @@ protocol LibraryRepository: Sendable {
         source: String,
         replacement: String?
     ) async throws -> TextFilterRule
+    func updateFilterRule(
+        id: UUID,
+        source: String,
+        replacement: String?
+    ) async throws -> TextFilterRule
     func deleteFilterRule(id: UUID) async throws
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress?
     func saveReadingProgress(_ progress: ReadingProgress) async throws

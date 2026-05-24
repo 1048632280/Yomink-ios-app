@@ -425,6 +425,55 @@ struct GRDBLibraryRepository: LibraryRepository {
         return rule
     }
 
+    func updateFilterRule(
+        id: UUID,
+        source: String,
+        replacement: String?
+    ) async throws -> TextFilterRule {
+        let normalizedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedReplacement = Self.normalizedOptionalText(replacement)
+
+        return try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE filter_rules
+                SET source = ?, replacement = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    normalizedSource,
+                    normalizedReplacement,
+                    id.uuidString
+                ]
+            )
+
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT id, bookId, source, replacement, createdAt
+                FROM filter_rules
+                WHERE id = ?
+                """,
+                arguments: [id.uuidString]
+            ),
+                let rule = TextFilterRule(row: row)
+            else {
+                throw NSError(
+                    domain: "Yomink.LibraryRepository",
+                    code: 404,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: NSLocalizedString(
+                            "reader.filter.error.ruleNotFound",
+                            comment: ""
+                        )
+                    ]
+                )
+            }
+
+            return rule
+        }
+    }
+
     func deleteFilterRule(id: UUID) async throws {
         try await database.writer.write { db in
             try db.execute(

@@ -8,7 +8,8 @@ final class ReaderBookDetailViewController: UIViewController {
     private let chapters: [Chapter]
     private let selectedChapterIndex: Int
     private let onBookUpdated: (Book) -> Void
-    private let onShowCatalog: () -> Void
+    private let onBookmarksChanged: ([Bookmark]) -> Void
+    private let onSelectCatalogTarget: (ReaderContentTarget) -> Void
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private let introLabel = UILabel()
@@ -20,7 +21,8 @@ final class ReaderBookDetailViewController: UIViewController {
         chapters: [Chapter],
         selectedChapterIndex: Int,
         onBookUpdated: @escaping (Book) -> Void,
-        onShowCatalog: @escaping () -> Void
+        onBookmarksChanged: @escaping ([Bookmark]) -> Void,
+        onSelectCatalogTarget: @escaping (ReaderContentTarget) -> Void
     ) {
         self.book = book
         self.repository = repository
@@ -28,7 +30,8 @@ final class ReaderBookDetailViewController: UIViewController {
         self.chapters = chapters
         self.selectedChapterIndex = selectedChapterIndex
         self.onBookUpdated = onBookUpdated
-        self.onShowCatalog = onShowCatalog
+        self.onBookmarksChanged = onBookmarksChanged
+        self.onSelectCatalogTarget = onSelectCatalogTarget
         super.init(nibName: nil, bundle: nil)
         title = NSLocalizedString("reader.bookDetail.title", comment: "")
     }
@@ -270,67 +273,31 @@ final class ReaderBookDetailViewController: UIViewController {
     }
 
     @objc private func editButtonTapped() {
-        let alert = UIAlertController(
-            title: NSLocalizedString("reader.bookDetail.editTitle", comment: ""),
-            message: nil,
-            preferredStyle: .alert
-        )
-        alert.addTextField { textField in
-            textField.placeholder = NSLocalizedString("reader.bookDetail.name", comment: "")
-            textField.text = self.book.title
-        }
-        alert.addTextField { textField in
-            textField.placeholder = NSLocalizedString("reader.bookDetail.author", comment: "")
-            textField.text = self.book.author
-        }
-        alert.addTextField { textField in
-            textField.placeholder = NSLocalizedString("reader.bookDetail.intro", comment: "")
-            textField.text = self.book.intro
-        }
-        alert.addAction(UIAlertAction(title: NSLocalizedString("common.cancel", comment: ""), style: .cancel))
-        alert.addAction(UIAlertAction(title: NSLocalizedString("common.save", comment: ""), style: .default) { [weak self, weak alert] _ in
-            guard let self,
-                  let fields = alert?.textFields
-            else {
-                return
-            }
-            self.saveBookDetails(
-                title: fields[safe: 0]?.text ?? self.book.title,
-                author: fields[safe: 1]?.text,
-                intro: fields[safe: 2]?.text
-            )
-        })
-        present(alert, animated: true)
-    }
-
-    private func saveBookDetails(title: String, author: String?, intro: String?) {
-        Task { [weak self] in
+        let editViewController = ReaderBookDetailEditViewController(
+            book: book,
+            repository: repository
+        ) { [weak self] updatedBook in
             guard let self else {
                 return
             }
-            do {
-                let updated = try await repository.updateBookDetails(
-                    id: book.id,
-                    title: title,
-                    author: author,
-                    intro: intro
-                )
-                await MainActor.run {
-                    self.book = updated
-                    self.onBookUpdated(updated)
-                    self.render()
-                    self.loadIntroFallbackIfNeeded()
-                }
-            } catch {
-                await MainActor.run {
-                    self.showError(error)
-                }
-            }
+            self.book = updatedBook
+            self.onBookUpdated(updatedBook)
+            self.render()
+            self.loadIntroFallbackIfNeeded()
         }
+        navigationController?.pushViewController(editViewController, animated: true)
     }
 
     @objc private func showCatalogButtonTapped() {
-        onShowCatalog()
+        let contentsViewController = ReaderContentsViewController(
+            bookID: book.id,
+            repository: repository,
+            chapters: chapters,
+            selectedChapterIndex: selectedChapterIndex,
+            onBookmarksChanged: onBookmarksChanged,
+            onSelect: onSelectCatalogTarget
+        )
+        navigationController?.pushViewController(contentsViewController, animated: true)
     }
 
     private func showError(_ error: Error) {
@@ -359,6 +326,228 @@ final class ReaderBookDetailViewController: UIViewController {
             let data = handle.readData(ofLength: chapter.byteLength)
             return String(data: data, encoding: .utf8) ?? ""
         }.value
+    }
+}
+
+@MainActor
+final class ReaderBookDetailEditViewController: UIViewController, UITextViewDelegate {
+    private var book: Book
+    private let repository: any LibraryRepository
+    private let onSaved: (Book) -> Void
+    private let stackView = UIStackView()
+    private let titleTextField = UITextField()
+    private let authorTextField = UITextField()
+    private let introTextView = UITextView()
+
+    init(
+        book: Book,
+        repository: any LibraryRepository,
+        onSaved: @escaping (Book) -> Void
+    ) {
+        self.book = book
+        self.repository = repository
+        self.onSaved = onSaved
+        super.init(nibName: nil, bundle: nil)
+        title = NSLocalizedString("reader.bookDetail.editTitle", comment: "")
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemGroupedBackground
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.save", comment: ""),
+            style: .done,
+            target: self,
+            action: #selector(saveButtonTapped)
+        )
+        configureFields()
+        configureLayout()
+    }
+
+    private func configureFields() {
+        configureTextField(
+            titleTextField,
+            placeholder: NSLocalizedString("reader.bookDetail.name", comment: "")
+        )
+        titleTextField.text = book.title
+        titleTextField.returnKeyType = .next
+        titleTextField.addTarget(
+            self,
+            action: #selector(titleReturnTapped),
+            for: .editingDidEndOnExit
+        )
+
+        configureTextField(
+            authorTextField,
+            placeholder: NSLocalizedString("reader.bookDetail.author", comment: "")
+        )
+        authorTextField.text = book.author
+        authorTextField.returnKeyType = .next
+        authorTextField.addTarget(
+            self,
+            action: #selector(authorReturnTapped),
+            for: .editingDidEndOnExit
+        )
+
+        introTextView.text = book.intro ?? ""
+        introTextView.font = .preferredFont(forTextStyle: .body)
+        introTextView.adjustsFontForContentSizeCategory = true
+        introTextView.backgroundColor = .clear
+        introTextView.textContainerInset = UIEdgeInsets(top: 12, left: 10, bottom: 12, right: 10)
+        introTextView.delegate = self
+        introTextView.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func configureTextField(
+        _ textField: UITextField,
+        placeholder: String
+    ) {
+        textField.placeholder = placeholder
+        textField.font = .preferredFont(forTextStyle: .body)
+        textField.adjustsFontForContentSizeCategory = true
+        textField.backgroundColor = .clear
+        textField.clearButtonMode = .whileEditing
+        textField.translatesAutoresizingMaskIntoConstraints = false
+        textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
+    }
+
+    private func configureLayout() {
+        stackView.axis = .vertical
+        stackView.spacing = 14
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(stackView)
+
+        stackView.addArrangedSubview(
+            fieldRow(
+                title: NSLocalizedString("reader.bookDetail.name", comment: ""),
+                content: titleTextField
+            )
+        )
+        stackView.addArrangedSubview(
+            fieldRow(
+                title: NSLocalizedString("reader.bookDetail.author", comment: ""),
+                content: authorTextField
+            )
+        )
+        stackView.addArrangedSubview(introRow())
+
+        NSLayoutConstraint.activate([
+            stackView.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            stackView.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -16),
+            stackView.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 16),
+
+            introTextView.heightAnchor.constraint(greaterThanOrEqualToConstant: 180)
+        ])
+    }
+
+    private func fieldRow(
+        title: String,
+        content: UIView
+    ) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .preferredFont(forTextStyle: .body)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = .label
+        titleLabel.setContentHuggingPriority(.required, for: .horizontal)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        titleLabel.widthAnchor.constraint(equalToConstant: 64).isActive = true
+
+        let row = UIStackView(arrangedSubviews: [titleLabel, content])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+
+        return formContainer(containing: row, verticalInset: 0)
+    }
+
+    private func introRow() -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = NSLocalizedString("reader.bookDetail.intro", comment: "")
+        titleLabel.font = .preferredFont(forTextStyle: .body)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = .label
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, introTextView])
+        stack.axis = .vertical
+        stack.spacing = 4
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        return formContainer(containing: stack, verticalInset: 12)
+    }
+
+    private func formContainer(
+        containing content: UIView,
+        verticalInset: CGFloat
+    ) -> UIView {
+        let container = UIView()
+        container.backgroundColor = .secondarySystemGroupedBackground
+        container.layer.cornerRadius = 8
+        container.addSubview(content)
+
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 14),
+            content.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -14),
+            content.topAnchor.constraint(equalTo: container.topAnchor, constant: verticalInset),
+            content.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -verticalInset)
+        ])
+        return container
+    }
+
+    @objc private func titleReturnTapped() {
+        authorTextField.becomeFirstResponder()
+    }
+
+    @objc private func authorReturnTapped() {
+        introTextView.becomeFirstResponder()
+    }
+
+    @objc private func saveButtonTapped() {
+        view.endEditing(true)
+        navigationItem.rightBarButtonItem?.isEnabled = false
+        let title = titleTextField.text ?? book.title
+        let author = authorTextField.text
+        let intro = introTextView.text
+
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+            do {
+                let updated = try await repository.updateBookDetails(
+                    id: book.id,
+                    title: title,
+                    author: author,
+                    intro: intro
+                )
+                await MainActor.run {
+                    self.book = updated
+                    self.onSaved(updated)
+                    self.navigationController?.popViewController(animated: true)
+                }
+            } catch {
+                await MainActor.run {
+                    self.navigationItem.rightBarButtonItem?.isEnabled = true
+                    self.showError(error)
+                }
+            }
+        }
+    }
+
+    private func showError(_ error: Error) {
+        let alert = UIAlertController(
+            title: NSLocalizedString("reader.error.title", comment: ""),
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
+        present(alert, animated: true)
     }
 }
 
@@ -398,8 +587,7 @@ final class ReaderFilterRulesViewController: UITableViewController {
             action: #selector(closeButtonTapped)
         )
         navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.add", comment: ""),
-            style: .plain,
+            barButtonSystemItem: .add,
             target: self,
             action: #selector(addButtonTapped)
         )
@@ -421,8 +609,17 @@ final class ReaderFilterRulesViewController: UITableViewController {
         cell.textLabel?.text = rule.source
         cell.detailTextLabel?.text = rule.replacement ?? ""
         cell.detailTextLabel?.textColor = .secondaryLabel
-        cell.selectionStyle = .none
+        cell.selectionStyle = .default
         return cell
+    }
+
+    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+        guard rules.indices.contains(indexPath.row) else {
+            return
+        }
+
+        showRuleEditor(rule: rules[indexPath.row])
     }
 
     override func tableView(
@@ -455,16 +652,25 @@ final class ReaderFilterRulesViewController: UITableViewController {
     }
 
     @objc private func addButtonTapped() {
+        showRuleEditor(rule: nil)
+    }
+
+    private func showRuleEditor(rule: TextFilterRule?) {
         let alert = UIAlertController(
-            title: NSLocalizedString("reader.filter.addTitle", comment: ""),
+            title: NSLocalizedString(
+                rule == nil ? "reader.filter.addTitle" : "reader.filter.editTitle",
+                comment: ""
+            ),
             message: nil,
             preferredStyle: .alert
         )
         alert.addTextField { textField in
             textField.placeholder = NSLocalizedString("reader.filter.source", comment: "")
+            textField.text = rule?.source
         }
         alert.addTextField { textField in
             textField.placeholder = NSLocalizedString("reader.filter.replacement", comment: "")
+            textField.text = rule?.replacement
         }
         alert.addAction(UIAlertAction(title: NSLocalizedString("common.cancel", comment: ""), style: .cancel))
         alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default) { [weak self, weak alert] _ in
@@ -474,7 +680,11 @@ final class ReaderFilterRulesViewController: UITableViewController {
                 return
             }
             let replacement = alert?.textFields?[safe: 1]?.text
-            self.createRule(source: source, replacement: replacement)
+            if let rule {
+                self.updateRule(id: rule.id, source: source, replacement: replacement)
+            } else {
+                self.createRule(source: source, replacement: replacement)
+            }
         })
         present(alert, animated: true)
     }
@@ -502,6 +712,41 @@ final class ReaderFilterRulesViewController: UITableViewController {
                         with: .automatic
                     )
                     self.updateEmptyState()
+                    self.onRulesChanged(self.rules)
+                }
+            } catch {
+                await MainActor.run {
+                    self.showError(error)
+                }
+            }
+        }
+    }
+
+    private func updateRule(id: UUID, source: String, replacement: String?) {
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else {
+                return
+            }
+            do {
+                let rule = try await repository.updateFilterRule(
+                    id: id,
+                    source: source,
+                    replacement: replacement
+                )
+                await MainActor.run {
+                    guard let index = self.rules.firstIndex(where: { $0.id == id }) else {
+                        return
+                    }
+                    self.rules[index] = rule
+                    self.tableView.reloadRows(
+                        at: [IndexPath(row: index, section: 0)],
+                        with: .automatic
+                    )
                     self.onRulesChanged(self.rules)
                 }
             } catch {

@@ -150,6 +150,20 @@ struct PreviewLibraryRepository: LibraryRepository {
         )
     }
 
+    func updateFilterRule(
+        id: UUID,
+        source: String,
+        replacement: String?
+    ) async throws -> TextFilterRule {
+        TextFilterRule(
+            id: id,
+            bookID: Self.sampleBookID,
+            source: source,
+            replacement: replacement,
+            createdAt: Date()
+        )
+    }
+
     func deleteFilterRule(id: UUID) async throws {}
 
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress? {
