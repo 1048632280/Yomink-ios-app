@@ -1671,13 +1671,13 @@ private struct GlobalBookSearchView: View {
                     )
                 }
                 .buttonStyle(.plain)
-                .listRowBackground(Color(.systemGray6))
+                .listRowBackground(Color.white)
                 .listRowInsets(
                     EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
                 )
             }
             .listStyle(.plain)
-            .background(Color(.systemGray6))
+            .background(Color.white)
             .padding(.horizontal, -16)
         }
     }

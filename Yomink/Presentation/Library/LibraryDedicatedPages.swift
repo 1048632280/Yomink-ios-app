@@ -17,6 +17,7 @@ struct LibraryGroupsPage: View {
     @State private var pressedGroupID: UUID?
     @State private var draggedGroupID: UUID?
     @State private var reorderStartIndex: Int?
+    @State private var dragTranslation: CGSize = .zero
 
     var body: some View {
         ZStack {
@@ -41,6 +42,8 @@ struct LibraryGroupsPage: View {
                             showsDeleteControl: isEditing,
                             showsReorderControl: isEditing,
                             isPressed: pressedGroupID == group.id,
+                            isDragging: draggedGroupID == group.id,
+                            dragOffset: dragOffset(for: group),
                             deleteAction: {
                                 groupPendingDeletion = group
                             },
@@ -242,6 +245,8 @@ struct LibraryGroupsPage: View {
     }
 
     private func reorderGroup(_ group: BookGroup, translation: CGSize) {
+        dragTranslation = translation
+
         if draggedGroupID != group.id {
             draggedGroupID = group.id
             reorderStartIndex = groups.firstIndex(of: group)
@@ -260,7 +265,7 @@ struct LibraryGroupsPage: View {
             return
         }
 
-        withAnimation(.easeInOut(duration: 0.18)) {
+        withAnimation(DedicatedPageStyle.reorderAnimation) {
             groups.move(
                 fromOffsets: IndexSet(integer: currentIndex),
                 toOffset: targetIndex > currentIndex ? targetIndex + 1 : targetIndex
@@ -273,9 +278,24 @@ struct LibraryGroupsPage: View {
             return
         }
 
-        draggedGroupID = nil
-        reorderStartIndex = nil
+        withAnimation(DedicatedPageStyle.reorderAnimation) {
+            draggedGroupID = nil
+            reorderStartIndex = nil
+            dragTranslation = .zero
+        }
         persistGroupOrder()
+    }
+
+    private func dragOffset(for group: BookGroup) -> CGSize {
+        guard draggedGroupID == group.id,
+              let startIndex = reorderStartIndex,
+              let currentIndex = groups.firstIndex(where: { $0.id == group.id })
+        else {
+            return .zero
+        }
+
+        let settledOffset = CGFloat(currentIndex - startIndex) * DedicatedPageStyle.rowHeight
+        return CGSize(width: 0, height: dragTranslation.height - settledOffset)
     }
 
     private func groupTitle(name: String, count: Int) -> String {
@@ -941,6 +961,8 @@ private struct DedicatedGroupListRow: View {
     var showsDeleteControl = false
     var showsReorderControl = false
     var isPressed = false
+    var isDragging = false
+    var dragOffset: CGSize = .zero
     var deleteAction: (() -> Void)?
     var reorderDragChanged: ((CGSize) -> Void)?
     var reorderDragEnded: (() -> Void)?
@@ -993,6 +1015,16 @@ private struct DedicatedGroupListRow: View {
             DedicatedPageStyle.separator
         }
         .contentShape(Rectangle())
+        .offset(y: isDragging ? dragOffset.height : 0)
+        .scaleEffect(isDragging ? 1.02 : 1)
+        .shadow(
+            color: Color.black.opacity(isDragging ? 0.18 : 0),
+            radius: isDragging ? 10 : 0,
+            x: 0,
+            y: isDragging ? 5 : 0
+        )
+        .zIndex(isDragging ? 1 : 0)
+        .animation(DedicatedPageStyle.reorderAnimation, value: isDragging)
     }
 }
 
@@ -1160,6 +1192,11 @@ private enum DedicatedPageStyle {
     static let rowHeight: CGFloat = 54
     static let compactRowHeight: CGFloat = 44
     static let controlHitWidth: CGFloat = 44
+    static let reorderAnimation = Animation.interactiveSpring(
+        response: 0.28,
+        dampingFraction: 0.82,
+        blendDuration: 0.12
+    )
 
     static var separator: some View {
         Rectangle()
