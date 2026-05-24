@@ -508,6 +508,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         edgeBackGesture.edges = .left
         edgeBackGesture.delegate = self
         view.addGestureRecognizer(edgeBackGesture)
+        panGesture.require(toFail: edgeBackGesture)
     }
 
     private func startInitialLoad() {
@@ -1499,6 +1500,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             moveToNextPage()
         case .menu:
             setMenuVisible(!isMenuVisible, animated: true)
+        case .none:
+            break
         }
     }
 
@@ -1722,7 +1725,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
             self?.applyReaderSettings(settings)
         }
-        presentFullScreenNavigation(viewController)
+        viewController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+        viewController.modalPresentationStyle = .fullScreen
+        present(viewController, animated: true)
     }
 
     private func presentFullScreenNavigation(_ rootViewController: UIViewController) {

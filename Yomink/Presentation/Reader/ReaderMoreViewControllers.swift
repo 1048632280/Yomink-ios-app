@@ -958,6 +958,12 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
 
         let container = UIView()
         container.backgroundColor = .systemBackground
+        container.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 0,
+            leading: ReaderSearchResultCell.textHorizontalInset,
+            bottom: 0,
+            trailing: ReaderSearchResultCell.textHorizontalInset
+        )
         container.addSubview(label)
         NSLayoutConstraint.activate([
             label.leadingAnchor.constraint(equalTo: container.layoutMarginsGuide.leadingAnchor),
@@ -1135,7 +1141,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
 
     private func updateSearchCancelButton(animated: Bool) {
         searchBar.setShowsCancelButton(
-            searchBar.isFirstResponder || !(searchBar.text ?? "").isEmpty,
+            searchBar.isFirstResponder && !(searchBar.text ?? "").isEmpty,
             animated: animated
         )
     }
@@ -1461,6 +1467,7 @@ private struct SearchChapterCache: Sendable {
 
 private final class ReaderSearchResultCell: UITableViewCell {
     static let reuseIdentifier = "readerSearchResult"
+    static let textHorizontalInset: CGFloat = 20
 
     private let snippetLabel = UILabel()
 
@@ -1493,6 +1500,12 @@ private final class ReaderSearchResultCell: UITableViewCell {
         selectionStyle = .default
         backgroundColor = .systemBackground
         contentView.backgroundColor = .systemBackground
+        contentView.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 8,
+            leading: Self.textHorizontalInset,
+            bottom: 8,
+            trailing: Self.textHorizontalInset
+        )
 
         snippetLabel.numberOfLines = 2
         snippetLabel.adjustsFontForContentSizeCategory = true
@@ -1568,7 +1581,6 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         self.settings = settings.normalized
         self.onSave = onSave
         super.init(nibName: nil, bundle: nil)
-        title = NSLocalizedString("reader.more.pageTouchAreas", comment: "")
     }
 
     @available(*, unavailable)
@@ -1581,19 +1593,12 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         view.backgroundColor = .systemBackground
         edgesForExtendedLayout = [.top, .bottom]
         extendedLayoutIncludesOpaqueBars = true
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.back", comment: ""),
-            style: .plain,
-            target: self,
-            action: #selector(closeButtonTapped)
-        )
-        navigationItem.rightBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.save", comment: ""),
-            style: .done,
-            target: self,
-            action: #selector(saveButtonTapped)
-        )
         configureGrid()
+        configureEdgeBackGesture()
+    }
+
+    override var prefersStatusBarHidden: Bool {
+        true
     }
 
     private func configureGrid() {
@@ -1628,6 +1633,15 @@ final class ReaderPageTouchAreasViewController: UIViewController {
             gridStack.topAnchor.constraint(equalTo: view.topAnchor),
             gridStack.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func configureEdgeBackGesture() {
+        let edgeBackGesture = UIScreenEdgePanGestureRecognizer(
+            target: self,
+            action: #selector(edgeBackGestureChanged(_:))
+        )
+        edgeBackGesture.edges = .left
+        view.addGestureRecognizer(edgeBackGesture)
     }
 
     private func cellButton(at index: Int) -> UIButton {
@@ -1692,27 +1706,49 @@ final class ReaderPageTouchAreasViewController: UIViewController {
             message: nil,
             preferredStyle: .actionSheet
         )
+        let isOnlyMenuArea = settings.touchAreaMap[index] == .menu
+            && settings.touchAreaMap.filter { $0 == .menu }.count == 1
         for action in ReaderSettings.TouchAreaAction.allCases {
-            alert.addAction(UIAlertAction(title: action.localizedTitle, style: .default) { [weak self] _ in
+            let item = UIAlertAction(title: action.localizedTitle, style: .default) { [weak self] _ in
                 guard let self else {
                     return
                 }
                 self.settings.touchAreaMap[index] = action
                 self.update(sender, at: index)
-            })
+            }
+            item.isEnabled = !(isOnlyMenuArea && action != .menu)
+            alert.addAction(item)
         }
+        alert.addAction(
+            UIAlertAction(
+                title: NSLocalizedString("reader.touchAreas.saveAndExit", comment: ""),
+                style: .destructive
+            ) { [weak self] _ in
+                self?.saveAndExit()
+            }
+        )
         alert.addAction(UIAlertAction(title: NSLocalizedString("common.cancel", comment: ""), style: .cancel))
         alert.popoverPresentationController?.sourceView = sender
         alert.popoverPresentationController?.sourceRect = sender.bounds
         present(alert, animated: true)
     }
 
-    @objc private func saveButtonTapped() {
-        onSave(settings.normalized)
-        dismiss(animated: true)
+    @objc private func edgeBackGestureChanged(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard gesture.state == .ended else {
+            return
+        }
+
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        guard translation.x > view.bounds.width * 0.18 || velocity.x > 520 else {
+            return
+        }
+
+        saveAndExit()
     }
 
-    @objc private func closeButtonTapped() {
+    private func saveAndExit() {
+        onSave(settings.normalized)
         dismiss(animated: true)
     }
 }
@@ -1726,6 +1762,8 @@ private extension ReaderSettings.TouchAreaAction {
             return NSLocalizedString("reader.touchAreas.menu", comment: "")
         case .nextPage:
             return NSLocalizedString("reader.touchAreas.nextPage", comment: "")
+        case .none:
+            return NSLocalizedString("reader.touchAreas.none", comment: "")
         }
     }
 
@@ -1737,6 +1775,8 @@ private extension ReaderSettings.TouchAreaAction {
             return UIColor(red: 0.70, green: 0.48, blue: 0.30, alpha: 1)
         case .nextPage:
             return UIColor(red: 0.36, green: 0.54, blue: 0.24, alpha: 1)
+        case .none:
+            return UIColor(red: 0.31, green: 0.31, blue: 0.33, alpha: 1)
         }
     }
 }

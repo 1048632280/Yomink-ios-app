@@ -60,6 +60,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case previousPage
         case menu
         case nextPage
+        case none
     }
 
     var pageMode: PageMode
@@ -122,6 +123,9 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         )
         if settings.touchAreaMap.count != Self.touchAreaCount {
             settings.touchAreaMap = Self.defaultTouchAreaMap
+        }
+        if settings.touchAreaMap.contains(.menu) == false {
+            settings.touchAreaMap[Self.touchAreaCount / 2] = .menu
         }
         return settings
     }
