@@ -160,9 +160,16 @@ struct ChapterIndexer: Sendable {
     }
 
     private static func normalizedLineForMatching(_ line: String) -> String {
-        line
-            .replacingOccurrences(of: "\u{00A0}", with: " ")
-            .replacingOccurrences(of: "\u{3000}", with: " ")
+        var normalizedScalars = String.UnicodeScalarView()
+        normalizedScalars.reserveCapacity(line.unicodeScalars.count)
+
+        for scalar in line.unicodeScalars {
+            normalizedScalars.append(
+                scalar.properties.isWhitespace ? normalizedWhitespaceScalar : scalar
+            )
+        }
+
+        return String(normalizedScalars)
     }
 
     private static func pseudoChapters(for text: String) -> [ImportedChapterDraft] {
@@ -272,6 +279,7 @@ struct ChapterIndexer: Sendable {
     private static let maximumTitleCharacterCount = 50
     private static let minimumNumberedTitleCandidates = 3
     private static let pseudoChapterByteLength = 128 * 1_024
+    private static let normalizedWhitespaceScalar = UnicodeScalar(" ")!
     private static let sentenceEndingScalars = Set("。！？!?".unicodeScalars)
     private static let trailingQuoteAndBracketScalars = Set("\"'”’」』》）)]}".unicodeScalars)
 }
