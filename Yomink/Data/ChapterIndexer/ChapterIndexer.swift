@@ -279,7 +279,7 @@ struct ChapterIndexer: Sendable {
     private static let maximumTitleCharacterCount = 50
     private static let minimumNumberedTitleCandidates = 3
     private static let pseudoChapterByteLength = 128 * 1_024
-    private static let normalizedWhitespaceScalar = UnicodeScalar(" ")!
+    private static let normalizedWhitespaceScalar = UnicodeScalar(" ")
     private static let sentenceEndingScalars = Set("。！？!?".unicodeScalars)
     private static let trailingQuoteAndBracketScalars = Set("\"'”’」』》）)]}".unicodeScalars)
 }
