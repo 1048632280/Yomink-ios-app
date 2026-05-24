@@ -112,6 +112,8 @@
 "reader.settings.theme.eyeCare" = "护眼";
 "reader.settings.theme.paper" = "纸张";
 "reader.settings.theme.dark" = "暗黑";
+"reader.autoRead.placeholder" = "自动阅读";
+"reader.darkMode.placeholder" = "暗黑模式";
 "reader.emptyChapter" = "当前章节没有可显示的内容。";
 "reader.more" = "更多";
 "reader.more.bookDetail" = "书籍详情";

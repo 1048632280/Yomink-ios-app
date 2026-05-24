@@ -56,6 +56,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let nextChapterButton = UIButton(type: .system)
     private let catalogButton = UIButton(type: .system)
     private let settingsButton = UIButton(type: .system)
+    private let floatingActionStack = UIStackView()
+    private let autoReadPlaceholderButton = UIButton(type: .system)
+    private let darkModePlaceholderButton = UIButton(type: .system)
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private enum Layout {
@@ -65,11 +68,26 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let topBarButtonBottomInset: CGFloat = 8
         static let bottomBarTopInset: CGFloat = 12
         static let bottomBarSafeAreaInset: CGFloat = 10
-        static let bottomBarHorizontalInset: CGFloat = 18
-        static let bottomBarRowSpacing: CGFloat = 8
-        static let progressRowHeight: CGFloat = 32
-        static let bottomActionRowHeight: CGFloat = 34
-        static let chapterButtonWidth: CGFloat = 44
+        static let progressRowHeight: CGFloat = 56
+        static let bottomActionRowHeight: CGFloat = 76
+        static let chapterButtonWidth: CGFloat = 86
+        static let floatingButtonSize: CGFloat = 58
+        static let floatingButtonSpacing: CGFloat = 16
+        static let floatingButtonTrailingInset: CGFloat = 22
+        static let floatingButtonBottomInset: CGFloat = 28
+    }
+
+    private enum MenuStyle {
+        static let barEffect = UIBlurEffect(style: .systemChromeMaterialDark)
+        static let barOverlayColor = UIColor.black.withAlphaComponent(0.28)
+        static let separatorColor = UIColor.white.withAlphaComponent(0.09)
+        static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
+        static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
+        static let progressTintColor = UIColor(red: 0.88, green: 0.16, blue: 0.11, alpha: 1)
+        static let progressTrackColor = UIColor.white.withAlphaComponent(0.10)
+        static let progressThumbColor = UIColor(white: 0.34, alpha: 1)
+        static let floatingButtonColor = UIColor(white: 0.11, alpha: 0.94)
+        static let floatingButtonIconColor = UIColor(white: 0.48, alpha: 1)
     }
 
     private var book: Book
@@ -233,34 +251,43 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func configureMenus() {
+        topBar.effect = MenuStyle.barEffect
+        bottomBar.effect = MenuStyle.barEffect
         configureTopBar()
         configureBottomBar()
+        configureFloatingActionButtons()
         setMenuVisible(false, animated: false)
     }
 
     private func configureTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topBar)
+        addMenuOverlay(to: topBar)
 
         let closeButton = UIButton(type: .system)
         closeButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        closeButton.tintColor = MenuStyle.primaryTextColor
         closeButton.accessibilityLabel = NSLocalizedString("reader.close", comment: "")
         closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
         closeButton.translatesAutoresizingMaskIntoConstraints = false
 
-        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
         titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.textAlignment = .center
+        titleLabel.textAlignment = .left
         titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.textColor = MenuStyle.secondaryTextColor
         titleLabel.text = book.title
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         bookmarkButton.setImage(UIImage(systemName: "bookmark"), for: .normal)
+        bookmarkButton.tintColor = MenuStyle.primaryTextColor
         bookmarkButton.accessibilityLabel = NSLocalizedString("reader.bookmark.add", comment: "")
         bookmarkButton.addTarget(self, action: #selector(bookmarkButtonTapped), for: .touchUpInside)
         bookmarkButton.translatesAutoresizingMaskIntoConstraints = false
 
         moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        moreButton.tintColor = MenuStyle.primaryTextColor
         moreButton.accessibilityLabel = NSLocalizedString("reader.more", comment: "")
         moreButton.showsMenuAsPrimaryAction = true
         moreButton.menu = makeMoreMenu()
@@ -297,7 +324,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             closeButton.heightAnchor.constraint(equalToConstant: 36),
 
             titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 8),
+            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 10),
 
             actionStack.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
             actionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
@@ -344,13 +371,22 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func configureBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomBar)
+        addMenuOverlay(to: bottomBar)
 
-        previousChapterButton.setImage(UIImage(systemName: "backward.end"), for: .normal)
+        previousChapterButton.setTitle(NSLocalizedString("reader.previousChapter", comment: ""), for: .normal)
+        previousChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        previousChapterButton.tintColor = MenuStyle.secondaryTextColor
+        previousChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        previousChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
         previousChapterButton.accessibilityLabel = NSLocalizedString("reader.previousChapter", comment: "")
         previousChapterButton.addTarget(self, action: #selector(previousChapterButtonTapped), for: .touchUpInside)
         previousChapterButton.translatesAutoresizingMaskIntoConstraints = false
 
-        nextChapterButton.setImage(UIImage(systemName: "forward.end"), for: .normal)
+        nextChapterButton.setTitle(NSLocalizedString("reader.nextChapter", comment: ""), for: .normal)
+        nextChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        nextChapterButton.tintColor = MenuStyle.secondaryTextColor
+        nextChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        nextChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
         nextChapterButton.accessibilityLabel = NSLocalizedString("reader.nextChapter", comment: "")
         nextChapterButton.addTarget(self, action: #selector(nextChapterButtonTapped), for: .touchUpInside)
         nextChapterButton.translatesAutoresizingMaskIntoConstraints = false
@@ -358,6 +394,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         progressSlider.minimumValue = 0
         progressSlider.maximumValue = 1
         progressSlider.value = 0
+        progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
+        progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
+        progressSlider.thumbTintColor = MenuStyle.progressThumbColor
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchDown), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
@@ -371,30 +410,38 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         progressLabel.font = .preferredFont(forTextStyle: .footnote)
         progressLabel.adjustsFontForContentSizeCategory = true
         progressLabel.textAlignment = .center
-        progressLabel.textColor = .secondaryLabel
+        progressLabel.textColor = MenuStyle.secondaryTextColor
         progressLabel.numberOfLines = 2
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
         catalogButton.setImage(UIImage(systemName: "list.bullet"), for: .normal)
         catalogButton.setTitle(NSLocalizedString("reader.catalog", comment: ""), for: .normal)
+        configureBottomActionButton(catalogButton)
         catalogButton.accessibilityLabel = NSLocalizedString("reader.catalog", comment: "")
         catalogButton.addTarget(self, action: #selector(catalogButtonTapped), for: .touchUpInside)
         catalogButton.translatesAutoresizingMaskIntoConstraints = false
 
         settingsButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
         settingsButton.setTitle(NSLocalizedString("reader.settings", comment: ""), for: .normal)
+        configureBottomActionButton(settingsButton)
         settingsButton.accessibilityLabel = NSLocalizedString("reader.settings", comment: "")
         settingsButton.addTarget(self, action: #selector(settingsButtonTapped), for: .touchUpInside)
         settingsButton.translatesAutoresizingMaskIntoConstraints = false
 
+        let leftProgressSeparator = makeVerticalMenuSeparator()
+        let rightProgressSeparator = makeVerticalMenuSeparator()
+        let actionRowTopSeparator = makeHorizontalMenuSeparator()
+
         let progressRow = UIStackView(arrangedSubviews: [
             previousChapterButton,
+            leftProgressSeparator,
             progressSlider,
+            rightProgressSeparator,
             nextChapterButton
         ])
         progressRow.axis = .horizontal
-        progressRow.alignment = .center
-        progressRow.spacing = 12
+        progressRow.alignment = .fill
+        progressRow.spacing = 0
         progressRow.translatesAutoresizingMaskIntoConstraints = false
 
         let actionRow = UIStackView(arrangedSubviews: [
@@ -402,13 +449,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             settingsButton
         ])
         actionRow.axis = .horizontal
-        actionRow.alignment = .center
+        actionRow.alignment = .fill
         actionRow.distribution = .fillEqually
-        actionRow.spacing = 12
+        actionRow.spacing = 0
         actionRow.translatesAutoresizingMaskIntoConstraints = false
 
         bottomBar.contentView.addSubview(progressRow)
-        bottomBar.contentView.addSubview(progressLabel)
+        bottomBar.contentView.addSubview(actionRowTopSeparator)
         bottomBar.contentView.addSubview(actionRow)
 
         NSLayoutConstraint.activate([
@@ -420,43 +467,25 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 equalTo: bottomBar.topAnchor,
                 constant: Layout.bottomBarTopInset
             ),
-            progressRow.leadingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
-                constant: Layout.bottomBarHorizontalInset
-            ),
-            progressRow.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -Layout.bottomBarHorizontalInset
-            ),
+            progressRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            progressRow.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
             progressRow.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
 
             previousChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
+            leftProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
+            rightProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
             nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
 
-            progressLabel.leadingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
-                constant: Layout.bottomBarHorizontalInset
-            ),
-            progressLabel.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -Layout.bottomBarHorizontalInset
-            ),
-            progressLabel.topAnchor.constraint(
-                equalTo: progressRow.bottomAnchor,
-                constant: Layout.bottomBarRowSpacing
-            ),
+            actionRowTopSeparator.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            actionRowTopSeparator.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+            actionRowTopSeparator.topAnchor.constraint(equalTo: progressRow.bottomAnchor),
+            actionRowTopSeparator.heightAnchor.constraint(equalToConstant: 1),
 
-            actionRow.leadingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.leadingAnchor,
-                constant: Layout.bottomBarHorizontalInset
-            ),
-            actionRow.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -Layout.bottomBarHorizontalInset
-            ),
+            actionRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            actionRow.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
             actionRow.topAnchor.constraint(
-                equalTo: progressLabel.bottomAnchor,
-                constant: Layout.bottomBarRowSpacing
+                equalTo: actionRowTopSeparator.bottomAnchor,
+                constant: 0
             ),
             actionRow.bottomAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.bottomAnchor,
@@ -464,6 +493,98 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             ),
             actionRow.heightAnchor.constraint(equalToConstant: Layout.bottomActionRowHeight)
         ])
+    }
+
+    private func configureFloatingActionButtons() {
+        configureFloatingButton(
+            autoReadPlaceholderButton,
+            imageName: "play.fill",
+            accessibilityKey: "reader.autoRead.placeholder"
+        )
+        configureFloatingButton(
+            darkModePlaceholderButton,
+            imageName: "moon",
+            accessibilityKey: "reader.darkMode.placeholder"
+        )
+
+        floatingActionStack.axis = .vertical
+        floatingActionStack.alignment = .center
+        floatingActionStack.distribution = .fill
+        floatingActionStack.spacing = Layout.floatingButtonSpacing
+        floatingActionStack.translatesAutoresizingMaskIntoConstraints = false
+        floatingActionStack.addArrangedSubview(autoReadPlaceholderButton)
+        floatingActionStack.addArrangedSubview(darkModePlaceholderButton)
+        view.addSubview(floatingActionStack)
+
+        NSLayoutConstraint.activate([
+            floatingActionStack.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.floatingButtonTrailingInset
+            ),
+            floatingActionStack.bottomAnchor.constraint(
+                equalTo: bottomBar.topAnchor,
+                constant: -Layout.floatingButtonBottomInset
+            ),
+            autoReadPlaceholderButton.widthAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
+            autoReadPlaceholderButton.heightAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
+            darkModePlaceholderButton.widthAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
+            darkModePlaceholderButton.heightAnchor.constraint(equalToConstant: Layout.floatingButtonSize)
+        ])
+    }
+
+    private func addMenuOverlay(to visualEffectView: UIVisualEffectView) {
+        let overlayView = UIView()
+        overlayView.backgroundColor = MenuStyle.barOverlayColor
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        overlayView.isUserInteractionEnabled = false
+        visualEffectView.contentView.insertSubview(overlayView, at: 0)
+        NSLayoutConstraint.activate([
+            overlayView.leadingAnchor.constraint(equalTo: visualEffectView.contentView.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: visualEffectView.contentView.trailingAnchor),
+            overlayView.topAnchor.constraint(equalTo: visualEffectView.contentView.topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: visualEffectView.contentView.bottomAnchor)
+        ])
+    }
+
+    private func makeVerticalMenuSeparator() -> UIView {
+        let separator = UIView()
+        separator.backgroundColor = MenuStyle.separatorColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        return separator
+    }
+
+    private func makeHorizontalMenuSeparator() -> UIView {
+        let separator = UIView()
+        separator.backgroundColor = MenuStyle.separatorColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        return separator
+    }
+
+    private func configureBottomActionButton(_ button: UIButton) {
+        button.tintColor = MenuStyle.secondaryTextColor
+        button.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        button.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
+        button.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.textAlignment = .center
+        button.contentHorizontalAlignment = .center
+        button.contentVerticalAlignment = .center
+        button.alignImageAboveTitle(spacing: 7)
+    }
+
+    private func configureFloatingButton(
+        _ button: UIButton,
+        imageName: String,
+        accessibilityKey: String
+    ) {
+        button.setImage(UIImage(systemName: imageName), for: .normal)
+        button.tintColor = MenuStyle.floatingButtonIconColor
+        button.backgroundColor = MenuStyle.floatingButtonColor
+        button.layer.cornerRadius = Layout.floatingButtonSize / 2
+        button.layer.masksToBounds = true
+        button.accessibilityLabel = NSLocalizedString(accessibilityKey, comment: "")
+        button.isUserInteractionEnabled = true
+        button.translatesAutoresizingMaskIntoConstraints = false
     }
 
     private func configureLoadingIndicator() {
@@ -1466,9 +1587,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         isMenuVisible = visible
         topBar.isUserInteractionEnabled = visible
         bottomBar.isUserInteractionEnabled = visible
+        floatingActionStack.isUserInteractionEnabled = visible
         let changes = {
             self.topBar.alpha = visible ? 1 : 0
             self.bottomBar.alpha = visible ? 1 : 0
+            self.floatingActionStack.alpha = visible ? 1 : 0
         }
 
         if animated {
@@ -1487,7 +1610,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let location = gesture.location(in: view)
         if isMenuVisible {
             guard topBar.frame.contains(location) == false,
-                  bottomBar.frame.contains(location) == false
+                  bottomBar.frame.contains(location) == false,
+                  floatingActionStack.frame.contains(location) == false
             else {
                 return
             }
@@ -2012,8 +2136,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
 
         let location = panGesture.location(in: view)
-        guard topBar.frame.contains(location) == false,
-              bottomBar.frame.contains(location) == false
+        guard !(isMenuVisible && topBar.frame.contains(location)),
+              !(isMenuVisible && bottomBar.frame.contains(location)),
+              !(isMenuVisible && floatingActionStack.frame.contains(location))
         else {
             return false
         }
@@ -2113,6 +2238,31 @@ private extension NumberFormatter {
         formatter.maximumFractionDigits = 1
         return formatter
     }()
+}
+
+private extension UIButton {
+    func alignImageAboveTitle(spacing: CGFloat) {
+        guard let imageView = imageView,
+              let titleLabel = titleLabel
+        else {
+            return
+        }
+
+        let imageSize = imageView.intrinsicContentSize
+        let titleSize = titleLabel.intrinsicContentSize
+        imageEdgeInsets = UIEdgeInsets(
+            top: -(titleSize.height + spacing),
+            left: 0,
+            bottom: 0,
+            right: -titleSize.width
+        )
+        titleEdgeInsets = UIEdgeInsets(
+            top: 0,
+            left: -imageSize.width,
+            bottom: -(imageSize.height + spacing),
+            right: 0
+        )
+    }
 }
 
 private struct ReaderTypography: @unchecked Sendable {
