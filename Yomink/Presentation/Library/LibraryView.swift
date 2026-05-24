@@ -1515,6 +1515,8 @@ private struct GlobalBookSearchView: View {
     @State private var historyItems: [SearchHistoryItem] = []
     @State private var errorMessage: String?
     @State private var searchFocusToken = 0
+    @State private var searchTask: Task<Void, Never>?
+    @State private var shouldSkipNextLiveSearch = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -1528,7 +1530,7 @@ private struct GlobalBookSearchView: View {
                     placeholder: NSLocalizedString("search.field.placeholder", comment: ""),
                     focusToken: searchFocusToken
                 ) {
-                    performSearch()
+                    performSearch(shouldSaveHistory: true)
                 }
                 .frame(height: SearchBarStyle.height)
 
@@ -1536,6 +1538,8 @@ private struct GlobalBookSearchView: View {
                     Button {
                         keyword = ""
                         results = []
+                        errorMessage = nil
+                        searchTask?.cancel()
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 16, weight: .regular))
@@ -1549,7 +1553,7 @@ private struct GlobalBookSearchView: View {
             .background(Color(.systemGray5))
             .clipShape(RoundedRectangle(cornerRadius: SearchBarStyle.cornerRadius, style: .continuous))
 
-            if !historyItems.isEmpty {
+            if shouldShowHistory {
                 historySection
             }
 
@@ -1561,8 +1565,19 @@ private struct GlobalBookSearchView: View {
         .task {
             await reloadHistory()
         }
+        .onChange(of: keyword) { _ in
+            guard !shouldSkipNextLiveSearch else {
+                shouldSkipNextLiveSearch = false
+                return
+            }
+            scheduleLiveSearch()
+        }
         .onAppear {
             focusSearchField()
+        }
+        .onDisappear {
+            searchTask?.cancel()
+            searchTask = nil
         }
         .alert(
             "search.error.title",
@@ -1581,6 +1596,14 @@ private struct GlobalBookSearchView: View {
         } message: {
             Text(errorMessage ?? "")
         }
+    }
+
+    private var trimmedKeyword: String {
+        keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var shouldShowHistory: Bool {
+        trimmedKeyword.isEmpty && !historyItems.isEmpty
     }
 
     private var historySection: some View {
@@ -1602,8 +1625,9 @@ private struct GlobalBookSearchView: View {
                 HStack(spacing: 8) {
                     ForEach(historyItems) { item in
                         Button {
+                            shouldSkipNextLiveSearch = item.keyword != keyword
                             keyword = item.keyword
-                            performSearch()
+                            performSearch(keyword: item.keyword, shouldSaveHistory: true)
                         } label: {
                             Text(verbatim: item.keyword)
                                 .font(.subheadline.weight(.medium))
@@ -1621,7 +1645,7 @@ private struct GlobalBookSearchView: View {
 
     @ViewBuilder
     private var resultList: some View {
-        if keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        if trimmedKeyword.isEmpty {
             Spacer(minLength: 0)
         } else if results.isEmpty {
             VStack(spacing: 10) {
@@ -1652,8 +1676,43 @@ private struct GlobalBookSearchView: View {
         }
     }
 
-    private func performSearch() {
+    private func scheduleLiveSearch() {
+        searchTask?.cancel()
+        errorMessage = nil
+
+        let keyword = trimmedKeyword
+        guard !keyword.isEmpty else {
+            results = []
+            searchTask = nil
+            return
+        }
+
+        searchTask = Task {
+            await runSearch(keyword: keyword, shouldSaveHistory: false)
+        }
+    }
+
+    private func performSearch(shouldSaveHistory: Bool) {
+        performSearch(keyword: trimmedKeyword, shouldSaveHistory: shouldSaveHistory)
+    }
+
+    private func performSearch(keyword: String, shouldSaveHistory: Bool) {
+        searchTask?.cancel()
         let keyword = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !keyword.isEmpty else {
+            results = []
+            errorMessage = nil
+            searchTask = nil
+            return
+        }
+
+        searchTask = Task {
+            await runSearch(keyword: keyword, shouldSaveHistory: shouldSaveHistory)
+        }
+    }
+
+    @MainActor
+    private func runSearch(keyword: String, shouldSaveHistory: Bool) async {
         guard let repository,
               !keyword.isEmpty
         else {
@@ -1661,17 +1720,32 @@ private struct GlobalBookSearchView: View {
             return
         }
 
-        Task {
-            do {
+        do {
+            if shouldSaveHistory {
                 try await repository.saveSearchKeyword(keyword)
-                results = try await repository.searchBooks(
-                    keyword: keyword,
-                    sortOrder: sortOrder
-                )
-                await reloadHistory()
-            } catch {
-                errorMessage = error.localizedDescription
             }
+            let searchResults = try await repository.searchBooks(
+                keyword: keyword,
+                sortOrder: sortOrder
+            )
+
+            guard !Task.isCancelled,
+                  keyword == trimmedKeyword
+            else {
+                return
+            }
+
+            results = searchResults
+
+            if shouldSaveHistory {
+                await reloadHistory()
+            }
+        } catch is CancellationError {
+        } catch {
+            guard !Task.isCancelled else {
+                return
+            }
+            errorMessage = error.localizedDescription
         }
     }
 
