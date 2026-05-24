@@ -49,7 +49,23 @@ struct LibraryGroupsPage: View {
                                 return NSItemProvider(object: group.id.uuidString as NSString)
                             }
                         )
-                        .simultaneousGesture(longPressGesture(for: group))
+                        .overlay {
+                            NonBlockingLongPressRecognizer(
+                                isEnabled: !isEditing,
+                                onBegan: {
+                                    pressedGroupID = group.id
+                                },
+                                onEnded: {
+                                    pressedGroupID = nil
+                                },
+                                onRecognized: {
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+                                        pressedGroupID = nil
+                                        beginRename(group)
+                                    }
+                                }
+                            )
+                        }
                         .onDrop(
                             of: [UTType.text],
                             delegate: GroupReorderDropDelegate(
@@ -93,6 +109,7 @@ struct LibraryGroupsPage: View {
                 Button(editButtonTitle) {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isEditing.toggle()
+                        pressedGroupID = nil
                     }
                 }
             }
@@ -229,17 +246,6 @@ struct LibraryGroupsPage: View {
         }
     }
 
-    private func longPressGesture(for group: BookGroup) -> some Gesture {
-        LongPressGesture(minimumDuration: 0.45)
-            .onChanged { _ in
-                pressedGroupID = group.id
-            }
-            .onEnded { _ in
-                pressedGroupID = nil
-                beginRename(group)
-            }
-    }
-
     private func groupTitle(name: String, count: Int) -> String {
         String(
             format: NSLocalizedString("sidebar.groupWithCount", comment: ""),
@@ -298,6 +304,84 @@ private struct GroupReorderDropDelegate: DropDelegate {
         draggingGroup = nil
         persistOrder()
         return true
+    }
+}
+
+private struct NonBlockingLongPressRecognizer: UIViewRepresentable {
+    let isEnabled: Bool
+    let onBegan: () -> Void
+    let onEnded: () -> Void
+    let onRecognized: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            onBegan: onBegan,
+            onEnded: onEnded,
+            onRecognized: onRecognized
+        )
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView()
+        view.backgroundColor = .clear
+
+        let recognizer = UILongPressGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleLongPress(_:))
+        )
+        recognizer.minimumPressDuration = 0.45
+        recognizer.cancelsTouchesInView = false
+        recognizer.delaysTouchesBegan = false
+        recognizer.delaysTouchesEnded = false
+        recognizer.delegate = context.coordinator
+        view.addGestureRecognizer(recognizer)
+        context.coordinator.recognizer = recognizer
+
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        context.coordinator.onBegan = onBegan
+        context.coordinator.onEnded = onEnded
+        context.coordinator.onRecognized = onRecognized
+        context.coordinator.recognizer?.isEnabled = isEnabled
+        view.isUserInteractionEnabled = isEnabled
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var onBegan: () -> Void
+        var onEnded: () -> Void
+        var onRecognized: () -> Void
+        weak var recognizer: UILongPressGestureRecognizer?
+
+        init(
+            onBegan: @escaping () -> Void,
+            onEnded: @escaping () -> Void,
+            onRecognized: @escaping () -> Void
+        ) {
+            self.onBegan = onBegan
+            self.onEnded = onEnded
+            self.onRecognized = onRecognized
+        }
+
+        @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
+            switch recognizer.state {
+            case .began:
+                onBegan()
+                onRecognized()
+            case .ended, .cancelled, .failed:
+                onEnded()
+            default:
+                break
+            }
+        }
+
+        func gestureRecognizer(
+            _ gestureRecognizer: UIGestureRecognizer,
+            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+        ) -> Bool {
+            true
+        }
     }
 }
 

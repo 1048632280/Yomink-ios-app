@@ -1706,7 +1706,7 @@ private struct GlobalBookSearchView: View {
     }
 
     private func focusSearchField() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + SearchBarStyle.focusDelay) {
             searchFocusToken += 1
         }
     }
@@ -1807,6 +1807,7 @@ private struct FocusableSearchTextField: UIViewRepresentable {
 private enum SearchBarStyle {
     static let height: CGFloat = 36
     static let cornerRadius: CGFloat = 10
+    static let focusDelay: TimeInterval = 0.65
 }
 
 private struct ExportPayload: Identifiable {
