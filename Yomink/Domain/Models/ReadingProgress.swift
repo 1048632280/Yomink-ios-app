@@ -56,36 +56,53 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case dark
     }
 
+    enum TouchAreaAction: String, Codable, CaseIterable, Sendable {
+        case previousPage
+        case menu
+        case nextPage
+    }
+
     var pageMode: PageMode
     var theme: Theme
     var fontSize: Double
+    var touchAreaMap: [TouchAreaAction]
 
     static let storageKey = "reader.settings"
     static let minimumFontSize = 14.0
     static let maximumFontSize = 28.0
+    static let touchAreaCount = 9
+    static let defaultTouchAreaMap: [TouchAreaAction] = [
+        .previousPage, .menu, .nextPage,
+        .previousPage, .menu, .nextPage,
+        .previousPage, .menu, .nextPage
+    ]
 
     private enum CodingKeys: String, CodingKey {
         case pageMode
         case theme
         case fontSize
+        case touchAreaMap
     }
 
     static var `default`: ReaderSettings {
         ReaderSettings(
             pageMode: .paged,
             theme: .white,
-            fontSize: 18
+            fontSize: 18,
+            touchAreaMap: Self.defaultTouchAreaMap
         )
     }
 
     init(
         pageMode: PageMode = .paged,
         theme: Theme = .white,
-        fontSize: Double = 18
+        fontSize: Double = 18,
+        touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap
     ) {
         self.pageMode = pageMode
         self.theme = theme
         self.fontSize = fontSize
+        self.touchAreaMap = touchAreaMap
     }
 
     init(from decoder: Decoder) throws {
@@ -93,6 +110,8 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         pageMode = (try? container.decodeIfPresent(PageMode.self, forKey: .pageMode)) ?? .paged
         theme = (try? container.decodeIfPresent(Theme.self, forKey: .theme)) ?? .white
         fontSize = (try? container.decodeIfPresent(Double.self, forKey: .fontSize)) ?? 18
+        touchAreaMap = (try? container.decodeIfPresent([TouchAreaAction].self, forKey: .touchAreaMap))
+            ?? Self.defaultTouchAreaMap
     }
 
     var normalized: ReaderSettings {
@@ -101,6 +120,9 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             max(settings.fontSize, Self.minimumFontSize),
             Self.maximumFontSize
         )
+        if settings.touchAreaMap.count != Self.touchAreaCount {
+            settings.touchAreaMap = Self.defaultTouchAreaMap
+        }
         return settings
     }
 }

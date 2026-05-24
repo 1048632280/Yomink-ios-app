@@ -1311,13 +1311,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let anchorByteOffset = currentDisplayByteOffset()
         let requiresImmediateRerender = oldSettings.pageMode != normalizedSettings.pageMode
             || oldSettings.theme != normalizedSettings.theme
+        let requiresDeferredRerender = oldSettings.fontSize != normalizedSettings.fontSize
         readerSettings = normalizedSettings
         invalidatePrefetch()
         applyTheme()
         if requiresImmediateRerender {
             cancelSettingsRender()
             renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
-        } else {
+        } else if requiresDeferredRerender {
             scheduleSettingsRender(anchorByteOffset: anchorByteOffset)
         }
         scheduleSettingsSave()
@@ -1491,14 +1492,27 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             }
         }
 
-        let width = view.bounds.width
-        if location.x < width / 3 {
+        switch touchAreaAction(at: location) {
+        case .previousPage:
             moveToPreviousPage()
-        } else if location.x > width * 2 / 3 {
+        case .nextPage:
             moveToNextPage()
-        } else {
+        case .menu:
             setMenuVisible(!isMenuVisible, animated: true)
         }
+    }
+
+    private func touchAreaAction(at location: CGPoint) -> ReaderSettings.TouchAreaAction {
+        let width = max(view.bounds.width, 1)
+        let height = max(view.bounds.height, 1)
+        let column = min(max(Int(location.x / (width / 3)), 0), 2)
+        let row = min(max(Int(location.y / (height / 3)), 0), 2)
+        let index = row * 3 + column
+        let map = readerSettings.normalized.touchAreaMap
+        guard map.indices.contains(index) else {
+            return ReaderSettings.default.touchAreaMap[index]
+        }
+        return map[index]
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
@@ -1705,7 +1719,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func showPageTouchAreas() {
-        presentFullScreenNavigation(ReaderPageTouchAreasViewController())
+        let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
+            self?.applyReaderSettings(settings)
+        }
+        presentFullScreenNavigation(viewController)
     }
 
     private func presentFullScreenNavigation(_ rootViewController: UIViewController) {
@@ -2624,7 +2641,10 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
                 return
             }
             let bookmark = bookmarks[indexPath.row]
-            guard let chapterID = bookmark.chapterID else {
+            guard let chapterID = bookmark.chapterID,
+                  chapters.contains(where: { $0.id == chapterID })
+            else {
+                showMissingBookmarkChapterAlert()
                 return
             }
             onSelect(ReaderContentTarget(chapterID: chapterID, offset: bookmark.offset))
@@ -2751,12 +2771,26 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         let chapterTitle = bookmark.chapterID
             .flatMap { chapterID in chapters.first { $0.id == chapterID }?.title }
             ?? NSLocalizedString("reader.bookmark.unknownChapter", comment: "")
+        let isAvailable = bookmark.chapterID
+            .map { chapterID in chapters.contains { $0.id == chapterID } }
+            ?? false
         cell.configure(
             chapterTitle,
             time: Self.dateFormatter.string(from: bookmark.createdAt),
-            preview: bookmark.preview
+            preview: bookmark.preview,
+            isAvailable: isAvailable
         )
         return cell
+    }
+
+    private func showMissingBookmarkChapterAlert() {
+        let alert = UIAlertController(
+            title: NSLocalizedString("reader.error.title", comment: ""),
+            message: NSLocalizedString("reader.bookmark.missingChapter", comment: ""),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
+        present(alert, animated: true)
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -2789,16 +2823,22 @@ private final class ReaderBookmarkCell: UITableViewCell {
         chapterLabel.text = nil
         timeLabel.text = nil
         previewLabel.text = nil
+        chapterLabel.textColor = .label
+        previewLabel.textColor = .secondaryLabel
     }
 
     func configure(
         _ chapterTitle: String,
         time: String,
-        preview: String
+        preview: String,
+        isAvailable: Bool
     ) {
         chapterLabel.text = chapterTitle
         timeLabel.text = time
         previewLabel.text = preview
+        chapterLabel.textColor = isAvailable ? .label : .tertiaryLabel
+        previewLabel.textColor = isAvailable ? .secondaryLabel : .tertiaryLabel
+        isUserInteractionEnabled = true
     }
 
     private func configureViews() {

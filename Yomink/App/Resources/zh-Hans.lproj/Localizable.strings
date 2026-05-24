@@ -100,6 +100,7 @@
 "reader.bookmarks.empty" = "暂无书签";
 "reader.bookmark.preview.empty" = "当前位置";
 "reader.bookmark.unknownChapter" = "未知章节";
+"reader.bookmark.missingChapter" = "此书签的章节已不存在。";
 "reader.settings.title" = "阅读设置";
 "reader.settings.pageMode" = "翻页";
 "reader.settings.pageMode.paged" = "分页";
@@ -135,6 +136,7 @@
 "reader.search.loadingMore" = "正在加载更多数据";
 "reader.search.loadMore" = "点击或上拉加载更多";
 "reader.search.allLoaded" = "已经全部加载完毕";
+"reader.search.empty" = "未找到包含“%@”的内容";
 "reader.filter.title" = "内容过滤";
 "reader.filter.addTitle" = "添加过滤规则";
 "reader.filter.editTitle" = "编辑过滤规则";
@@ -146,6 +148,7 @@
 "reader.touchAreas.menu" = "菜单";
 "reader.touchAreas.nextPage" = "下一页";
 "reader.touchAreas.edgeBackHint" = "侧滑返回书架";
+"reader.touchAreas.bindTitle" = "绑定动作";
 "reader.error.title" = "操作失败";
 "reader.error.invalidUTF8Cache" = "阅读缓存无法按 UTF-8 解码。";
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";

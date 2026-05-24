@@ -46,6 +46,31 @@ struct FilteredReaderText: Sendable {
 }
 
 enum ReaderTextFilter {
+    static func identityFilteredText(for text: String) -> FilteredReaderText {
+        var offsets: [Int] = []
+        offsets.reserveCapacity(text.utf16.count + 1)
+
+        var offset = 0
+        offsets.append(offset)
+        for character in text {
+            let characterText = String(character)
+            let previousOffset = offset
+            offset += characterText.utf8.count
+            let utf16Length = characterText.utf16.count
+            if utf16Length > 1 {
+                offsets.append(
+                    contentsOf: Array(repeating: previousOffset, count: utf16Length - 1)
+                )
+            }
+            offsets.append(offset)
+        }
+
+        return FilteredReaderText(
+            displayText: text,
+            originalByteOffsetsByUTF16Index: offsets
+        )
+    }
+
     static func apply(
         rules: [TextFilterRule],
         to originalText: String
@@ -73,31 +98,6 @@ enum ReaderTextFilter {
         }
 
         return filteredText(from: characters, fallbackEndOffset: offset)
-    }
-
-    private static func identityFilteredText(for text: String) -> FilteredReaderText {
-        var offsets: [Int] = []
-        offsets.reserveCapacity(text.utf16.count + 1)
-
-        var offset = 0
-        offsets.append(offset)
-        for character in text {
-            let characterText = String(character)
-            let previousOffset = offset
-            offset += characterText.utf8.count
-            let utf16Length = characterText.utf16.count
-            if utf16Length > 1 {
-                offsets.append(
-                    contentsOf: Array(repeating: previousOffset, count: utf16Length - 1)
-                )
-            }
-            offsets.append(offset)
-        }
-
-        return FilteredReaderText(
-            displayText: text,
-            originalByteOffsetsByUTF16Index: offsets
-        )
     }
 
     private static func apply(

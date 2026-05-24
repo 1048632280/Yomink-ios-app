@@ -260,10 +260,12 @@ final class ReaderBookDetailViewController: UIViewController {
                 guard (self.book.intro ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                     return
                 }
-                self.book.intro = intro
-                self.introLabel.text = intro.isEmpty
-                    ? NSLocalizedString("reader.bookDetail.emptyIntro", comment: "")
-                    : intro
+                if intro.isEmpty {
+                    self.introLabel.text = NSLocalizedString("reader.bookDetail.emptyIntro", comment: "")
+                } else {
+                    self.book.intro = intro
+                    self.introLabel.text = intro
+                }
             }
         }
     }
@@ -798,14 +800,25 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let footerButton = UIButton(type: .system)
     private let footerHeight: CGFloat = 52
+    private lazy var emptyResultsLabel: UILabel = {
+        let label = UILabel()
+        label.textColor = .secondaryLabel
+        label.font = .preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        return label
+    }()
     private var results: [ReaderSearchResult] = []
     private var resultSections: [SearchResultSection] = []
     private var searchTask: Task<Void, Never>?
+    private var searchDebounceTask: Task<Void, Never>?
     private var keyword = ""
     private var resultHighlightKeyword = ""
     private var nextScanPosition = SearchPosition.start
     private var state: SearchState = .idle
     private var isClearingSearchTextForCancel = false
+    private var scannedChapterCache: SearchChapterCache?
 
     private struct SearchResultSection {
         let chapterID: UUID
@@ -854,6 +867,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
 
     deinit {
         searchTask?.cancel()
+        searchDebounceTask?.cancel()
     }
 
     private func configureViews() {
@@ -996,7 +1010,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         guard !isClearingSearchTextForCancel else {
             return
         }
-        restartSearch()
+        scheduleSearchRestart()
     }
 
     func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
@@ -1005,6 +1019,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     }
 
     func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
+        searchDebounceTask?.cancel()
         searchTask?.cancel()
         keyword = ""
         isClearingSearchTextForCancel = true
@@ -1014,6 +1029,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         state = .idle
         updateSearchCancelButton(animated: true)
         updateFooter()
+        updateBackgroundView()
     }
 
     func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
@@ -1021,19 +1037,43 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     }
 
     private func restartSearch() {
+        searchDebounceTask?.cancel()
         searchTask?.cancel()
         results = []
         resultSections = []
+        scannedChapterCache = nil
         nextScanPosition = .start
         tableView.reloadData()
         guard !keyword.isEmpty else {
             resultHighlightKeyword = ""
             state = .idle
             updateFooter()
+            updateBackgroundView()
             return
         }
         resultHighlightKeyword = keyword
         loadNextBatch()
+    }
+
+    private func scheduleSearchRestart() {
+        searchDebounceTask?.cancel()
+        searchTask?.cancel()
+        let keyword = keyword
+        searchDebounceTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 250_000_000)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    guard let self,
+                          self.keyword == keyword
+                    else {
+                        return
+                    }
+                    self.restartSearch()
+                }
+            } catch {
+            }
+        }
     }
 
     @objc private func loadMoreButtonTapped() {
@@ -1053,12 +1093,14 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
 
         state = .scanning
         updateFooter()
+        updateBackgroundView()
         let startPosition = nextScanPosition
         let keyword = keyword
         let chapters = chapters
         let book = book
         let fileStore = fileStore
         let filterRules = filterRules
+        let cachedChapter = scannedChapterCache
         searchTask?.cancel()
         searchTask = Task { [weak self] in
             let batch = await Self.scanBatch(
@@ -1068,6 +1110,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
                 limit: 20,
                 keyword: keyword,
                 filterRules: filterRules,
+                cachedChapter: cachedChapter,
                 fileStore: fileStore
             )
             await MainActor.run {
@@ -1077,6 +1120,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
                     return
                 }
                 self.nextScanPosition = batch.nextPosition
+                self.scannedChapterCache = batch.cachedChapter
                 self.results.append(contentsOf: batch.results)
                 self.resultSections = Self.groupedSections(from: self.results)
                 self.tableView.reloadData()
@@ -1084,6 +1128,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
                     ? .finished
                     : .canLoadMore
                 self.updateFooter()
+                self.updateBackgroundView()
             }
         }
     }
@@ -1131,6 +1176,22 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         layoutFooter()
     }
 
+    private func updateBackgroundView() {
+        guard state == .finished,
+              results.isEmpty,
+              !resultHighlightKeyword.isEmpty
+        else {
+            tableView.backgroundView = nil
+            return
+        }
+
+        emptyResultsLabel.text = String(
+            format: NSLocalizedString("reader.search.empty", comment: ""),
+            resultHighlightKeyword
+        )
+        tableView.backgroundView = emptyResultsLabel
+    }
+
     private func layoutFooter() {
         let targetHeight = state == .idle ? 0 : footerHeight
         let targetFrame = CGRect(
@@ -1157,20 +1218,31 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         limit: Int,
         keyword: String,
         filterRules: [TextFilterRule],
+        cachedChapter: SearchChapterCache?,
         fileStore: AppFileStore
-    ) async -> (results: [ReaderSearchResult], nextPosition: SearchPosition) {
+    ) async -> (
+        results: [ReaderSearchResult],
+        nextPosition: SearchPosition,
+        cachedChapter: SearchChapterCache?
+    ) {
         var results: [ReaderSearchResult] = []
         var position = startPosition
+        var cachedChapter = cachedChapter
         while position.chapterIndex < chapters.count,
               results.count < limit,
               !Task.isCancelled {
             let chapter = chapters[position.chapterIndex]
-            if let text = try? await readChapterText(
+            let loadedChapter = await filteredChapter(
+                at: position.chapterIndex,
                 book: book,
                 chapter: chapter,
-                fileStore: fileStore
-            ) {
-                let filtered = ReaderTextFilter.apply(rules: filterRules, to: text)
+                filterRules: filterRules,
+                fileStore: fileStore,
+                cache: cachedChapter
+            )
+            cachedChapter = loadedChapter.cachedChapter
+
+            if let filtered = loadedChapter.filtered {
                 let matchBatch = matches(
                     keyword: keyword,
                     filtered: filtered,
@@ -1197,7 +1269,41 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
                 )
             }
         }
-        return (results, position)
+        return (results, position, cachedChapter)
+    }
+
+    private nonisolated static func filteredChapter(
+        at index: Int,
+        book: Book,
+        chapter: Chapter,
+        filterRules: [TextFilterRule],
+        fileStore: AppFileStore,
+        cache: SearchChapterCache?
+    ) async -> (
+        filtered: FilteredReaderText?,
+        cachedChapter: SearchChapterCache?
+    ) {
+        if let cache,
+           cache.chapterIndex == index {
+            return (cache.filtered, cache)
+        }
+
+        guard let text = try? await readChapterText(
+            book: book,
+            chapter: chapter,
+            fileStore: fileStore
+        ) else {
+            return (nil, nil)
+        }
+
+        let filtered = filterRules.isEmpty
+            ? ReaderTextFilter.identityFilteredText(for: text)
+            : ReaderTextFilter.apply(rules: filterRules, to: text)
+        let cache = SearchChapterCache(
+            chapterIndex: index,
+            filtered: filtered
+        )
+        return (filtered, cache)
     }
 
     private nonisolated static func matches(
@@ -1348,6 +1454,11 @@ struct ReaderSearchResult: Sendable {
     let snippet: String
 }
 
+private struct SearchChapterCache: Sendable {
+    let chapterIndex: Int
+    let filtered: FilteredReaderText
+}
+
 private final class ReaderSearchResultCell: UITableViewCell {
     static let reuseIdentifier = "readerSearchResult"
 
@@ -1446,37 +1557,27 @@ final class ReaderBookCoverView: UIView {
 
 @MainActor
 final class ReaderPageTouchAreasViewController: UIViewController {
-    private enum TouchArea {
-        case previousPage
-        case menu
-        case nextPage
+    private var settings: ReaderSettings
+    private let onSave: (ReaderSettings) -> Void
+    private var buttons: [UIButton] = []
 
-        var titleKey: String {
-            switch self {
-            case .previousPage:
-                return "reader.touchAreas.previousPage"
-            case .menu:
-                return "reader.touchAreas.menu"
-            case .nextPage:
-                return "reader.touchAreas.nextPage"
-            }
-        }
+    init(
+        settings: ReaderSettings,
+        onSave: @escaping (ReaderSettings) -> Void
+    ) {
+        self.settings = settings.normalized
+        self.onSave = onSave
+        super.init(nibName: nil, bundle: nil)
+        title = NSLocalizedString("reader.more.pageTouchAreas", comment: "")
+    }
 
-        var color: UIColor {
-            switch self {
-            case .previousPage:
-                return UIColor(red: 0.29, green: 0.33, blue: 0.58, alpha: 1)
-            case .menu:
-                return UIColor(red: 0.70, green: 0.48, blue: 0.30, alpha: 1)
-            case .nextPage:
-                return UIColor(red: 0.36, green: 0.54, blue: 0.24, alpha: 1)
-            }
-        }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
     }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = NSLocalizedString("reader.more.pageTouchAreas", comment: "")
         view.backgroundColor = .systemBackground
         edgesForExtendedLayout = [.top, .bottom]
         extendedLayoutIncludesOpaqueBars = true
@@ -1486,16 +1587,35 @@ final class ReaderPageTouchAreasViewController: UIViewController {
             target: self,
             action: #selector(closeButtonTapped)
         )
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.save", comment: ""),
+            style: .done,
+            target: self,
+            action: #selector(saveButtonTapped)
+        )
         configureGrid()
     }
 
     private func configureGrid() {
-        let gridStack = UIStackView(arrangedSubviews: [
-            columnView(for: .previousPage, includeEdgeHint: true),
-            columnView(for: .menu, includeEdgeHint: false),
-            columnView(for: .nextPage, includeEdgeHint: false)
-        ])
-        gridStack.axis = .horizontal
+        buttons = []
+
+        let rows = (0..<3).map { rowIndex in
+            let rowStack = UIStackView()
+            rowStack.axis = .horizontal
+            rowStack.distribution = .fillEqually
+            rowStack.alignment = .fill
+            rowStack.spacing = 0
+
+            for columnIndex in 0..<3 {
+                let index = rowIndex * 3 + columnIndex
+                rowStack.addArrangedSubview(cellButton(at: index))
+            }
+
+            return rowStack
+        }
+
+        let gridStack = UIStackView(arrangedSubviews: rows)
+        gridStack.axis = .vertical
         gridStack.distribution = .fillEqually
         gridStack.alignment = .fill
         gridStack.spacing = 0
@@ -1510,35 +1630,22 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         ])
     }
 
-    private func columnView(
-        for area: TouchArea,
-        includeEdgeHint: Bool
-    ) -> UIView {
-        let container = UIView()
-        container.backgroundColor = area.color
+    private func cellButton(at index: Int) -> UIButton {
+        let button = UIButton(type: .custom)
+        button.tag = index
+        button.titleLabel?.font = .preferredFont(forTextStyle: .title2)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.numberOfLines = 2
+        button.titleLabel?.textAlignment = .center
+        button.addTarget(self, action: #selector(touchAreaButtonTapped(_:)), for: .touchUpInside)
+        buttons.append(button)
+        update(button, at: index)
 
-        let titleLabel = UILabel()
-        titleLabel.text = NSLocalizedString(area.titleKey, comment: "")
-        titleLabel.textColor = .white
-        titleLabel.font = .preferredFont(forTextStyle: .title2)
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.textAlignment = .center
-        titleLabel.numberOfLines = 2
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(titleLabel)
-
-        NSLayoutConstraint.activate([
-            titleLabel.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-            titleLabel.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            titleLabel.leadingAnchor.constraint(greaterThanOrEqualTo: container.leadingAnchor, constant: 12),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: container.trailingAnchor, constant: -12)
-        ])
-
-        if includeEdgeHint {
-            addEdgeHint(to: container)
+        if index == 3 {
+            addEdgeHint(to: button)
         }
 
-        return container
+        return button
     }
 
     private func addEdgeHint(to container: UIView) {
@@ -1552,6 +1659,7 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         hintLabel.textAlignment = .center
         hintLabel.numberOfLines = 0
         hintLabel.translatesAutoresizingMaskIntoConstraints = false
+        hintLabel.isUserInteractionEnabled = false
         container.addSubview(hintLabel)
 
         NSLayoutConstraint.activate([
@@ -1562,8 +1670,74 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         ])
     }
 
+    private func update(
+        _ button: UIButton,
+        at index: Int
+    ) {
+        let action = settings.touchAreaMap[index]
+        button.backgroundColor = action.touchAreaColor
+        button.setTitle(action.localizedTitle, for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.setTitleColor(UIColor.white.withAlphaComponent(0.72), for: .highlighted)
+    }
+
+    @objc private func touchAreaButtonTapped(_ sender: UIButton) {
+        let index = sender.tag
+        guard settings.touchAreaMap.indices.contains(index) else {
+            return
+        }
+
+        let alert = UIAlertController(
+            title: NSLocalizedString("reader.touchAreas.bindTitle", comment: ""),
+            message: nil,
+            preferredStyle: .actionSheet
+        )
+        for action in ReaderSettings.TouchAreaAction.allCases {
+            alert.addAction(UIAlertAction(title: action.localizedTitle, style: .default) { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                self.settings.touchAreaMap[index] = action
+                self.update(sender, at: index)
+            })
+        }
+        alert.addAction(UIAlertAction(title: NSLocalizedString("common.cancel", comment: ""), style: .cancel))
+        alert.popoverPresentationController?.sourceView = sender
+        alert.popoverPresentationController?.sourceRect = sender.bounds
+        present(alert, animated: true)
+    }
+
+    @objc private func saveButtonTapped() {
+        onSave(settings.normalized)
+        dismiss(animated: true)
+    }
+
     @objc private func closeButtonTapped() {
         dismiss(animated: true)
+    }
+}
+
+private extension ReaderSettings.TouchAreaAction {
+    var localizedTitle: String {
+        switch self {
+        case .previousPage:
+            return NSLocalizedString("reader.touchAreas.previousPage", comment: "")
+        case .menu:
+            return NSLocalizedString("reader.touchAreas.menu", comment: "")
+        case .nextPage:
+            return NSLocalizedString("reader.touchAreas.nextPage", comment: "")
+        }
+    }
+
+    var touchAreaColor: UIColor {
+        switch self {
+        case .previousPage:
+            return UIColor(red: 0.29, green: 0.33, blue: 0.58, alpha: 1)
+        case .menu:
+            return UIColor(red: 0.70, green: 0.48, blue: 0.30, alpha: 1)
+        case .nextPage:
+            return UIColor(red: 0.36, green: 0.54, blue: 0.24, alpha: 1)
+        }
     }
 }
 
