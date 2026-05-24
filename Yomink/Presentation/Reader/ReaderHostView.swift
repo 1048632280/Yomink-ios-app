@@ -2197,6 +2197,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         static let searchHeaderHeight: CGFloat = 56
         static let catalogEstimatedRowHeight: CGFloat = 52
         static let bookmarkEstimatedRowHeight: CGFloat = 118
+        static let segmentedControlMinimumWidth: CGFloat = 156
     }
 
     private struct ChapterListItem {
@@ -2319,7 +2320,13 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
             action: #selector(segmentChanged),
             for: .valueChanged
         )
-        segmentedControl.widthAnchor.constraint(greaterThanOrEqualToConstant: 188).isActive = true
+        segmentedControl.setTitleTextAttributes(
+            [.font: UIFont.preferredFont(forTextStyle: .subheadline)],
+            for: .normal
+        )
+        segmentedControl.widthAnchor.constraint(
+            greaterThanOrEqualToConstant: Layout.segmentedControlMinimumWidth
+        ).isActive = true
         navigationItem.titleView = segmentedControl
 
         updateCatalogJumpButton()
