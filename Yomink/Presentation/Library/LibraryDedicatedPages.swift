@@ -1,6 +1,5 @@
 import SwiftUI
 import UIKit
-import UniformTypeIdentifiers
 
 struct LibraryGroupsPage: View {
     @Environment(\.dismiss) private var dismiss
@@ -16,7 +15,8 @@ struct LibraryGroupsPage: View {
     @State private var nameDraft = ""
     @State private var errorMessage: String?
     @State private var pressedGroupID: UUID?
-    @State private var draggingGroup: BookGroup?
+    @State private var draggedGroupID: UUID?
+    @State private var reorderStartIndex: Int?
 
     var body: some View {
         ZStack {
@@ -44,9 +44,11 @@ struct LibraryGroupsPage: View {
                             deleteAction: {
                                 groupPendingDeletion = group
                             },
-                            reorderProvider: {
-                                draggingGroup = group
-                                return NSItemProvider(object: group.id.uuidString as NSString)
+                            reorderDragChanged: { value in
+                                reorderGroup(group, with: value)
+                            },
+                            reorderDragEnded: { _ in
+                                finishReordering()
                             }
                         )
                         .overlay {
@@ -66,15 +68,6 @@ struct LibraryGroupsPage: View {
                                 }
                             )
                         }
-                        .onDrop(
-                            of: [UTType.text],
-                            delegate: GroupReorderDropDelegate(
-                                item: group,
-                                groups: $groups,
-                                draggingGroup: $draggingGroup,
-                                persistOrder: persistGroupOrder
-                            )
-                        )
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -246,6 +239,43 @@ struct LibraryGroupsPage: View {
         }
     }
 
+    private func reorderGroup(_ group: BookGroup, with value: DragGesture.Value) {
+        if draggedGroupID != group.id {
+            draggedGroupID = group.id
+            reorderStartIndex = groups.firstIndex(of: group)
+        }
+
+        guard let startIndex = reorderStartIndex,
+              let currentIndex = groups.firstIndex(where: { $0.id == group.id })
+        else {
+            return
+        }
+
+        let offset = Int((value.translation.height / DedicatedPageStyle.rowHeight).rounded())
+        let targetIndex = min(max(startIndex + offset, 0), max(groups.count - 1, 0))
+
+        guard targetIndex != currentIndex else {
+            return
+        }
+
+        withAnimation(.easeInOut(duration: 0.18)) {
+            groups.move(
+                fromOffsets: IndexSet(integer: currentIndex),
+                toOffset: targetIndex > currentIndex ? targetIndex + 1 : targetIndex
+            )
+        }
+    }
+
+    private func finishReordering() {
+        guard draggedGroupID != nil else {
+            return
+        }
+
+        draggedGroupID = nil
+        reorderStartIndex = nil
+        persistGroupOrder()
+    }
+
     private func groupTitle(name: String, count: Int) -> String {
         String(
             format: NSLocalizedString("sidebar.groupWithCount", comment: ""),
@@ -269,118 +299,106 @@ private enum GroupNameEditor {
     }
 }
 
-private struct GroupReorderDropDelegate: DropDelegate {
-    let item: BookGroup
-    @Binding var groups: [BookGroup]
-    @Binding var draggingGroup: BookGroup?
-    let persistOrder: () -> Void
-
-    func dropEntered(info: DropInfo) {
-        guard let draggingGroup,
-              draggingGroup != item,
-              let fromIndex = groups.firstIndex(of: draggingGroup),
-              let toIndex = groups.firstIndex(of: item)
-        else {
-            return
-        }
-
-        withAnimation(.easeInOut(duration: 0.18)) {
-            groups.move(
-                fromOffsets: IndexSet(integer: fromIndex),
-                toOffset: toIndex > fromIndex ? toIndex + 1 : toIndex
-            )
-        }
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        guard draggingGroup != nil else {
-            return false
-        }
-
-        draggingGroup = nil
-        persistOrder()
-        return true
-    }
-}
-
 private struct NonBlockingLongPressRecognizer: UIViewRepresentable {
     let isEnabled: Bool
     let onBegan: () -> Void
     let onEnded: () -> Void
     let onRecognized: () -> Void
 
-    func makeCoordinator() -> Coordinator {
-        Coordinator(
-            onBegan: onBegan,
-            onEnded: onEnded,
-            onRecognized: onRecognized
-        )
-    }
-
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView()
+    func makeUIView(context: Context) -> TouchView {
+        let view = TouchView()
         view.backgroundColor = .clear
-
-        let recognizer = UILongPressGestureRecognizer(
-            target: context.coordinator,
-            action: #selector(Coordinator.handleLongPress(_:))
-        )
-        recognizer.minimumPressDuration = 0.45
-        recognizer.cancelsTouchesInView = false
-        recognizer.delaysTouchesBegan = false
-        recognizer.delaysTouchesEnded = false
-        recognizer.delegate = context.coordinator
-        view.addGestureRecognizer(recognizer)
-        context.coordinator.recognizer = recognizer
-
         return view
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
-        context.coordinator.onBegan = onBegan
-        context.coordinator.onEnded = onEnded
-        context.coordinator.onRecognized = onRecognized
-        context.coordinator.recognizer?.isEnabled = isEnabled
+    func updateUIView(_ view: TouchView, context: Context) {
+        view.isRecognizerEnabled = isEnabled
+        view.onBegan = onBegan
+        view.onEnded = onEnded
+        view.onRecognized = onRecognized
         view.isUserInteractionEnabled = isEnabled
     }
 
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+    final class TouchView: UIView {
+        var isRecognizerEnabled = false
         var onBegan: () -> Void
         var onEnded: () -> Void
         var onRecognized: () -> Void
-        weak var recognizer: UILongPressGestureRecognizer?
+        private var startPoint: CGPoint?
+        private var isPressing = false
+        private var recognitionWorkItem: DispatchWorkItem?
 
-        init(
-            onBegan: @escaping () -> Void,
-            onEnded: @escaping () -> Void,
-            onRecognized: @escaping () -> Void
-        ) {
-            self.onBegan = onBegan
-            self.onEnded = onEnded
-            self.onRecognized = onRecognized
+        init() {
+            onBegan = {}
+            onEnded = {}
+            onRecognized = {}
+            super.init(frame: .zero)
+            isMultipleTouchEnabled = false
         }
 
-        @objc func handleLongPress(_ recognizer: UILongPressGestureRecognizer) {
-            switch recognizer.state {
-            case .began:
-                onBegan()
-                onRecognized()
-            case .ended, .cancelled, .failed:
-                onEnded()
-            default:
-                break
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesBegan(touches, with: event)
+            guard isRecognizerEnabled,
+                  let touch = touches.first
+            else {
+                return
+            }
+
+            startPoint = touch.location(in: self)
+            isPressing = true
+            onBegan()
+
+            let workItem = DispatchWorkItem { [weak self] in
+                guard let self,
+                      self.isPressing
+                else {
+                    return
+                }
+                self.onRecognized()
+            }
+            recognitionWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45, execute: workItem)
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesMoved(touches, with: event)
+            guard let startPoint,
+                  let touch = touches.first
+            else {
+                return
+            }
+
+            let point = touch.location(in: self)
+            let distance = hypot(point.x - startPoint.x, point.y - startPoint.y)
+            if distance > 10 {
+                cancelPress()
             }
         }
 
-        func gestureRecognizer(
-            _ gestureRecognizer: UIGestureRecognizer,
-            shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-        ) -> Bool {
-            true
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesEnded(touches, with: event)
+            cancelPress()
+        }
+
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+            super.touchesCancelled(touches, with: event)
+            cancelPress()
+        }
+
+        private func cancelPress() {
+            recognitionWorkItem?.cancel()
+            recognitionWorkItem = nil
+            startPoint = nil
+            guard isPressing else {
+                return
+            }
+            isPressing = false
+            onEnded()
         }
     }
 }
@@ -922,21 +940,26 @@ private struct DedicatedGroupListRow: View {
     var showsReorderControl = false
     var isPressed = false
     var deleteAction: (() -> Void)?
-    var reorderProvider: (() -> NSItemProvider)?
+    var reorderDragChanged: ((DragGesture.Value) -> Void)?
+    var reorderDragEnded: ((DragGesture.Value) -> Void)?
 
     var body: some View {
         HStack(spacing: 12) {
             if showsDeleteControl {
-                Button(role: .destructive) {
-                    deleteAction?()
-                } label: {
-                    Image(systemName: "minus.circle.fill")
-                        .font(.title3)
-                        .foregroundColor(.red)
-                        .frame(width: 28, height: 28)
-                }
-                .buttonStyle(.plain)
-                .transition(.move(edge: .leading).combined(with: .opacity))
+                Image(systemName: "minus.circle.fill")
+                    .font(.title3)
+                    .foregroundColor(.red)
+                    .frame(width: 28, height: DedicatedPageStyle.rowHeight)
+                    .contentShape(Rectangle())
+                    .highPriorityGesture(
+                        TapGesture()
+                            .onEnded {
+                                deleteAction?()
+                            }
+                    )
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(Text("library.delete"))
+                    .transition(.move(edge: .leading).combined(with: .opacity))
             }
 
             Text(verbatim: title)
@@ -952,9 +975,16 @@ private struct DedicatedGroupListRow: View {
                     .foregroundColor(Color(.systemGray2))
                     .frame(width: 36, height: DedicatedPageStyle.rowHeight)
                     .contentShape(Rectangle())
-                    .onDrag {
-                        reorderProvider?() ?? NSItemProvider()
-                    }
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                reorderDragChanged?(value)
+                            }
+                            .onEnded { value in
+                                reorderDragEnded?(value)
+                            }
+                    )
+                    .accessibilityLabel(Text("groups.reorder"))
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }

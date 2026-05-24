@@ -71,6 +71,7 @@
 "groups.name.message" = "请输入分组名称。";
 "groups.delete.title" = "删除分组";
 "groups.delete.message" = "删除分组后，分组下的书籍会移入未分组。";
+"groups.reorder" = "调整排序";
 "groups.error.title" = "分组操作失败";
 
 "reader.placeholder.title" = "阅读器核心容器";
