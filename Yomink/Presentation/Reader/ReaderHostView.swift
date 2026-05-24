@@ -1970,6 +1970,15 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         )
     )
     private let searchBar = UISearchBar(frame: .zero)
+    private lazy var emptyBookmarksLabel: UILabel = {
+        let label = UILabel()
+        label.text = NSLocalizedString("reader.bookmarks.empty", comment: "")
+        label.textColor = .secondaryLabel
+        label.font = .preferredFont(forTextStyle: .body)
+        label.adjustsFontForContentSizeCategory = true
+        label.textAlignment = .center
+        return label
+    }()
     private lazy var segmentedControl = UISegmentedControl(items: [
         NSLocalizedString("reader.catalog.title", comment: ""),
         NSLocalizedString("reader.bookmarks.title", comment: "")
@@ -2058,17 +2067,22 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
             action: #selector(segmentChanged),
             for: .valueChanged
         )
+        segmentedControl.widthAnchor.constraint(greaterThanOrEqualToConstant: 188).isActive = true
         navigationItem.titleView = segmentedControl
 
         updateCatalogJumpButton()
     }
 
     private func configureSearchBar() {
-        searchHeaderView.backgroundColor = .systemGroupedBackground
+        searchHeaderView.backgroundColor = .systemBackground
 
         searchBar.delegate = self
         searchBar.placeholder = NSLocalizedString("reader.catalog.search.placeholder", comment: "")
         searchBar.searchBarStyle = .minimal
+        searchBar.backgroundColor = .systemBackground
+        searchBar.barTintColor = .systemBackground
+        searchBar.backgroundImage = UIImage()
+        searchBar.searchTextField.backgroundColor = .systemBackground
         searchBar.autocapitalizationType = .none
         searchBar.autocorrectionType = .no
         searchBar.returnKeyType = .search
@@ -2117,6 +2131,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         }
         updateModeChrome()
         tableView.reloadData()
+        updateBackgroundView()
         if mode == .chapters {
             scrollToSelectedChapter()
         }
@@ -2149,13 +2164,15 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
             if currentMode == .bookmarks {
                 tableView.reloadData()
             }
+            updateBackgroundView()
             onBookmarksChanged(bookmarks)
         }
     }
 
     private func deleteBookmark(_ bookmark: Bookmark) {
         bookmarks.removeAll { $0.id == bookmark.id }
-        tableView.reloadSections(IndexSet(integer: 0), with: .automatic)
+        tableView.reloadData()
+        updateBackgroundView()
         onBookmarksChanged(bookmarks)
         let repository = repository
         Task {
@@ -2187,6 +2204,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
     private func updateModeChrome() {
         updateSearchHeaderAvailability()
         updateCatalogJumpButton()
+        updateBackgroundView()
     }
 
     private func updateSearchHeaderAvailability() {
@@ -2227,6 +2245,12 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         searchBar.text = nil
         searchBar.resignFirstResponder()
         searchBar.setShowsCancelButton(false, animated: animated)
+    }
+
+    private func updateBackgroundView() {
+        tableView.backgroundView = currentMode == .bookmarks && bookmarks.isEmpty
+            ? emptyBookmarksLabel
+            : nil
     }
 
     private func scrollToSelectedChapter(animated: Bool = false) {
@@ -2286,6 +2310,21 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         )
     }
 
+    private func collapseSearchHeaderToCatalogTop(animated: Bool) {
+        guard currentMode == .chapters,
+              tableView.tableHeaderView === searchHeaderView
+        else {
+            return
+        }
+
+        tableView.layoutIfNeeded()
+        let hiddenOffset = -tableView.adjustedContentInset.top + Layout.searchHeaderHeight
+        tableView.setContentOffset(
+            CGPoint(x: 0, y: hiddenOffset),
+            animated: animated
+        )
+    }
+
     private func revealSearchHeader(animated: Bool) {
         guard currentMode == .chapters,
               tableView.tableHeaderView === searchHeaderView
@@ -2308,7 +2347,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         case .chapters:
             return max(displayedChapterItems.count, 1)
         case .bookmarks:
-            return max(bookmarks.count, 1)
+            return bookmarks.count
         }
     }
 
@@ -2420,7 +2459,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         searchBar.resignFirstResponder()
         if searchText.isEmpty {
             searchBar.setShowsCancelButton(false, animated: true)
-            hideSearchHeaderIfNeeded(animated: true)
+            collapseSearchHeaderToCatalogTop(animated: true)
         }
     }
 
@@ -2429,7 +2468,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         isCatalogJumpingToBottom = false
         tableView.reloadData()
         updateCatalogJumpButton()
-        scrollToSelectedChapter(animated: false)
+        collapseSearchHeaderToCatalogTop(animated: true)
     }
 
     func searchBarTextDidEndEditing(_ searchBar: UISearchBar) {
@@ -2438,7 +2477,7 @@ private final class ReaderContentsViewController: UIViewController, UITableViewD
         }
 
         searchBar.setShowsCancelButton(false, animated: true)
-        hideSearchHeaderIfNeeded(animated: true)
+        collapseSearchHeaderToCatalogTop(animated: true)
     }
 
     private func emptyCell(text: String) -> UITableViewCell {
