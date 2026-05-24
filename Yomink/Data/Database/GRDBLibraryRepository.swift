@@ -250,6 +250,71 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func fetchBookmarks(bookID: UUID) async throws -> [Bookmark] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT id, bookId, chapterId, offset, preview, createdAt
+                FROM bookmarks
+                WHERE bookId = ?
+                ORDER BY createdAt DESC
+                """,
+                arguments: [bookID.uuidString]
+            )
+            return rows.compactMap(Bookmark.init(row:))
+        }
+    }
+
+    func createBookmark(
+        bookID: UUID,
+        chapterID: UUID?,
+        offset: Int,
+        preview: String
+    ) async throws -> Bookmark {
+        let bookmark = Bookmark(
+            id: UUID(),
+            bookID: bookID,
+            chapterID: chapterID,
+            offset: max(offset, 0),
+            preview: preview,
+            createdAt: Date()
+        )
+
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO bookmarks (
+                    id, bookId, chapterId, offset, preview, createdAt
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                arguments: [
+                    bookmark.id.uuidString,
+                    bookmark.bookID.uuidString,
+                    bookmark.chapterID?.uuidString,
+                    bookmark.offset,
+                    bookmark.preview,
+                    DatabaseDateFormatter.string(from: bookmark.createdAt)
+                ]
+            )
+        }
+
+        return bookmark
+    }
+
+    func deleteBookmark(id: UUID) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM bookmarks
+                WHERE id = ?
+                """,
+                arguments: [id.uuidString]
+            )
+        }
+    }
+
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress? {
         try await database.writer.read { db in
             guard let row = try Row.fetchOne(
@@ -670,6 +735,32 @@ private extension ReadingProgress {
             chapterID: chapterIDString.flatMap(UUID.init(uuidString:)),
             chapterOffset: row["chapterOffset"],
             globalProgress: row["globalProgress"]
+        )
+    }
+}
+
+private extension Bookmark {
+    init?(row: Row) {
+        let idString: String = row["id"]
+        let bookIDString: String = row["bookId"]
+        let chapterIDString: String? = row["chapterId"]
+        let createdAtString: String = row["createdAt"]
+
+        guard
+            let id = UUID(uuidString: idString),
+            let bookID = UUID(uuidString: bookIDString),
+            let createdAt = DatabaseDateFormatter.date(from: createdAtString)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            bookID: bookID,
+            chapterID: chapterIDString.flatMap(UUID.init(uuidString:)),
+            offset: row["offset"],
+            preview: row["preview"],
+            createdAt: createdAt
         )
     }
 }

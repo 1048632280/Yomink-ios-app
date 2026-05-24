@@ -79,6 +79,8 @@
 "reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@";
 "reader.loading" = "正在打开书籍...";
 "reader.close" = "返回书架";
+"reader.bookmark.add" = "添加书签";
+"reader.bookmark.remove" = "取消书签";
 "reader.previousPage" = "上一页";
 "reader.nextPage" = "下一页";
 "reader.previousChapter" = "上一章";
@@ -86,9 +88,17 @@
 "reader.progress.slider" = "阅读进度";
 "reader.catalog" = "目录";
 "reader.settings" = "设置";
+"reader.contents.title" = "目录与书签";
 "reader.catalog.title" = "目录";
 "reader.catalog.empty" = "暂无目录";
 "reader.catalog.chapterProgress" = "全书 %@";
+"reader.catalog.jumpTop" = "顶部";
+"reader.catalog.jumpBottom" = "底部";
+"reader.bookmarks.title" = "书签";
+"reader.bookmarks.empty" = "暂无书签";
+"reader.bookmark.preview.empty" = "当前位置";
+"reader.bookmark.unknownChapter" = "未知章节";
+"reader.bookmark.subtitle" = "%@ · %@";
 "reader.settings.title" = "阅读设置";
 "reader.settings.pageMode" = "翻页";
 "reader.settings.pageMode.paged" = "分页";

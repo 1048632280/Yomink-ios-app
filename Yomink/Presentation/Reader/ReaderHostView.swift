@@ -47,6 +47,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let topBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     private let titleLabel = UILabel()
+    private let bookmarkButton = UIButton(type: .system)
     private let statusLabel = UILabel()
     private let progressLabel = UILabel()
     private let progressSlider = UISlider()
@@ -72,6 +73,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private var book: Book
     private var chapters: [Chapter] = []
+    private var bookmarks: [Bookmark] = []
     private var currentChapterIndex = 0
     private var currentChapterText = ""
     private var currentPaginator: ChapterPaginator?
@@ -84,6 +86,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var settingsSaveTask: Task<Void, Never>?
     private var settingsRenderTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
+    private var bookmarkTask: Task<Void, Never>?
     private var saveGeneration = 0
     private var settingsSaveGeneration = 0
     private var settingsRenderGeneration = 0
@@ -93,6 +96,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var readerSettings = ReaderSettings.default
     private var prefetchedChapter: PrefetchedChapter?
     private var prefetchingChapterID: UUID?
+    private var currentBookmark: Bookmark?
     private var isMenuVisible = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
@@ -123,6 +127,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         settingsSaveTask?.cancel()
         settingsRenderTask?.cancel()
         prefetchTask?.cancel()
+        bookmarkTask?.cancel()
     }
 
     override func viewDidLoad() {
@@ -243,12 +248,22 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         titleLabel.text = book.title
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        let spacer = UIView()
-        spacer.translatesAutoresizingMaskIntoConstraints = false
+        bookmarkButton.setImage(UIImage(systemName: "bookmark"), for: .normal)
+        bookmarkButton.accessibilityLabel = NSLocalizedString("reader.bookmark.add", comment: "")
+        bookmarkButton.addTarget(self, action: #selector(bookmarkButtonTapped), for: .touchUpInside)
+        bookmarkButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let actionStack = UIStackView(arrangedSubviews: [
+            bookmarkButton
+        ])
+        actionStack.axis = .horizontal
+        actionStack.alignment = .center
+        actionStack.spacing = 4
+        actionStack.translatesAutoresizingMaskIntoConstraints = false
 
         topBar.contentView.addSubview(closeButton)
         topBar.contentView.addSubview(titleLabel)
-        topBar.contentView.addSubview(spacer)
+        topBar.contentView.addSubview(actionStack)
 
         NSLayoutConstraint.activate([
             topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
@@ -270,9 +285,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
             titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 8),
 
-            spacer.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
-            spacer.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            spacer.widthAnchor.constraint(equalTo: closeButton.widthAnchor)
+            actionStack.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
+            actionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            actionStack.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+
+            bookmarkButton.widthAnchor.constraint(equalToConstant: 44),
+            bookmarkButton.heightAnchor.constraint(equalToConstant: 36)
         ])
     }
 
@@ -446,15 +464,18 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         paginateGeneration += 1
         prefetchGeneration += 1
         chapters = []
+        bookmarks = []
         currentChapterText = ""
         currentPaginator = nil
         prefetchedChapter = nil
         prefetchingChapterID = nil
+        currentBookmark = nil
         currentChapterIndex = 0
         currentPageIndex = 0
         currentProgress = nil
         pendingAnchorByteOffset = nil
         titleLabel.text = book.title
+        updateBookmarkButton()
         textView.text = nil
         showLoading(true, message: NSLocalizedString("reader.loading", comment: ""))
 
@@ -465,11 +486,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         loadTask = Task { [weak self] in
             do {
                 async let fetchedChapters = repository.fetchChapters(bookID: book.id)
+                async let fetchedBookmarks = repository.fetchBookmarks(bookID: book.id)
                 async let fetchedProgress = repository.fetchReadingProgress(bookID: book.id)
                 async let fetchedSettings = repository.fetchReaderSettings()
                 async let markOpened: Void = repository.markBookOpened(id: book.id, at: Date())
 
                 let chapters = try await fetchedChapters
+                let bookmarks = try await fetchedBookmarks
                 let progress = try await fetchedProgress
                 let settings = try await fetchedSettings
                 try? await markOpened
@@ -492,6 +515,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
                 await self?.applyLoadedContent(
                     chapters: chapters,
+                    bookmarks: bookmarks,
                     chapterIndex: selected.index,
                     text: text,
                     startOffset: selected.offset,
@@ -562,6 +586,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private func applyLoadedContent(
         chapters: [Chapter],
+        bookmarks: [Bookmark]? = nil,
         chapterIndex: Int,
         text: String,
         startOffset: Int,
@@ -569,6 +594,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         saveAfterRender: Bool
     ) {
         self.chapters = chapters
+        if let bookmarks {
+            self.bookmarks = bookmarks
+        }
         if let settings = settings {
             readerSettings = settings.normalized
         }
@@ -578,6 +606,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentPageIndex = 0
         pendingAnchorByteOffset = startOffset
         setProvisionalProgress(chapterOffset: startOffset)
+        refreshBookmarkState()
         if prefetchedChapter?.chapter.id != chapters[chapterIndex].id {
             prefetchedChapter = nil
             prefetchingChapterID = nil
@@ -641,6 +670,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentPageIndex = 0
         pendingAnchorByteOffset = startOffset
         setProvisionalProgress(chapterOffset: startOffset)
+        refreshBookmarkState()
         lastPaginationSize = textView.bounds.size
         applyTheme()
         textView.transform = .identity
@@ -1085,6 +1115,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         if !isTrackingProgressSlider {
             progressSlider.value = Float(globalProgress)
         }
+
+        refreshBookmarkState()
     }
 
     private func progressText(
@@ -1261,6 +1293,51 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
     }
 
+    private func refreshBookmarkState() {
+        guard let progress = currentProgress else {
+            currentBookmark = nil
+            updateBookmarkButton()
+            return
+        }
+
+        currentBookmark = matchingBookmark(
+            chapterID: progress.chapterID,
+            offset: Int(progress.chapterOffset)
+        )
+        updateBookmarkButton()
+    }
+
+    private func matchingBookmark(
+        chapterID: UUID?,
+        offset: Int
+    ) -> Bookmark? {
+        bookmarks
+            .filter { bookmark in
+                bookmark.chapterID == chapterID
+                    && abs(bookmark.offset - offset) <= Self.bookmarkMatchTolerance
+            }
+            .min { lhs, rhs in
+                let lhsDistance = abs(lhs.offset - offset)
+                let rhsDistance = abs(rhs.offset - offset)
+                if lhsDistance == rhsDistance {
+                    return lhs.createdAt > rhs.createdAt
+                }
+                return lhsDistance < rhsDistance
+            }
+    }
+
+    private func updateBookmarkButton() {
+        let isBookmarked = currentBookmark != nil
+        bookmarkButton.setImage(
+            UIImage(systemName: isBookmarked ? "bookmark.fill" : "bookmark"),
+            for: .normal
+        )
+        bookmarkButton.accessibilityLabel = NSLocalizedString(
+            isBookmarked ? "reader.bookmark.remove" : "reader.bookmark.add",
+            comment: ""
+        )
+    }
+
     private func applyTheme() {
         overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         view.backgroundColor = readerSettings.theme.backgroundColor
@@ -1413,21 +1490,119 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func catalogButtonTapped() {
-        let listViewController = ReaderChapterListViewController(
+        saveProgressImmediately()
+        let listViewController = ReaderContentsViewController(
+            bookID: book.id,
+            repository: repository,
             chapters: chapters,
-            selectedIndex: currentChapterIndex
-        ) { [weak self] index in
+            selectedChapterIndex: currentChapterIndex,
+            onBookmarksChanged: { [weak self] bookmarks in
+                self?.bookmarks = bookmarks
+                self?.refreshBookmarkState()
+            }
+        ) { [weak self] target in
             guard let self else {
                 return
             }
             self.dismiss(animated: true) {
-                self.loadChapter(at: index, startOffset: 0, saveAfterRender: true)
+                self.jumpTo(target)
             }
         }
         let navigationController = UINavigationController(rootViewController: listViewController)
         navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
-        navigationController.modalPresentationStyle = .pageSheet
+        navigationController.modalPresentationStyle = .fullScreen
         present(navigationController, animated: true)
+    }
+
+    @objc private func bookmarkButtonTapped() {
+        guard let progress = currentProgress,
+              chapters.indices.contains(currentChapterIndex)
+        else {
+            return
+        }
+
+        if let currentBookmark {
+            bookmarkTask?.cancel()
+            self.currentBookmark = nil
+            bookmarks.removeAll { $0.id == currentBookmark.id }
+            updateBookmarkButton()
+            let repository = repository
+            bookmarkTask = Task {
+                try? await repository.deleteBookmark(id: currentBookmark.id)
+            }
+            return
+        }
+
+        let chapter = chapters[currentChapterIndex]
+        let offset = Int(progress.chapterOffset)
+        let preview = bookmarkPreview(near: offset)
+        let repository = repository
+        let bookID = book.id
+        bookmarkButton.isEnabled = false
+        bookmarkTask?.cancel()
+        bookmarkTask = Task { [weak self] in
+            let bookmark = try? await repository.createBookmark(
+                bookID: bookID,
+                chapterID: chapter.id,
+                offset: offset,
+                preview: preview
+            )
+            await MainActor.run {
+                guard let self else {
+                    return
+                }
+                self.bookmarkButton.isEnabled = true
+                self.currentBookmark = bookmark
+                if let bookmark {
+                    self.bookmarks.removeAll { $0.id == bookmark.id }
+                    self.bookmarks.insert(bookmark, at: 0)
+                }
+                self.updateBookmarkButton()
+            }
+        }
+    }
+
+    private func jumpTo(_ target: ReaderContentTarget) {
+        guard let index = chapters.firstIndex(where: { $0.id == target.chapterID }) else {
+            return
+        }
+        loadChapter(
+            at: index,
+            startOffset: target.offset,
+            saveAfterRender: true
+        )
+    }
+
+    private func bookmarkPreview(near offset: Int) -> String {
+        guard !currentChapterText.isEmpty else {
+            return NSLocalizedString("reader.bookmark.preview.empty", comment: "")
+        }
+
+        var currentOffset = 0
+        var preview = ""
+        var isCollecting = false
+        for character in currentChapterText {
+            let characterByteLength = String(character).utf8.count
+            if !isCollecting,
+               currentOffset + characterByteLength >= offset {
+                isCollecting = true
+            }
+            if isCollecting {
+                preview.append(character)
+                if preview.count >= Self.bookmarkPreviewCharacterLimit {
+                    break
+                }
+            }
+            currentOffset += characterByteLength
+        }
+
+        let normalizedPreview = preview
+            .replacingOccurrences(of: "\r", with: " ")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalizedPreview.isEmpty
+            ? NSLocalizedString("reader.bookmark.preview.empty", comment: "")
+            : normalizedPreview
     }
 
     @objc private func settingsButtonTapped() {
@@ -1596,6 +1771,11 @@ private enum ReaderLoadError: LocalizedError {
     }
 }
 
+private extension ReaderViewController {
+    static let bookmarkMatchTolerance = 8
+    static let bookmarkPreviewCharacterLimit = 36
+}
+
 private struct PrefetchedChapter: @unchecked Sendable {
     let index: Int
     let chapter: Chapter
@@ -1603,6 +1783,11 @@ private struct PrefetchedChapter: @unchecked Sendable {
     let paginator: ChapterPaginator?
     let settings: ReaderSettings
     let fittingSize: CGSize
+}
+
+private struct ReaderContentTarget {
+    let chapterID: UUID
+    let offset: Int
 }
 
 private extension NumberFormatter {
@@ -1687,21 +1872,43 @@ private extension ReaderSettings.Theme {
     }
 }
 
-private final class ReaderChapterListViewController: UITableViewController {
+private final class ReaderContentsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    private enum Mode: Int, CaseIterable {
+        case chapters
+        case bookmarks
+    }
+
+    private let bookID: UUID
+    private let repository: any LibraryRepository
     private let chapters: [Chapter]
-    private let selectedIndex: Int
-    private let onSelect: (Int) -> Void
+    private let selectedChapterIndex: Int
+    private let onBookmarksChanged: ([Bookmark]) -> Void
+    private let onSelect: (ReaderContentTarget) -> Void
+    private let tableView = UITableView(frame: .zero, style: .plain)
+    private lazy var segmentedControl = UISegmentedControl(items: [
+        NSLocalizedString("reader.catalog.title", comment: ""),
+        NSLocalizedString("reader.bookmarks.title", comment: "")
+    ])
+    private var bookmarks: [Bookmark] = []
+    private var currentMode: Mode = .chapters
+    private var isCatalogJumpingToBottom = false
 
     init(
+        bookID: UUID,
+        repository: any LibraryRepository,
         chapters: [Chapter],
-        selectedIndex: Int,
-        onSelect: @escaping (Int) -> Void
+        selectedChapterIndex: Int,
+        onBookmarksChanged: @escaping ([Bookmark]) -> Void,
+        onSelect: @escaping (ReaderContentTarget) -> Void
     ) {
+        self.bookID = bookID
+        self.repository = repository
         self.chapters = chapters
-        self.selectedIndex = selectedIndex
+        self.selectedChapterIndex = selectedChapterIndex
+        self.onBookmarksChanged = onBookmarksChanged
         self.onSelect = onSelect
-        super.init(style: .plain)
-        title = NSLocalizedString("reader.catalog.title", comment: "")
+        super.init(nibName: nil, bundle: nil)
+        title = NSLocalizedString("reader.contents.title", comment: "")
     }
 
     @available(*, unavailable)
@@ -1712,31 +1919,231 @@ private final class ReaderChapterListViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
 
+        view.backgroundColor = .systemGroupedBackground
+        configureNavigationBar()
+
+        tableView.backgroundColor = .systemGroupedBackground
+        tableView.separatorStyle = .singleLine
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        reloadBookmarks()
+    }
+
+    private func configureNavigationBar() {
         navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.close", comment: ""),
+            title: NSLocalizedString("common.back", comment: ""),
             style: .plain,
             target: self,
             action: #selector(closeButtonTapped)
         )
 
-        if chapters.isEmpty {
-            let emptyLabel = UILabel()
-            emptyLabel.text = NSLocalizedString("reader.catalog.empty", comment: "")
-            emptyLabel.textAlignment = .center
-            emptyLabel.textColor = .secondaryLabel
-            emptyLabel.numberOfLines = 0
-            tableView.backgroundView = emptyLabel
+        segmentedControl.selectedSegmentIndex = currentMode.rawValue
+        segmentedControl.addTarget(
+            self,
+            action: #selector(segmentChanged),
+            for: .valueChanged
+        )
+        navigationItem.titleView = segmentedControl
+
+        updateCatalogJumpButton()
+    }
+
+    @objc private func closeButtonTapped() {
+        dismiss(animated: true)
+    }
+
+    @objc private func segmentChanged() {
+        guard let mode = Mode(rawValue: segmentedControl.selectedSegmentIndex) else {
+            return
+        }
+
+        currentMode = mode
+        tableView.reloadData()
+        updateCatalogJumpButton()
+        if mode == .chapters {
+            scrollToSelectedChapter()
         }
     }
 
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        chapters.count
+    @objc private func catalogJumpButtonTapped() {
+        guard currentMode == .chapters,
+              chapters.isEmpty == false
+        else {
+            return
+        }
+
+        isCatalogJumpingToBottom.toggle()
+        let row = isCatalogJumpingToBottom ? chapters.count - 1 : 0
+        tableView.scrollToRow(
+            at: IndexPath(row: row, section: 0),
+            at: isCatalogJumpingToBottom ? .bottom : .top,
+            animated: true
+        )
+        updateCatalogJumpButton()
     }
 
-    override func tableView(
+    @MainActor
+    private func reloadBookmarks() {
+        Task {
+            do {
+                bookmarks = try await repository.fetchBookmarks(bookID: bookID)
+            } catch {
+                bookmarks = []
+            }
+            tableView.reloadData()
+            onBookmarksChanged(bookmarks)
+        }
+    }
+
+    private func deleteBookmark(_ bookmark: Bookmark) {
+        bookmarks.removeAll { $0.id == bookmark.id }
+        tableView.reloadSections(IndexSet(integer: 0), with: .automatic)
+        onBookmarksChanged(bookmarks)
+        let repository = repository
+        Task {
+            try? await repository.deleteBookmark(id: bookmark.id)
+        }
+    }
+
+    private func updateCatalogJumpButton() {
+        guard currentMode == .chapters,
+              chapters.isEmpty == false
+        else {
+            navigationItem.rightBarButtonItem = nil
+            return
+        }
+
+        navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString(
+                isCatalogJumpingToBottom
+                    ? "reader.catalog.jumpTop"
+                    : "reader.catalog.jumpBottom",
+                comment: ""
+            ),
+            style: .plain,
+            target: self,
+            action: #selector(catalogJumpButtonTapped)
+        )
+    }
+
+    private func scrollToSelectedChapter() {
+        guard chapters.indices.contains(selectedChapterIndex) else {
+            return
+        }
+
+        DispatchQueue.main.async { [weak self] in
+            self?.tableView.scrollToRow(
+                at: IndexPath(row: self?.selectedChapterIndex ?? 0, section: 0),
+                at: .middle,
+                animated: false
+            )
+        }
+    }
+
+    func numberOfSections(in tableView: UITableView) -> Int {
+        1
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        switch currentMode {
+        case .chapters:
+            return max(chapters.count, 1)
+        case .bookmarks:
+            return max(bookmarks.count, 1)
+        }
+    }
+
+    func tableView(
         _ tableView: UITableView,
         cellForRowAt indexPath: IndexPath
     ) -> UITableViewCell {
+        switch currentMode {
+        case .chapters:
+            guard chapters.isEmpty == false else {
+                return emptyCell(
+                    text: NSLocalizedString("reader.catalog.empty", comment: "")
+                )
+            }
+            return chapterCell(for: indexPath)
+        case .bookmarks:
+            guard bookmarks.isEmpty == false else {
+                return emptyCell(
+                    text: NSLocalizedString("reader.bookmarks.empty", comment: "")
+                )
+            }
+            return bookmarkCell(for: indexPath)
+        }
+    }
+
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        tableView.deselectRow(at: indexPath, animated: true)
+
+        switch currentMode {
+        case .chapters:
+            guard chapters.indices.contains(indexPath.row) else {
+                return
+            }
+            let chapter = chapters[indexPath.row]
+            onSelect(ReaderContentTarget(chapterID: chapter.id, offset: 0))
+        case .bookmarks:
+            guard bookmarks.indices.contains(indexPath.row) else {
+                return
+            }
+            let bookmark = bookmarks[indexPath.row]
+            guard let chapterID = bookmark.chapterID else {
+                return
+            }
+            onSelect(ReaderContentTarget(chapterID: chapterID, offset: bookmark.offset))
+        }
+    }
+
+    func tableView(
+        _ tableView: UITableView,
+        trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard currentMode == .bookmarks,
+              bookmarks.indices.contains(indexPath.row)
+        else {
+            return nil
+        }
+
+        let action = UIContextualAction(
+            style: .destructive,
+            title: NSLocalizedString("library.delete", comment: "")
+        ) { [weak self] _, _, completion in
+            guard let self else {
+                completion(false)
+                return
+            }
+
+            let bookmark = self.bookmarks[indexPath.row]
+            self.deleteBookmark(bookmark)
+            completion(true)
+        }
+        return UISwipeActionsConfiguration(actions: [action])
+    }
+
+    private func emptyCell(text: String) -> UITableViewCell {
+        let reuseIdentifier = "empty"
+        let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
+            ?? UITableViewCell(style: .default, reuseIdentifier: reuseIdentifier)
+        cell.textLabel?.text = text
+        cell.textLabel?.textColor = .secondaryLabel
+        cell.selectionStyle = .none
+        cell.accessoryType = .none
+        return cell
+    }
+
+    private func chapterCell(for indexPath: IndexPath) -> UITableViewCell {
         let reuseIdentifier = "chapter"
         let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
             ?? UITableViewCell(style: .subtitle, reuseIdentifier: reuseIdentifier)
@@ -1748,23 +2155,40 @@ private final class ReaderChapterListViewController: UITableViewController {
                 from: NSNumber(value: chapterStartProgress(for: chapter))
             ) ?? "0%"
         )
-        cell.accessoryType = indexPath.row == selectedIndex ? .checkmark : .none
+        cell.accessoryType = indexPath.row == selectedChapterIndex ? .checkmark : .none
+        cell.selectionStyle = .default
         return cell
     }
 
-    override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-        tableView.deselectRow(at: indexPath, animated: true)
-        onSelect(indexPath.row)
-    }
-
-    @objc private func closeButtonTapped() {
-        dismiss(animated: true)
+    private func bookmarkCell(for indexPath: IndexPath) -> UITableViewCell {
+        let reuseIdentifier = "bookmark"
+        let cell = tableView.dequeueReusableCell(withIdentifier: reuseIdentifier)
+            ?? UITableViewCell(style: .subtitle, reuseIdentifier: reuseIdentifier)
+        let bookmark = bookmarks[indexPath.row]
+        let chapterTitle = bookmark.chapterID
+            .flatMap { chapterID in chapters.first { $0.id == chapterID }?.title }
+            ?? NSLocalizedString("reader.bookmark.unknownChapter", comment: "")
+        cell.textLabel?.text = bookmark.preview
+        cell.detailTextLabel?.text = String(
+            format: NSLocalizedString("reader.bookmark.subtitle", comment: ""),
+            chapterTitle,
+            Self.dateFormatter.localizedString(for: bookmark.createdAt, relativeTo: Date())
+        )
+        cell.accessoryType = .none
+        cell.selectionStyle = .default
+        return cell
     }
 
     private func chapterStartProgress(for chapter: Chapter) -> Double {
         let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
         return min(max(Double(chapter.startOffset) / Double(totalByteLength), 0), 1)
     }
+
+    private static let dateFormatter: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
 }
 
 private final class ReaderSettingsViewController: UIViewController {

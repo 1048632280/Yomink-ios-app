@@ -13,6 +13,14 @@ protocol LibraryRepository: Sendable {
     func reorderGroups(ids: [UUID]) async throws
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws
     func fetchChapters(bookID: UUID) async throws -> [Chapter]
+    func fetchBookmarks(bookID: UUID) async throws -> [Bookmark]
+    func createBookmark(
+        bookID: UUID,
+        chapterID: UUID?,
+        offset: Int,
+        preview: String
+    ) async throws -> Bookmark
+    func deleteBookmark(id: UUID) async throws
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress?
     func saveReadingProgress(_ progress: ReadingProgress) async throws
     func fetchReadingHistory(limit: Int) async throws -> [ReadingHistoryItem]

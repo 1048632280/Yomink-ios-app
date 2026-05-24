@@ -26,6 +26,15 @@ struct Chapter: Identifiable, Equatable, Sendable {
     }
 }
 
+struct Bookmark: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var bookID: UUID
+    var chapterID: UUID?
+    var offset: Int
+    var preview: String
+    var createdAt: Date
+}
+
 struct ReaderSettings: Codable, Equatable, Sendable {
     enum PageMode: String, Codable, CaseIterable, Sendable {
         case paged

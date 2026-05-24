@@ -81,6 +81,28 @@ struct PreviewLibraryRepository: LibraryRepository {
         ]
     }
 
+    func fetchBookmarks(bookID: UUID) async throws -> [Bookmark] {
+        []
+    }
+
+    func createBookmark(
+        bookID: UUID,
+        chapterID: UUID?,
+        offset: Int,
+        preview: String
+    ) async throws -> Bookmark {
+        Bookmark(
+            id: UUID(),
+            bookID: bookID,
+            chapterID: chapterID,
+            offset: offset,
+            preview: preview,
+            createdAt: Date()
+        )
+    }
+
+    func deleteBookmark(id: UUID) async throws {}
+
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress? {
         ReadingProgress(
             bookID: bookID,
