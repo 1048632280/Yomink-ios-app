@@ -1979,11 +1979,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             guard !autoReadPanel.frame.contains(location) else {
                 return
             }
-            let centralHorizontalRange = collectionView.bounds.width * 0.25...collectionView.bounds.width * 0.75
-            let centralVerticalRange = collectionView.bounds.height * 0.20...collectionView.bounds.height * 0.80
-            let local = gesture.location(in: collectionView)
-            guard centralHorizontalRange.contains(local.x),
-                  centralVerticalRange.contains(local.y) else {
+            let centralHorizontalRange = view.bounds.width * 0.25...view.bounds.width * 0.75
+            let centralVerticalRange = view.bounds.height * 0.20...view.bounds.height * 0.80
+            guard centralHorizontalRange.contains(location.x),
+                  centralVerticalRange.contains(location.y) else {
                 return
             }
             setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
@@ -1996,19 +1995,21 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             setSettingsPanelVisible(false, animated: true)
             return
         }
-        let local = gesture.location(in: collectionView)
-        switch tapAction(at: local) {
+
+        if isMenuVisible {
+            guard !topBar.frame.contains(location),
+                  !bottomBar.frame.contains(location),
+                  !floatingActionStack.frame.contains(location) else {
+                return
+            }
+        }
+
+        switch tapAction(at: location) {
         case .menu:
             setMenuVisible(!isMenuVisible, animated: true)
         case .previousPage:
-            guard !isMenuVisible else {
-                return
-            }
             moveToPreviousPage()
         case .nextPage:
-            guard !isMenuVisible else {
-                return
-            }
             moveToNextPage()
         case .none:
             break
@@ -2016,14 +2017,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func tapAction(at location: CGPoint) -> ReaderSettings.TouchAreaAction {
-        let width = max(collectionView.bounds.width, 1)
-        let height = max(collectionView.bounds.height, 1)
-        let column = min(2, max(0, Int((location.x / width) * 3)))
-        let row = min(2, max(0, Int((location.y / height) * 3)))
+        let width = max(view.bounds.width, 1)
+        let height = max(view.bounds.height, 1)
+        let column = min(max(Int(location.x / (width / 3)), 0), 2)
+        let row = min(max(Int(location.y / (height / 3)), 0), 2)
         let index = row * 3 + column
         let map = readerSettings.normalized.touchAreaMap
         guard map.indices.contains(index) else {
-            return .menu
+            return ReaderSettings.default.touchAreaMap[index]
         }
         return map[index]
     }
