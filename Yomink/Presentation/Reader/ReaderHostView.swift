@@ -72,6 +72,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let autoReadSpeedSlider = UISlider()
     private let autoReadExitButton = UIButton(type: .system)
     private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let settingsPanelScrollView = UIScrollView()
     private let settingsPanelStack = UIStackView()
     private let settingsFontDecreaseButton = UIButton(type: .system)
     private let settingsFontValueButton = UIButton(type: .system)
@@ -103,11 +104,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private enum Layout {
-        static let topBarContentHeight: CGFloat = 44
+        static let topBarContentHeight: CGFloat = 45
         static let topBarButtonBottomInset: CGFloat = 5
+        static let bottomBarTopInset: CGFloat = 0
         static let bottomBarSafeAreaInset: CGFloat = 2
-        static let progressRowHeight: CGFloat = 40
-        static let bottomActionRowHeight: CGFloat = 48
+        static let progressRowHeight: CGFloat = 42
+        static let bottomActionRowHeight: CGFloat = 46
         static let chapterButtonWidth: CGFloat = 74
         static let progressSliderHorizontalInset: CGFloat = 18
         static let floatingButtonSize: CGFloat = 42
@@ -126,6 +128,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let autoReadPanelHorizontalInset: CGFloat = 22
         static let autoReadPanelTopInset: CGFloat = 28
         static let autoReadPanelBottomInset: CGFloat = 18
+        static let autoReadIconSize: CGFloat = 24
         static let autoReadExitButtonHeight: CGFloat = 42
         static let maximumResidentPages = 14
     }
@@ -134,10 +137,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let progressRowBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
         static let separatorColor = UIColor(red: 0.125, green: 0.125, blue: 0.125, alpha: 1)
+        static let separatorEdgeColor = UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
         static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
         static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
+        static let progressThumbColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
         static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
         static let settingsControlSelectedColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
         static let floatingButtonColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
@@ -182,6 +187,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var lastAutoReadTimestamp: CFTimeInterval?
     private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
     private var lastViewportSize = CGSize.zero
+    private weak var settingsPageModeSection: UIView?
+    private weak var settingsLayoutSection: UIView?
+    private weak var settingsMoreSection: UIView?
 
     private var usesVerticalScrolling: Bool {
         isAutoReading || readerSettings.pageMode == .scroll
@@ -342,6 +350,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func configureTopBar() {
         topBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(topBar)
+        addMenuOverlay(to: topBar)
 
         let closeButton = UIButton(type: .system)
         closeButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
@@ -416,23 +425,34 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func configureBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomBar)
+        addMenuOverlay(to: bottomBar)
 
         previousChapterButton.setTitle(NSLocalizedString("reader.previousChapter", comment: ""), for: .normal)
         previousChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        previousChapterButton.tintColor = MenuStyle.secondaryTextColor
         previousChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        previousChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
+        previousChapterButton.accessibilityLabel = NSLocalizedString("reader.previousChapter", comment: "")
         previousChapterButton.addTarget(self, action: #selector(previousChapterButtonTapped), for: .touchUpInside)
         previousChapterButton.translatesAutoresizingMaskIntoConstraints = false
 
         nextChapterButton.setTitle(NSLocalizedString("reader.nextChapter", comment: ""), for: .normal)
         nextChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        nextChapterButton.tintColor = MenuStyle.secondaryTextColor
         nextChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        nextChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
+        nextChapterButton.accessibilityLabel = NSLocalizedString("reader.nextChapter", comment: "")
         nextChapterButton.addTarget(self, action: #selector(nextChapterButtonTapped), for: .touchUpInside)
         nextChapterButton.translatesAutoresizingMaskIntoConstraints = false
 
         progressSlider.minimumValue = 0
         progressSlider.maximumValue = 1
+        progressSlider.value = 0
         progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
         progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
+        progressSlider.thumbTintColor = MenuStyle.progressThumbColor
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .normal)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 17), for: .highlighted)
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchBegan), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
@@ -443,83 +463,112 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         )
         progressSlider.translatesAutoresizingMaskIntoConstraints = false
 
-        progressLabel.font = .preferredFont(forTextStyle: .caption1)
+        progressLabel.font = .preferredFont(forTextStyle: .footnote)
         progressLabel.adjustsFontForContentSizeCategory = true
-        progressLabel.textColor = MenuStyle.secondaryTextColor
         progressLabel.textAlignment = .center
+        progressLabel.textColor = MenuStyle.secondaryTextColor
         progressLabel.numberOfLines = 2
         progressLabel.translatesAutoresizingMaskIntoConstraints = false
 
-        catalogButton.setTitle(NSLocalizedString("reader.catalog", comment: ""), for: .normal)
         catalogButton.setImage(UIImage(systemName: "list.bullet"), for: .normal)
-        catalogButton.tintColor = MenuStyle.secondaryTextColor
+        catalogButton.setTitle(NSLocalizedString("reader.catalog", comment: ""), for: .normal)
+        configureBottomActionButton(catalogButton)
+        catalogButton.accessibilityLabel = NSLocalizedString("reader.catalog", comment: "")
         catalogButton.addTarget(self, action: #selector(catalogButtonTapped), for: .touchUpInside)
 
+        settingsButton.setImage(UIImage(systemName: "textformat"), for: .normal)
         settingsButton.setTitle(NSLocalizedString("reader.settings", comment: ""), for: .normal)
-        settingsButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
-        settingsButton.tintColor = MenuStyle.secondaryTextColor
+        configureBottomActionButton(settingsButton)
+        settingsButton.accessibilityLabel = NSLocalizedString("reader.settings", comment: "")
         settingsButton.addTarget(self, action: #selector(settingsButtonTapped), for: .touchUpInside)
 
-        [catalogButton, settingsButton].forEach { button in
-            button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
-            button.semanticContentAttribute = .forceLeftToRight
-            button.translatesAutoresizingMaskIntoConstraints = false
-        }
-
+        let leftProgressSeparator = makeVerticalMenuSeparator()
+        let rightProgressSeparator = makeVerticalMenuSeparator()
+        let actionRowTopSeparator = makeHorizontalMenuSeparator()
+        let progressSliderContainer = UIView()
+        progressSliderContainer.translatesAutoresizingMaskIntoConstraints = false
+        progressSliderContainer.addSubview(progressSlider)
+        let progressRowContainer = UIView()
+        progressRowContainer.backgroundColor = MenuStyle.progressRowBackgroundColor
+        progressRowContainer.translatesAutoresizingMaskIntoConstraints = false
         let progressRow = UIStackView(arrangedSubviews: [
             previousChapterButton,
-            progressSlider,
+            leftProgressSeparator,
+            progressSliderContainer,
+            rightProgressSeparator,
             nextChapterButton
         ])
         progressRow.axis = .horizontal
-        progressRow.alignment = .center
-        progressRow.spacing = 10
+        progressRow.alignment = .fill
+        progressRow.spacing = 0
         progressRow.translatesAutoresizingMaskIntoConstraints = false
 
         let actionRow = UIStackView(arrangedSubviews: [catalogButton, settingsButton])
         actionRow.axis = .horizontal
+        actionRow.alignment = .fill
         actionRow.distribution = .fillEqually
-        actionRow.alignment = .center
+        actionRow.spacing = 0
+        actionRow.backgroundColor = MenuStyle.barBackgroundColor
         actionRow.translatesAutoresizingMaskIntoConstraints = false
 
-        bottomBar.contentView.addSubview(progressLabel)
-        bottomBar.contentView.addSubview(progressRow)
+        bottomBar.contentView.addSubview(progressRowContainer)
+        progressRowContainer.addSubview(progressRow)
+        bottomBar.contentView.addSubview(actionRowTopSeparator)
         bottomBar.contentView.addSubview(actionRow)
 
         NSLayoutConstraint.activate([
             bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomBar.topAnchor.constraint(
-                equalTo: progressLabel.topAnchor,
-                constant: -8
-            ),
-            bottomBar.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: Layout.bottomBarSafeAreaInset
-            ),
+            bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            progressLabel.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 20),
-            progressLabel.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -20),
+            progressRowContainer.topAnchor.constraint(
+                equalTo: bottomBar.topAnchor,
+                constant: Layout.bottomBarTopInset
+            ),
+            progressRowContainer.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            progressRowContainer.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+            progressRowContainer.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
 
-            progressRow.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 4),
-            progressRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: Layout.progressSliderHorizontalInset),
-            progressRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -Layout.progressSliderHorizontalInset),
+            progressRow.leadingAnchor.constraint(equalTo: progressRowContainer.leadingAnchor),
+            progressRow.trailingAnchor.constraint(equalTo: progressRowContainer.trailingAnchor),
+            progressRow.topAnchor.constraint(equalTo: progressRowContainer.topAnchor),
+            progressRow.bottomAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
             progressRow.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
 
-            actionRow.topAnchor.constraint(equalTo: progressRow.bottomAnchor),
-            actionRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor),
-            actionRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor),
-            actionRow.bottomAnchor.constraint(equalTo: bottomBar.contentView.bottomAnchor),
-            actionRow.heightAnchor.constraint(equalToConstant: Layout.bottomActionRowHeight),
-
             previousChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
-            nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth)
+            leftProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
+            progressSlider.leadingAnchor.constraint(
+                equalTo: progressSliderContainer.leadingAnchor,
+                constant: Layout.progressSliderHorizontalInset
+            ),
+            progressSlider.trailingAnchor.constraint(
+                equalTo: progressSliderContainer.trailingAnchor,
+                constant: -Layout.progressSliderHorizontalInset
+            ),
+            progressSlider.centerYAnchor.constraint(equalTo: progressSliderContainer.centerYAnchor),
+            rightProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
+            nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
+
+            actionRowTopSeparator.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            actionRowTopSeparator.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+            actionRowTopSeparator.topAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
+            actionRowTopSeparator.heightAnchor.constraint(equalToConstant: Layout.menuSeparatorThickness),
+
+            actionRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            actionRow.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+            actionRow.topAnchor.constraint(equalTo: actionRowTopSeparator.bottomAnchor),
+            actionRow.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.bottomBarSafeAreaInset
+            ),
+            actionRow.heightAnchor.constraint(equalToConstant: Layout.bottomActionRowHeight)
         ])
     }
 
     private func configureFloatingActionButtons() {
         floatingActionStack.axis = .vertical
-        floatingActionStack.alignment = .fill
+        floatingActionStack.alignment = .center
+        floatingActionStack.distribution = .fill
         floatingActionStack.spacing = Layout.floatingButtonSpacing
         floatingActionStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(floatingActionStack)
@@ -545,26 +594,165 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func configureFloatingButton(_ button: UIButton, systemName: String, titleKey: String) {
         button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
+            forImageIn: .normal
+        )
         button.tintColor = MenuStyle.floatingButtonIconColor
         button.backgroundColor = MenuStyle.floatingButtonColor
         button.layer.cornerRadius = Layout.floatingButtonSize / 2
+        button.layer.masksToBounds = true
         button.accessibilityLabel = NSLocalizedString(titleKey, comment: "")
+        button.isUserInteractionEnabled = true
         button.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    private func addMenuOverlay(to visualEffectView: UIVisualEffectView) {
+        let overlayView = UIView()
+        overlayView.backgroundColor = MenuStyle.barBackgroundColor
+        overlayView.translatesAutoresizingMaskIntoConstraints = false
+        overlayView.isUserInteractionEnabled = false
+        visualEffectView.contentView.insertSubview(overlayView, at: 0)
+        NSLayoutConstraint.activate([
+            overlayView.leadingAnchor.constraint(equalTo: visualEffectView.contentView.leadingAnchor),
+            overlayView.trailingAnchor.constraint(equalTo: visualEffectView.contentView.trailingAnchor),
+            overlayView.topAnchor.constraint(equalTo: visualEffectView.contentView.topAnchor),
+            overlayView.bottomAnchor.constraint(equalTo: visualEffectView.contentView.bottomAnchor)
+        ])
+    }
+
+    private func makeVerticalMenuSeparator() -> UIView {
+        let separator = UIView()
+        separator.backgroundColor = MenuStyle.separatorColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        return separator
+    }
+
+    private func makeHorizontalMenuSeparator() -> UIView {
+        let separator = UIView()
+        separator.backgroundColor = MenuStyle.separatorColor
+        separator.translatesAutoresizingMaskIntoConstraints = false
+        let edgeView = UIView()
+        edgeView.backgroundColor = MenuStyle.separatorEdgeColor
+        edgeView.translatesAutoresizingMaskIntoConstraints = false
+        separator.addSubview(edgeView)
+        NSLayoutConstraint.activate([
+            edgeView.leadingAnchor.constraint(equalTo: separator.leadingAnchor),
+            edgeView.trailingAnchor.constraint(equalTo: separator.trailingAnchor),
+            edgeView.bottomAnchor.constraint(equalTo: separator.bottomAnchor),
+            edgeView.heightAnchor.constraint(equalToConstant: 1)
+        ])
+        return separator
+    }
+
+    private func configureBottomActionButton(_ button: UIButton) {
+        button.tintColor = MenuStyle.secondaryTextColor
+        button.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        button.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
+        button.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 16, weight: .regular),
+            forImageIn: .normal
+        )
+        button.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.textAlignment = .center
+        button.contentHorizontalAlignment = .center
+        button.contentVerticalAlignment = .center
+        button.alignImageAboveTitle(spacing: 4)
+        button.contentEdgeInsets = UIEdgeInsets(top: 12, left: 0, bottom: 0, right: 0)
+        button.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
+        let size = CGSize(width: diameter, height: diameter)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            let bounds = CGRect(origin: .zero, size: size)
+            UIColor(red: 0.22, green: 0.22, blue: 0.22, alpha: 1).setFill()
+            context.cgContext.fillEllipse(in: bounds)
+
+            MenuStyle.progressThumbColor.setFill()
+            context.cgContext.fillEllipse(in: bounds.insetBy(dx: 1.5, dy: 1.5))
+
+            UIColor(red: 0.39, green: 0.39, blue: 0.39, alpha: 1).setStroke()
+            context.cgContext.setLineWidth(1)
+            context.cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+        }
+    }
+
+    private func makeAutoReadSliderThumbImage(diameter: CGFloat) -> UIImage {
+        let shadowPadding: CGFloat = 4
+        let size = CGSize(
+            width: diameter + shadowPadding * 2,
+            height: diameter + shadowPadding * 2
+        )
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            let bounds = CGRect(
+                x: shadowPadding,
+                y: shadowPadding,
+                width: diameter,
+                height: diameter
+            )
+            let cgContext = context.cgContext
+            cgContext.setShadow(
+                offset: CGSize(width: 0, height: 2),
+                blur: 4,
+                color: UIColor.black.withAlphaComponent(0.36).cgColor
+            )
+
+            UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1).setFill()
+            cgContext.fillEllipse(in: bounds)
+            cgContext.setShadow(offset: .zero, blur: 0, color: nil)
+
+            MenuStyle.progressThumbColor.setFill()
+            cgContext.fillEllipse(in: bounds.insetBy(dx: 3, dy: 3))
+
+            UIColor(white: 0.64, alpha: 0.36).setFill()
+            cgContext.fillEllipse(
+                in: CGRect(
+                    x: bounds.minX + diameter * 0.31,
+                    y: bounds.minY + diameter * 0.24,
+                    width: diameter * 0.38,
+                    height: diameter * 0.18
+                )
+            )
+
+            UIColor(red: 0.42, green: 0.42, blue: 0.42, alpha: 1).setStroke()
+            cgContext.setLineWidth(1)
+            cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+        }
+    }
+
     private func configureSettingsPanel() {
+        settingsPanel.translatesAutoresizingMaskIntoConstraints = false
         settingsPanel.effect = nil
         settingsPanel.backgroundColor = MenuStyle.barBackgroundColor
         settingsPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
-        settingsPanel.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.transform = CGAffineTransform(
+            translationX: 0,
+            y: Layout.settingsPanelMaximumHeight + 1
+        )
+        settingsPanel.isUserInteractionEnabled = false
+        settingsPanel.layer.cornerRadius = 0
+        settingsPanel.layer.maskedCorners = []
+        settingsPanel.clipsToBounds = true
         view.addSubview(settingsPanel)
 
-        settingsPanelStack.axis = .vertical
-        settingsPanelStack.spacing = 14
-        settingsPanelStack.translatesAutoresizingMaskIntoConstraints = false
-        settingsPanel.contentView.addSubview(settingsPanelStack)
+        settingsPanelScrollView.alwaysBounceVertical = true
+        settingsPanelScrollView.contentInsetAdjustmentBehavior = .never
+        settingsPanelScrollView.delaysContentTouches = false
+        settingsPanelScrollView.showsVerticalScrollIndicator = true
+        settingsPanelScrollView.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.contentView.addSubview(settingsPanelScrollView)
 
-        settingsQuickControl.selectedSegmentIndex = 0
+        settingsPanelStack.axis = .vertical
+        settingsPanelStack.alignment = .fill
+        settingsPanelStack.spacing = 16
+        settingsPanelStack.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanelScrollView.addSubview(settingsPanelStack)
+
+        settingsQuickControl.selectedSegmentIndex = SettingsQuickMode.page.rawValue
         settingsQuickControl.addTarget(self, action: #selector(settingsQuickModeChanged), for: .valueChanged)
         styleSettingsControl(settingsQuickControl)
 
@@ -575,11 +763,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         styleSettingsControl(settingsThemeControl)
         styleSettingsControl(settingsLayoutPresetControl)
 
-        settingsPanelStack.addArrangedSubview(settingsQuickControl)
-        settingsPanelStack.addArrangedSubview(settingsSection(
-            title: NSLocalizedString("reader.settings.pageTurn", comment: ""),
-            control: settingsPageModeControl
-        ))
         settingsPanelStack.addArrangedSubview(settingsSection(
             title: NSLocalizedString("reader.settings.fontSize", comment: ""),
             control: fontSizeControl()
@@ -589,72 +772,113 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             control: settingsThemeControl
         ))
         settingsPanelStack.addArrangedSubview(settingsSection(
+            title: NSLocalizedString("reader.settings.quick", comment: ""),
+            control: settingsQuickControl
+        ))
+        let pageModeSection = settingsSection(
+            title: NSLocalizedString("reader.settings.pageTurn", comment: ""),
+            control: settingsPageModeControl
+        )
+        settingsPageModeSection = pageModeSection
+        settingsPanelStack.addArrangedSubview(pageModeSection)
+        let layoutSection = settingsSection(
             title: NSLocalizedString("reader.settings.layoutPreset", comment: ""),
             control: settingsLayoutPresetControl
-        ))
-        settingsPanelStack.addArrangedSubview(switchRow(
-            title: NSLocalizedString("reader.settings.keepScreenAwake", comment: ""),
-            toggle: keepScreenAwakeSwitch,
-            action: #selector(keepScreenAwakeChanged)
-        ))
-        settingsPanelStack.addArrangedSubview(switchRow(
-            title: NSLocalizedString("reader.settings.autoHideHomeIndicator", comment: ""),
-            toggle: autoHideHomeIndicatorSwitch,
-            action: #selector(autoHideHomeIndicatorChanged)
-        ))
-        settingsPanelStack.addArrangedSubview(switchRow(
-            title: NSLocalizedString("reader.settings.autoHideStatusBar", comment: ""),
-            toggle: autoHideStatusBarSwitch,
-            action: #selector(autoHideStatusBarChanged)
-        ))
-        settingsPanelStack.addArrangedSubview(switchRow(
-            title: NSLocalizedString("reader.settings.edgeSwipeBack", comment: ""),
-            toggle: edgeSwipeBackSwitch,
-            action: #selector(edgeSwipeBackChanged)
-        ))
+        )
+        settingsLayoutSection = layoutSection
+        settingsPanelStack.addArrangedSubview(layoutSection)
+        let moreSection = settingsMoreControls()
+        settingsMoreSection = moreSection
+        settingsPanelStack.addArrangedSubview(moreSection)
+
+        let heightRatioConstraint = settingsPanel.heightAnchor.constraint(
+            equalTo: view.heightAnchor,
+            multiplier: Layout.settingsPanelHeightRatio
+        )
+        heightRatioConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             settingsPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            settingsPanel.topAnchor.constraint(equalTo: view.topAnchor),
+            settingsPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            heightRatioConstraint,
             settingsPanel.heightAnchor.constraint(
-                equalToConstant: min(
-                    max(view.bounds.height * Layout.settingsPanelHeightRatio, Layout.settingsPanelMinimumHeight),
-                    Layout.settingsPanelMaximumHeight
-                )
+                greaterThanOrEqualToConstant: Layout.settingsPanelMinimumHeight
             ),
-            settingsPanelStack.leadingAnchor.constraint(equalTo: settingsPanel.contentView.leadingAnchor, constant: Layout.settingsPanelHorizontalInset),
-            settingsPanelStack.trailingAnchor.constraint(equalTo: settingsPanel.contentView.trailingAnchor, constant: -Layout.settingsPanelHorizontalInset),
-            settingsPanelStack.topAnchor.constraint(equalTo: settingsPanel.contentView.topAnchor, constant: Layout.settingsPanelTopInset)
+            settingsPanel.heightAnchor.constraint(
+                lessThanOrEqualToConstant: Layout.settingsPanelMaximumHeight
+            ),
+
+            settingsPanelScrollView.leadingAnchor.constraint(equalTo: settingsPanel.contentView.leadingAnchor),
+            settingsPanelScrollView.trailingAnchor.constraint(equalTo: settingsPanel.contentView.trailingAnchor),
+            settingsPanelScrollView.topAnchor.constraint(equalTo: settingsPanel.contentView.topAnchor),
+            settingsPanelScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+
+            settingsPanelStack.leadingAnchor.constraint(
+                equalTo: settingsPanelScrollView.contentLayoutGuide.leadingAnchor,
+                constant: Layout.settingsPanelHorizontalInset
+            ),
+            settingsPanelStack.trailingAnchor.constraint(
+                equalTo: settingsPanelScrollView.contentLayoutGuide.trailingAnchor,
+                constant: -Layout.settingsPanelHorizontalInset
+            ),
+            settingsPanelStack.topAnchor.constraint(
+                equalTo: settingsPanelScrollView.contentLayoutGuide.topAnchor,
+                constant: Layout.settingsPanelTopInset
+            ),
+            settingsPanelStack.bottomAnchor.constraint(equalTo: settingsPanelScrollView.contentLayoutGuide.bottomAnchor),
+            settingsPanelStack.widthAnchor.constraint(
+                equalTo: settingsPanelScrollView.frameLayoutGuide.widthAnchor,
+                constant: -Layout.settingsPanelHorizontalInset * 2
+            )
         ])
+        updateSettingsQuickSection()
     }
 
     private func styleSettingsControl(_ control: UISegmentedControl) {
         control.selectedSegmentTintColor = MenuStyle.settingsControlSelectedColor
         control.backgroundColor = MenuStyle.settingsControlBackgroundColor
         control.setTitleTextAttributes(
-            [.foregroundColor: MenuStyle.secondaryTextColor],
+            [
+                .font: UIFont.preferredFont(forTextStyle: .footnote),
+                .foregroundColor: MenuStyle.secondaryTextColor
+            ],
             for: .normal
         )
         control.setTitleTextAttributes(
-            [.foregroundColor: MenuStyle.primaryTextColor],
+            [
+                .font: UIFont.preferredFont(forTextStyle: .footnote),
+                .foregroundColor: MenuStyle.primaryTextColor
+            ],
             for: .selected
+        )
+        control.setTitleTextAttributes(
+            [
+                .font: UIFont.preferredFont(forTextStyle: .footnote),
+                .foregroundColor: UIColor(red: 0.39, green: 0.39, blue: 0.39, alpha: 1)
+            ],
+            for: .disabled
         )
         control.translatesAutoresizingMaskIntoConstraints = false
         control.heightAnchor.constraint(equalToConstant: Layout.settingsControlHeight).isActive = true
     }
 
     private func settingsSection(title: String, control: UIView) -> UIView {
-        let label = UILabel()
-        label.text = title
-        label.font = .preferredFont(forTextStyle: .caption1)
-        label.textColor = MenuStyle.secondaryTextColor
-        label.adjustsFontForContentSizeCategory = true
+        let label = settingsSectionTitleLabel(title)
 
         let stack = UIStackView(arrangedSubviews: [label, control])
         stack.axis = .vertical
-        stack.spacing = 7
+        stack.spacing = 9
         return stack
+    }
+
+    private func settingsSectionTitleLabel(_ title: String) -> UILabel {
+        let label = UILabel()
+        label.text = title
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.textColor = MenuStyle.secondaryTextColor
+        label.adjustsFontForContentSizeCategory = true
+        return label
     }
 
     private func fontSizeControl() -> UIView {
@@ -678,71 +902,155 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func configureFontButton(_ button: UIButton, title: String) {
         button.setTitle(title, for: .normal)
+        button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
         button.backgroundColor = MenuStyle.settingsControlSelectedColor
         button.layer.cornerRadius = Layout.settingsFontButtonHeight / 2
+        button.layer.masksToBounds = true
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight).isActive = true
+    }
+
+    private func settingsMoreControls() -> UIView {
+        let stack = UIStackView(arrangedSubviews: [
+            switchRow(
+                title: NSLocalizedString("reader.settings.keepScreenAwake", comment: ""),
+                toggle: keepScreenAwakeSwitch,
+                action: #selector(keepScreenAwakeChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.autoHideHomeIndicator", comment: ""),
+                toggle: autoHideHomeIndicatorSwitch,
+                action: #selector(autoHideHomeIndicatorChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.autoHideStatusBar", comment: ""),
+                toggle: autoHideStatusBarSwitch,
+                action: #selector(autoHideStatusBarChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.edgeSwipeBack", comment: ""),
+                toggle: edgeSwipeBackSwitch,
+                action: #selector(edgeSwipeBackChanged)
+            )
+        ])
+        stack.axis = .vertical
+        stack.spacing = 10
+        return stack
     }
 
     private func switchRow(title: String, toggle: UISwitch, action: Selector) -> UIView {
         let label = UILabel()
         label.text = title
-        label.font = .preferredFont(forTextStyle: .callout)
+        label.font = .preferredFont(forTextStyle: .body)
         label.textColor = MenuStyle.primaryTextColor
         label.adjustsFontForContentSizeCategory = true
+        toggle.onTintColor = .systemGreen
         toggle.addTarget(self, action: action, for: .valueChanged)
+        toggle.setContentHuggingPriority(.required, for: .horizontal)
+        toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         let row = UIStackView(arrangedSubviews: [label, toggle])
         row.axis = .horizontal
         row.alignment = .center
-        row.spacing = 12
+        row.distribution = .fill
+        row.spacing = 16
+        row.isLayoutMarginsRelativeArrangement = true
+        row.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 8,
+            leading: 0,
+            bottom: 8,
+            trailing: 0
+        )
         return row
     }
 
     private func configureAutoReadPanel() {
+        autoReadPanel.translatesAutoresizingMaskIntoConstraints = false
         autoReadPanel.effect = nil
         autoReadPanel.backgroundColor = MenuStyle.barBackgroundColor
         autoReadPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
-        autoReadPanel.translatesAutoresizingMaskIntoConstraints = false
+        autoReadPanel.isUserInteractionEnabled = false
+        autoReadPanel.transform = CGAffineTransform(
+            translationX: 0,
+            y: Layout.autoReadPanelHeight + 1
+        )
         view.addSubview(autoReadPanel)
-
-        let titleLabel = UILabel()
-        titleLabel.text = NSLocalizedString("reader.autoRead.speed", comment: "")
-        titleLabel.font = .preferredFont(forTextStyle: .headline)
-        titleLabel.textColor = MenuStyle.primaryTextColor
 
         autoReadSpeedSlider.minimumValue = Float(ReaderSettings.minimumAutoReadSpeed)
         autoReadSpeedSlider.maximumValue = Float(ReaderSettings.maximumAutoReadSpeed)
         autoReadSpeedSlider.value = Float(readerSettings.autoReadSpeed)
-        autoReadSpeedSlider.tintColor = MenuStyle.progressTintColor
+        autoReadSpeedSlider.minimumTrackTintColor = MenuStyle.progressTintColor
+        autoReadSpeedSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
+        autoReadSpeedSlider.thumbTintColor = MenuStyle.progressThumbColor
+        autoReadSpeedSlider.setThumbImage(makeAutoReadSliderThumbImage(diameter: 24), for: .normal)
+        autoReadSpeedSlider.setThumbImage(makeAutoReadSliderThumbImage(diameter: 28), for: .highlighted)
+        autoReadSpeedSlider.accessibilityLabel = NSLocalizedString("reader.autoRead.speed", comment: "")
         autoReadSpeedSlider.addTarget(self, action: #selector(autoReadSpeedChanged), for: .valueChanged)
+        autoReadSpeedSlider.translatesAutoresizingMaskIntoConstraints = false
 
         autoReadExitButton.setTitle(NSLocalizedString("reader.autoRead.exit", comment: ""), for: .normal)
-        autoReadExitButton.setImage(UIImage(systemName: "stop.circle"), for: .normal)
-        autoReadExitButton.tintColor = MenuStyle.primaryTextColor
+        autoReadExitButton.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
+        autoReadExitButton.setTitleColor(MenuStyle.secondaryTextColor, for: .highlighted)
+        autoReadExitButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        autoReadExitButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        autoReadExitButton.backgroundColor = MenuStyle.settingsControlBackgroundColor
+        autoReadExitButton.layer.cornerRadius = Layout.autoReadExitButtonHeight / 2
+        autoReadExitButton.layer.masksToBounds = true
         autoReadExitButton.addTarget(self, action: #selector(autoReadExitTapped), for: .touchUpInside)
 
-        let stack = UIStackView(arrangedSubviews: [
-            titleLabel,
+        let speedRow = UIStackView(arrangedSubviews: [
+            autoReadIcon(named: "tortoise.fill", fallbackName: "tortoise"),
             autoReadSpeedSlider,
+            autoReadIcon(named: "hare.fill", fallbackName: "hare")
+        ])
+        speedRow.axis = .horizontal
+        speedRow.alignment = .center
+        speedRow.spacing = 14
+
+        let stack = UIStackView(arrangedSubviews: [
+            speedRow,
             autoReadExitButton
         ])
         stack.axis = .vertical
-        stack.spacing = 14
+        stack.alignment = .fill
+        stack.spacing = 22
         stack.translatesAutoresizingMaskIntoConstraints = false
         autoReadPanel.contentView.addSubview(stack)
 
         NSLayoutConstraint.activate([
             autoReadPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             autoReadPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            autoReadPanel.topAnchor.constraint(equalTo: view.topAnchor),
+            autoReadPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             autoReadPanel.heightAnchor.constraint(equalToConstant: Layout.autoReadPanelHeight),
             stack.leadingAnchor.constraint(equalTo: autoReadPanel.contentView.leadingAnchor, constant: Layout.autoReadPanelHorizontalInset),
             stack.trailingAnchor.constraint(equalTo: autoReadPanel.contentView.trailingAnchor, constant: -Layout.autoReadPanelHorizontalInset),
             stack.topAnchor.constraint(equalTo: autoReadPanel.contentView.topAnchor, constant: Layout.autoReadPanelTopInset),
+            stack.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.autoReadPanelBottomInset
+            ),
             autoReadExitButton.heightAnchor.constraint(equalToConstant: Layout.autoReadExitButtonHeight)
         ])
+    }
+
+    private func autoReadIcon(named imageName: String, fallbackName: String) -> UIImageView {
+        let imageView = UIImageView(image: UIImage(systemName: imageName) ?? UIImage(systemName: fallbackName))
+        imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: Layout.autoReadIconSize,
+            weight: .regular
+        )
+        imageView.tintColor = MenuStyle.secondaryTextColor
+        imageView.contentMode = .scaleAspectFit
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: Layout.autoReadIconSize),
+            imageView.heightAnchor.constraint(equalToConstant: Layout.autoReadIconSize)
+        ])
+        return imageView
     }
 
     private func configureLoadingIndicator() {
@@ -1186,11 +1494,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases.firstIndex(of: normalized.theme) ?? 0
         settingsLayoutPresetControl.selectedSegmentIndex = ReaderSettings.LayoutPreset.allCases.firstIndex(of: normalized.layoutPreset) ?? 0
         settingsFontValueButton.setTitle("\(Int(normalized.fontSize))", for: .normal)
+        settingsQuickControl.selectedSegmentIndex = settingsQuickMode.rawValue
         keepScreenAwakeSwitch.isOn = normalized.keepScreenAwake
         autoHideHomeIndicatorSwitch.isOn = normalized.autoHideHomeIndicator
         autoHideStatusBarSwitch.isOn = normalized.autoHideStatusBar
         edgeSwipeBackSwitch.isOn = normalized.edgeSwipeBackEnabled
         autoReadSpeedSlider.value = Float(normalized.autoReadSpeed)
+        updateSettingsQuickSection()
+    }
+
+    private func updateSettingsQuickSection() {
+        settingsPageModeSection?.isHidden = settingsQuickMode != .page
+        settingsLayoutSection?.isHidden = settingsQuickMode != .layout
+        settingsMoreSection?.isHidden = settingsQuickMode != .more
     }
 
     private func setMenuVisible(_ visible: Bool, animated: Bool) {
@@ -1200,63 +1516,88 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         floatingActionStack.isUserInteractionEnabled = visible
         setNeedsStatusBarAppearanceUpdate()
         view.layoutIfNeeded()
-        let updates = {
-            self.applyMenuPosition(animated: animated)
-        }
         if animated {
-            UIView.animate(withDuration: 0.24, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: {
+                    self.applyMenuPosition(animated: true)
+                }
+            )
         } else {
-            updates()
+            applyMenuPosition(animated: false)
         }
     }
 
     private func applyMenuPosition(animated _: Bool) {
-        let topTranslation = isMenuVisible ? 0 : -topBar.bounds.height
-        let bottomTranslation = isMenuVisible ? 0 : bottomBar.bounds.height
-        topBar.transform = CGAffineTransform(translationX: 0, y: topTranslation)
-        bottomBar.transform = CGAffineTransform(translationX: 0, y: bottomTranslation)
-        floatingActionStack.alpha = isMenuVisible ? 1 : 0
+        let topTranslation = -(topBar.bounds.height + 1)
+        let bottomTranslation = bottomBar.bounds.height + 1
+        let floatingHiddenOffset = floatingActionStack.bounds.width
+            + Layout.floatingButtonTrailingInset
+            + view.safeAreaInsets.right
+            + 1
+        topBar.transform = isMenuVisible
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: topTranslation)
+        bottomBar.transform = isMenuVisible
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: bottomTranslation)
+        floatingActionStack.transform = isMenuVisible
+            ? .identity
+            : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
     private func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
         isSettingsPanelVisible = visible
         settingsPanel.isUserInteractionEnabled = visible
-        let updates = {
-            self.applySettingsPanelPosition(animated: animated)
-        }
+        setNeedsStatusBarAppearanceUpdate()
+        view.layoutIfNeeded()
         if animated {
-            UIView.animate(withDuration: 0.22, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: {
+                    self.applySettingsPanelPosition(animated: true)
+                }
+            )
         } else {
-            updates()
+            applySettingsPanelPosition(animated: false)
         }
     }
 
     private func applySettingsPanelPosition(animated _: Bool) {
-        let height = settingsPanel.bounds.height > 0 ? settingsPanel.bounds.height : Layout.settingsPanelMinimumHeight
+        let hiddenOffset = settingsPanel.bounds.height + 1
         settingsPanel.transform = isSettingsPanelVisible
-            ? CGAffineTransform(translationX: 0, y: view.bounds.height - height)
-            : CGAffineTransform(translationX: 0, y: view.bounds.height)
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
     private func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
         isAutoReadPanelVisible = visible
         autoReadPanel.isUserInteractionEnabled = visible
         setNeedsStatusBarAppearanceUpdate()
-        let updates = {
-            self.applyAutoReadPanelPosition()
-        }
+        view.layoutIfNeeded()
         if animated {
-            UIView.animate(withDuration: 0.22, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: {
+                    self.applyAutoReadPanelPosition()
+                }
+            )
         } else {
-            updates()
+            applyAutoReadPanelPosition()
         }
     }
 
     private func applyAutoReadPanelPosition() {
-        let height = autoReadPanel.bounds.height > 0 ? autoReadPanel.bounds.height : Layout.autoReadPanelHeight
+        let hiddenOffset = max(autoReadPanel.bounds.height, Layout.autoReadPanelHeight) + 1
         autoReadPanel.transform = isAutoReadPanelVisible
-            ? CGAffineTransform(translationX: 0, y: view.bounds.height - height)
-            : CGAffineTransform(translationX: 0, y: view.bounds.height)
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
     private func showLoading(_ isLoading: Bool) {
@@ -1897,6 +2238,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     @objc private func settingsQuickModeChanged() {
         settingsQuickMode = SettingsQuickMode(rawValue: settingsQuickControl.selectedSegmentIndex) ?? .page
+        settingsPanelScrollView.setContentOffset(.zero, animated: false)
+        updateSettingsQuickSection()
     }
 
     @objc private func settingsPageModeChanged() {
