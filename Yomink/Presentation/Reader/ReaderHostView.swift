@@ -83,6 +83,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private lazy var settingsThemeControl = UISegmentedControl(
         items: ReaderSettings.Theme.allCases.map(\.localizedTitle)
     )
+    private lazy var settingsLayoutPresetControl = UISegmentedControl(
+        items: ReaderSettings.LayoutPreset.allCases.map(\.localizedTitle)
+    )
     private lazy var settingsQuickControl = UISegmentedControl(
         items: [
             NSLocalizedString("reader.settings.quick.page", comment: ""),
@@ -93,8 +96,6 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private enum Layout {
-        static let readerHorizontalInset: CGFloat = 24
-        static let readerVerticalInset: CGFloat = 28
         static let topBarContentHeight: CGFloat = 44
         static let topBarButtonBottomInset: CGFloat = 5
         static let bottomBarTopInset: CGFloat = 0
@@ -187,7 +188,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var isApplyingProgrammaticScroll = false
     private var settingsQuickMode: SettingsQuickMode = .page
     private weak var settingsPageModeSection: UIView?
+    private weak var settingsLayoutSection: UIView?
     private weak var settingsMoreSection: UIView?
+    private var textViewLeadingConstraint: NSLayoutConstraint?
+    private var textViewTrailingConstraint: NSLayoutConstraint?
+    private var textViewTopConstraint: NSLayoutConstraint?
+    private var textViewBottomConstraint: NSLayoutConstraint?
     private var lastPaginationSize = CGSize.zero
     private var autoReadDisplayLink: CADisplayLink?
     private var lastAutoReadTimestamp: CFTimeInterval?
@@ -328,23 +334,33 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)
 
-        NSLayoutConstraint.activate([
-            textView.leadingAnchor.constraint(
+        let layout = readerSettings.normalized.layoutPreset.layoutConfiguration
+        let leadingConstraint = textView.leadingAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.leadingAnchor,
-                constant: Layout.readerHorizontalInset
-            ),
-            textView.trailingAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
-                constant: -Layout.readerHorizontalInset
-            ),
-            textView.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor,
-                constant: Layout.readerVerticalInset
-            ),
-            textView.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -Layout.readerVerticalInset
+                constant: layout.leftMargin
             )
+        let trailingConstraint = textView.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -layout.rightMargin
+            )
+        let topConstraint = textView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: layout.topMargin
+            )
+        let bottomConstraint = textView.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -layout.bottomMargin
+            )
+        textViewLeadingConstraint = leadingConstraint
+        textViewTrailingConstraint = trailingConstraint
+        textViewTopConstraint = topConstraint
+        textViewBottomConstraint = bottomConstraint
+
+        NSLayoutConstraint.activate([
+            leadingConstraint,
+            trailingConstraint,
+            topConstraint,
+            bottomConstraint
         ])
     }
 
@@ -953,6 +969,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             action: #selector(settingsThemeChanged),
             for: .valueChanged
         )
+        settingsLayoutPresetControl.addTarget(
+            self,
+            action: #selector(settingsLayoutPresetChanged),
+            for: .valueChanged
+        )
         settingsQuickControl.selectedSegmentIndex = SettingsQuickMode.page.rawValue
         settingsQuickControl.addTarget(
             self,
@@ -977,6 +998,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         )
         styleSettingsControl(settingsPageModeControl)
         styleSettingsControl(settingsThemeControl)
+        styleSettingsControl(settingsLayoutPresetControl)
         styleSettingsControl(settingsQuickControl)
         settingsPageModeControl.setEnabled(false, forSegmentAt: 1)
         configureFontSizeButton(
@@ -1019,6 +1041,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         )
         settingsPageModeSection = pageModeSection
         settingsPanelStack.addArrangedSubview(pageModeSection)
+        let layoutSection = settingsPanelSection(
+            title: NSLocalizedString("reader.settings.layoutPreset", comment: ""),
+            control: settingsLayoutPresetControl
+        )
+        settingsLayoutSection = layoutSection
+        settingsPanelStack.addArrangedSubview(layoutSection)
         let moreSection = settingsMoreControls()
         settingsMoreSection = moreSection
         settingsPanelStack.addArrangedSubview(moreSection)
@@ -1233,6 +1261,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         settingsPageModeControl.selectedSegmentIndex = normalizedSettings.pageMode.settingsPageTurnIndex
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases
             .firstIndex(of: normalizedSettings.theme) ?? 0
+        settingsLayoutPresetControl.selectedSegmentIndex = ReaderSettings.LayoutPreset.allCases
+            .firstIndex(of: normalizedSettings.layoutPreset) ?? 1
         settingsQuickControl.selectedSegmentIndex = settingsQuickMode.rawValue
         keepScreenAwakeSwitch.isOn = normalizedSettings.keepScreenAwake
         autoHideHomeIndicatorSwitch.isOn = normalizedSettings.autoHideHomeIndicator
@@ -1253,6 +1283,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private func updateSettingsQuickSection() {
         settingsPageModeSection?.isHidden = settingsQuickMode != .page
+        settingsLayoutSection?.isHidden = settingsQuickMode != .layout
         settingsMoreSection?.isHidden = settingsQuickMode != .more
     }
 
@@ -1534,6 +1565,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private func renderContent(anchorByteOffset: Int, savingProgress: Bool) {
         applyTheme()
+        applyReaderLayoutMargins()
+        view.layoutIfNeeded()
         textView.transform = .identity
         textView.alpha = 1
 
@@ -1670,7 +1703,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let settings = readerSettings.normalized
         let filterRules = filterRules
         let fittingSize = textView.bounds.size
-        let typography = ReaderTypography(settings: settings)
+        let typography = ReaderTypography(settings: settings, chapterTitle: chapter.title)
         prefetchingChapterID = chapter.id
 
         prefetchTask = Task { [weak self] in
@@ -1794,7 +1827,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let generation = paginateGeneration
         let text = currentChapterText
         let fittingSize = textView.bounds.size
-        let typography = ReaderTypography(settings: readerSettings)
+        let chapterTitle = chapters.indices.contains(currentChapterIndex)
+            ? chapters[currentChapterIndex].title
+            : nil
+        let typography = ReaderTypography(settings: readerSettings, chapterTitle: chapterTitle)
 
         paginateTask?.cancel()
         paginateTask = Task { [weak self] in
@@ -1856,7 +1892,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         // Phase 7 performance: scroll mode still lets UITextView lay out the
         // current chapter on the main thread; revisit if Instruments shows
         // setting changes blocking frames on large chunks.
-        textView.attributedText = ReaderTypography(settings: readerSettings)
+        let chapterTitle = chapters.indices.contains(currentChapterIndex)
+            ? chapters[currentChapterIndex].title
+            : nil
+        textView.attributedText = ReaderTypography(settings: readerSettings, chapterTitle: chapterTitle)
             .attributedString(for: currentChapterText)
         view.layoutIfNeeded()
 
@@ -2142,15 +2181,18 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let anchorByteOffset = currentDisplayByteOffset()
         let requiresImmediateRerender = oldSettings.pageMode != normalizedSettings.pageMode
             || oldSettings.theme != normalizedSettings.theme
+            || oldSettings.layoutPreset != normalizedSettings.layoutPreset
         let requiresDeferredRerender = oldSettings.fontSize != normalizedSettings.fontSize
         let onlyChromePreferencesChanged = oldSettings.pageMode == normalizedSettings.pageMode
             && oldSettings.theme == normalizedSettings.theme
+            && oldSettings.layoutPreset == normalizedSettings.layoutPreset
             && oldSettings.fontSize == normalizedSettings.fontSize
             && oldSettings.autoReadSpeed == normalizedSettings.autoReadSpeed
             && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
         readerSettings = normalizedSettings
         let onlyAutoReadSpeedChanged = oldSettings.pageMode == normalizedSettings.pageMode
             && oldSettings.theme == normalizedSettings.theme
+            && oldSettings.layoutPreset == normalizedSettings.layoutPreset
             && oldSettings.fontSize == normalizedSettings.fontSize
             && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
             && oldSettings.keepScreenAwake == normalizedSettings.keepScreenAwake
@@ -2190,6 +2232,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             && UIApplication.shared.applicationState != .background
         setNeedsStatusBarAppearanceUpdate()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
+    }
+
+    private func applyReaderLayoutMargins() {
+        let layout = readerSettings.normalized.layoutPreset.layoutConfiguration
+        textViewLeadingConstraint?.constant = layout.leftMargin
+        textViewTrailingConstraint?.constant = -layout.rightMargin
+        textViewTopConstraint?.constant = layout.topMargin
+        textViewBottomConstraint?.constant = -layout.bottomMargin
     }
 
     private func invalidatePrefetch() {
@@ -3143,6 +3193,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         updateSettingsQuickSection()
     }
 
+    @objc private func settingsLayoutPresetChanged() {
+        let index = settingsLayoutPresetControl.selectedSegmentIndex
+        guard ReaderSettings.LayoutPreset.allCases.indices.contains(index) else {
+            return
+        }
+        var settings = readerSettings
+        settings.layoutPreset = ReaderSettings.LayoutPreset.allCases[index]
+        applyReaderSettings(settings)
+    }
+
     @objc private func keepScreenAwakeChanged() {
         var settings = readerSettings
         settings.keepScreenAwake = keepScreenAwakeSwitch.isOn
@@ -3424,34 +3484,213 @@ private extension UIButton {
     }
 }
 
+private struct ReaderLayoutConfiguration {
+    var bodyKern: CGFloat
+    var bodyLineSpacing: CGFloat
+    var bodyParagraphSpacing: CGFloat
+    var topMargin: CGFloat
+    var bottomMargin: CGFloat
+    var leftMargin: CGFloat
+    var rightMargin: CGFloat
+    var firstLineIndentEms: CGFloat
+    var titleKern: CGFloat
+    var titleLineSpacing: CGFloat
+    var titleParagraphSpacing: CGFloat
+    var titleFontSizeDelta: CGFloat
+    var titleFontWeight: UIFont.Weight
+}
+
 private struct ReaderTypography: @unchecked Sendable {
     var fontSize: Double
-    var lineSpacing: Double
-    var paragraphSpacing: Double
     var textColor: UIColor
+    var chapterTitle: String?
+    var layout: ReaderLayoutConfiguration
 
-    init(settings: ReaderSettings) {
-        fontSize = settings.normalized.fontSize
-        lineSpacing = 4
-        paragraphSpacing = 8
-        textColor = settings.theme.textColor
+    init(settings: ReaderSettings, chapterTitle: String? = nil) {
+        let normalizedSettings = settings.normalized
+        fontSize = normalizedSettings.fontSize
+        textColor = normalizedSettings.theme.textColor
+        self.chapterTitle = chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        layout = normalizedSettings.layoutPreset.layoutConfiguration
     }
 
     func attributedString(for text: String) -> NSAttributedString {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.lineSpacing = CGFloat(lineSpacing)
-        paragraphStyle.paragraphSpacing = CGFloat(paragraphSpacing)
-        let baseFont = UIFont.systemFont(ofSize: CGFloat(fontSize), weight: .regular)
-        let font = UIFontMetrics(forTextStyle: .body).scaledFont(for: baseFont)
+        let attributedString = NSMutableAttributedString(string: text)
+        let nsText = text as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        guard fullRange.length > 0 else {
+            return attributedString
+        }
 
-        return NSAttributedString(
-            string: text,
-            attributes: [
-                .font: font,
-                .foregroundColor: textColor,
-                .paragraphStyle: paragraphStyle
-            ]
+        let bodyFont = scaledFont(
+            size: CGFloat(fontSize),
+            weight: .regular
         )
+        let titleFont = scaledFont(
+            size: CGFloat(fontSize) + layout.titleFontSizeDelta,
+            weight: layout.titleFontWeight
+        )
+        let titleRange = titleParagraphRange(in: nsText, fullRange: fullRange)
+
+        nsText.enumerateSubstrings(
+            in: fullRange,
+            options: [.byParagraphs, .substringNotRequired]
+        ) { _, paragraphRange, enclosingRange, _ in
+            let range = NSIntersectionRange(enclosingRange, fullRange)
+            guard range.length > 0 else {
+                return
+            }
+
+            let isTitle = titleRange?.location == paragraphRange.location
+                && titleRange?.length == paragraphRange.length
+            if isTitle {
+                attributedString.addAttributes(
+                    titleAttributes(font: titleFont),
+                    range: range
+                )
+            } else {
+                attributedString.addAttributes(
+                    bodyAttributes(
+                        font: bodyFont,
+                        nsText: nsText,
+                        paragraphRange: paragraphRange
+                    ),
+                    range: range
+                )
+            }
+        }
+
+        return attributedString
+    }
+
+    private func scaledFont(size: CGFloat, weight: UIFont.Weight) -> UIFont {
+        let baseFont = UIFont.systemFont(ofSize: size, weight: weight)
+        return UIFontMetrics(forTextStyle: .body).scaledFont(for: baseFont)
+    }
+
+    private func bodyAttributes(
+        font: UIFont,
+        nsText: NSString,
+        paragraphRange: NSRange
+    ) -> [NSAttributedString.Key: Any] {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = layout.bodyLineSpacing
+        paragraphStyle.paragraphSpacing = layout.bodyParagraphSpacing
+        if !hasExistingFirstLineIndent(in: nsText, paragraphRange: paragraphRange) {
+            paragraphStyle.firstLineHeadIndent = font.pointSize * layout.firstLineIndentEms
+        }
+
+        return [
+            .font: font,
+            .foregroundColor: textColor,
+            .kern: layout.bodyKern,
+            .paragraphStyle: paragraphStyle
+        ]
+    }
+
+    private func titleAttributes(font: UIFont) -> [NSAttributedString.Key: Any] {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.lineSpacing = layout.titleLineSpacing
+        paragraphStyle.paragraphSpacing = layout.titleParagraphSpacing
+
+        return [
+            .font: font,
+            .foregroundColor: textColor,
+            .kern: layout.titleKern,
+            .paragraphStyle: paragraphStyle
+        ]
+    }
+
+    private func titleParagraphRange(in nsText: NSString, fullRange: NSRange) -> NSRange? {
+        guard let expectedTitle = chapterTitle,
+              !expectedTitle.isEmpty
+        else {
+            return nil
+        }
+
+        var result: NSRange?
+        nsText.enumerateSubstrings(
+            in: fullRange,
+            options: [.byParagraphs, .substringNotRequired]
+        ) { _, paragraphRange, _, stop in
+            let candidate = nsText.substring(with: paragraphRange)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !candidate.isEmpty else {
+                return
+            }
+
+            if candidate == expectedTitle {
+                result = paragraphRange
+            }
+            stop.pointee = true
+        }
+        return result
+    }
+
+    private func hasExistingFirstLineIndent(
+        in nsText: NSString,
+        paragraphRange: NSRange
+    ) -> Bool {
+        guard paragraphRange.length > 0 else {
+            return false
+        }
+
+        nsText.substring(with: paragraphRange).hasPrefix("　　")
+    }
+}
+
+private extension ReaderSettings.LayoutPreset {
+    var layoutConfiguration: ReaderLayoutConfiguration {
+        switch self {
+        case .compact:
+            return ReaderLayoutConfiguration(
+                bodyKern: 0,
+                bodyLineSpacing: 6,
+                bodyParagraphSpacing: 8,
+                topMargin: 56,
+                bottomMargin: 36,
+                leftMargin: 16,
+                rightMargin: 16,
+                firstLineIndentEms: 2,
+                titleKern: 0,
+                titleLineSpacing: 6,
+                titleParagraphSpacing: 10,
+                titleFontSizeDelta: 1,
+                titleFontWeight: .bold
+            )
+        case .standard, .custom:
+            return ReaderLayoutConfiguration(
+                bodyKern: 0,
+                bodyLineSpacing: 10,
+                bodyParagraphSpacing: 14,
+                topMargin: 72,
+                bottomMargin: 46,
+                leftMargin: 20,
+                rightMargin: 20,
+                firstLineIndentEms: 2,
+                titleKern: 0,
+                titleLineSpacing: 10,
+                titleParagraphSpacing: 14,
+                titleFontSizeDelta: 1,
+                titleFontWeight: .bold
+            )
+        case .relaxed:
+            return ReaderLayoutConfiguration(
+                bodyKern: 0,
+                bodyLineSpacing: 14,
+                bodyParagraphSpacing: 20,
+                topMargin: 88,
+                bottomMargin: 58,
+                leftMargin: 24,
+                rightMargin: 24,
+                firstLineIndentEms: 2,
+                titleKern: 0,
+                titleLineSpacing: 14,
+                titleParagraphSpacing: 20,
+                titleFontSizeDelta: 1,
+                titleFontWeight: .bold
+            )
+        }
     }
 }
 
@@ -4379,6 +4618,21 @@ private extension ReaderSettings.PageMode {
             return NSLocalizedString("reader.settings.pageMode.paged", comment: "")
         case .scroll:
             return NSLocalizedString("reader.settings.pageMode.scroll", comment: "")
+        }
+    }
+}
+
+private extension ReaderSettings.LayoutPreset {
+    var localizedTitle: String {
+        switch self {
+        case .compact:
+            return NSLocalizedString("reader.settings.layoutPreset.compact", comment: "")
+        case .standard:
+            return NSLocalizedString("reader.settings.layoutPreset.standard", comment: "")
+        case .relaxed:
+            return NSLocalizedString("reader.settings.layoutPreset.relaxed", comment: "")
+        case .custom:
+            return NSLocalizedString("reader.settings.layoutPreset.custom", comment: "")
         }
     }
 }

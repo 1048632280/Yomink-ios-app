@@ -56,6 +56,13 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case dark
     }
 
+    enum LayoutPreset: String, Codable, CaseIterable, Sendable {
+        case compact
+        case standard
+        case relaxed
+        case custom
+    }
+
     enum TouchAreaAction: String, Codable, CaseIterable, Sendable {
         case previousPage
         case menu
@@ -65,6 +72,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
 
     var pageMode: PageMode
     var theme: Theme
+    var layoutPreset: LayoutPreset
     var fontSize: Double
     var autoReadSpeed: Double
     var touchAreaMap: [TouchAreaAction]
@@ -88,6 +96,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case pageMode
         case theme
+        case layoutPreset
         case fontSize
         case autoReadSpeed
         case touchAreaMap
@@ -101,6 +110,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         ReaderSettings(
             pageMode: .paged,
             theme: .white,
+            layoutPreset: .standard,
             fontSize: 18,
             autoReadSpeed: 80,
             touchAreaMap: Self.defaultTouchAreaMap,
@@ -114,6 +124,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     init(
         pageMode: PageMode = .paged,
         theme: Theme = .white,
+        layoutPreset: LayoutPreset = .standard,
         fontSize: Double = 18,
         autoReadSpeed: Double = 80,
         touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap,
@@ -124,6 +135,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     ) {
         self.pageMode = pageMode
         self.theme = theme
+        self.layoutPreset = layoutPreset
         self.fontSize = fontSize
         self.autoReadSpeed = autoReadSpeed
         self.touchAreaMap = touchAreaMap
@@ -137,6 +149,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         pageMode = (try? container.decodeIfPresent(PageMode.self, forKey: .pageMode)) ?? .paged
         theme = (try? container.decodeIfPresent(Theme.self, forKey: .theme)) ?? .white
+        layoutPreset = (try? container.decodeIfPresent(LayoutPreset.self, forKey: .layoutPreset)) ?? .standard
         fontSize = (try? container.decodeIfPresent(Double.self, forKey: .fontSize)) ?? 18
         autoReadSpeed = (try? container.decodeIfPresent(Double.self, forKey: .autoReadSpeed)) ?? 80
         touchAreaMap = (try? container.decodeIfPresent([TouchAreaAction].self, forKey: .touchAreaMap))
