@@ -206,7 +206,6 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     deinit {
-        stopAutoReadDisplayLink()
         NotificationCenter.default.removeObserver(self)
         loadTask?.cancel()
         paginateTask?.cancel()
