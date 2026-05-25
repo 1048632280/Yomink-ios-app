@@ -64,17 +64,17 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private enum Layout {
         static let readerHorizontalInset: CGFloat = 24
         static let readerVerticalInset: CGFloat = 28
-        static let topBarContentHeight: CGFloat = 52
-        static let topBarButtonBottomInset: CGFloat = 8
-        static let bottomBarTopInset: CGFloat = 12
-        static let bottomBarSafeAreaInset: CGFloat = 10
-        static let progressRowHeight: CGFloat = 56
-        static let bottomActionRowHeight: CGFloat = 76
-        static let chapterButtonWidth: CGFloat = 86
-        static let floatingButtonSize: CGFloat = 58
-        static let floatingButtonSpacing: CGFloat = 16
-        static let floatingButtonTrailingInset: CGFloat = 22
-        static let floatingButtonBottomInset: CGFloat = 28
+        static let topBarContentHeight: CGFloat = 44
+        static let topBarButtonBottomInset: CGFloat = 5
+        static let bottomBarTopInset: CGFloat = 6
+        static let bottomBarSafeAreaInset: CGFloat = 6
+        static let progressRowHeight: CGFloat = 44
+        static let bottomActionRowHeight: CGFloat = 58
+        static let chapterButtonWidth: CGFloat = 78
+        static let floatingButtonSize: CGFloat = 46
+        static let floatingButtonSpacing: CGFloat = 12
+        static let floatingButtonTrailingInset: CGFloat = 18
+        static let floatingButtonBottomInset: CGFloat = 20
     }
 
     private enum MenuStyle {
@@ -172,6 +172,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+
+        applyMenuPosition(animated: false)
 
         let size = textView.bounds.size
         guard currentChapterText.isEmpty == false,
@@ -1588,22 +1590,39 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         topBar.isUserInteractionEnabled = visible
         bottomBar.isUserInteractionEnabled = visible
         floatingActionStack.isUserInteractionEnabled = visible
-        let changes = {
-            self.topBar.alpha = visible ? 1 : 0
-            self.bottomBar.alpha = visible ? 1 : 0
-            self.floatingActionStack.alpha = visible ? 1 : 0
-        }
+        view.layoutIfNeeded()
 
         if animated {
             UIView.animate(
-                withDuration: 0.2,
+                withDuration: 0.24,
                 delay: 0,
-                options: [.beginFromCurrentState, .curveEaseInOut],
-                animations: changes
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: {
+                    self.applyMenuPosition(animated: true)
+                }
             )
         } else {
-            changes()
+            applyMenuPosition(animated: false)
         }
+    }
+
+    private func applyMenuPosition(animated: Bool) {
+        let topHiddenOffset = -(topBar.bounds.height + 1)
+        let bottomHiddenOffset = bottomBar.bounds.height + 1
+        let floatingHiddenOffset = floatingActionStack.bounds.width
+            + Layout.floatingButtonTrailingInset
+            + view.safeAreaInsets.right
+            + 1
+
+        topBar.transform = isMenuVisible
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: topHiddenOffset)
+        bottomBar.transform = isMenuVisible
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: bottomHiddenOffset)
+        floatingActionStack.transform = isMenuVisible
+            ? .identity
+            : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
