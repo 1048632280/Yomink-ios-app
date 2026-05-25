@@ -46,6 +46,7 @@ struct TextFilterRule: Identifiable, Equatable, Sendable {
 struct ReaderSettings: Codable, Equatable, Sendable {
     enum PageMode: String, Codable, CaseIterable, Sendable {
         case paged
+        case curl
         case scroll
     }
 
@@ -63,6 +64,63 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case custom
     }
 
+    struct LayoutValues: Codable, Equatable, Sendable {
+        var bodyKern: Double
+        var bodyLineSpacing: Double
+        var bodyParagraphSpacing: Double
+        var firstLineIndentEms: Double
+        var titleKern: Double
+        var titleLineSpacing: Double
+        var titleParagraphSpacing: Double
+        var titleFontSizeDelta: Double
+
+        static let compact = LayoutValues(
+            bodyKern: 0,
+            bodyLineSpacing: 6,
+            bodyParagraphSpacing: 8,
+            firstLineIndentEms: 2,
+            titleKern: 0,
+            titleLineSpacing: 6,
+            titleParagraphSpacing: 10,
+            titleFontSizeDelta: 1
+        )
+
+        static let standard = LayoutValues(
+            bodyKern: 0,
+            bodyLineSpacing: 10,
+            bodyParagraphSpacing: 14,
+            firstLineIndentEms: 2,
+            titleKern: 0,
+            titleLineSpacing: 10,
+            titleParagraphSpacing: 14,
+            titleFontSizeDelta: 1
+        )
+
+        static let relaxed = LayoutValues(
+            bodyKern: 0,
+            bodyLineSpacing: 14,
+            bodyParagraphSpacing: 20,
+            firstLineIndentEms: 2,
+            titleKern: 0,
+            titleLineSpacing: 14,
+            titleParagraphSpacing: 20,
+            titleFontSizeDelta: 1
+        )
+
+        var normalized: LayoutValues {
+            var values = self
+            values.bodyKern = min(max(values.bodyKern, -1), 3)
+            values.bodyLineSpacing = min(max(values.bodyLineSpacing, 0), 28)
+            values.bodyParagraphSpacing = min(max(values.bodyParagraphSpacing, 0), 36)
+            values.firstLineIndentEms = min(max(values.firstLineIndentEms, 0), 4)
+            values.titleKern = min(max(values.titleKern, -1), 3)
+            values.titleLineSpacing = min(max(values.titleLineSpacing, 0), 28)
+            values.titleParagraphSpacing = min(max(values.titleParagraphSpacing, 0), 40)
+            values.titleFontSizeDelta = min(max(values.titleFontSizeDelta, 0), 8)
+            return values
+        }
+    }
+
     enum TouchAreaAction: String, Codable, CaseIterable, Sendable {
         case previousPage
         case menu
@@ -73,6 +131,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     var pageMode: PageMode
     var theme: Theme
     var layoutPreset: LayoutPreset
+    var customLayoutValues: LayoutValues?
     var fontSize: Double
     var autoReadSpeed: Double
     var touchAreaMap: [TouchAreaAction]
@@ -97,6 +156,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case pageMode
         case theme
         case layoutPreset
+        case customLayoutValues
         case fontSize
         case autoReadSpeed
         case touchAreaMap
@@ -111,6 +171,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             pageMode: .paged,
             theme: .white,
             layoutPreset: .standard,
+            customLayoutValues: nil,
             fontSize: 18,
             autoReadSpeed: 80,
             touchAreaMap: Self.defaultTouchAreaMap,
@@ -125,6 +186,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         pageMode: PageMode = .paged,
         theme: Theme = .white,
         layoutPreset: LayoutPreset = .standard,
+        customLayoutValues: LayoutValues? = nil,
         fontSize: Double = 18,
         autoReadSpeed: Double = 80,
         touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap,
@@ -136,6 +198,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         self.pageMode = pageMode
         self.theme = theme
         self.layoutPreset = layoutPreset
+        self.customLayoutValues = customLayoutValues
         self.fontSize = fontSize
         self.autoReadSpeed = autoReadSpeed
         self.touchAreaMap = touchAreaMap
@@ -150,6 +213,8 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         pageMode = (try? container.decodeIfPresent(PageMode.self, forKey: .pageMode)) ?? .paged
         theme = (try? container.decodeIfPresent(Theme.self, forKey: .theme)) ?? .white
         layoutPreset = (try? container.decodeIfPresent(LayoutPreset.self, forKey: .layoutPreset)) ?? .standard
+        customLayoutValues = (try? container.decodeIfPresent(LayoutValues.self, forKey: .customLayoutValues))?
+            .normalized
         fontSize = (try? container.decodeIfPresent(Double.self, forKey: .fontSize)) ?? 18
         autoReadSpeed = (try? container.decodeIfPresent(Double.self, forKey: .autoReadSpeed)) ?? 80
         touchAreaMap = (try? container.decodeIfPresent([TouchAreaAction].self, forKey: .touchAreaMap))
@@ -170,6 +235,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             max(settings.autoReadSpeed, Self.minimumAutoReadSpeed),
             Self.maximumAutoReadSpeed
         )
+        settings.customLayoutValues = settings.customLayoutValues?.normalized
+        if settings.layoutPreset == .custom,
+           settings.customLayoutValues == nil {
+            settings.customLayoutValues = LayoutValues.standard
+        }
         if settings.touchAreaMap.count != Self.touchAreaCount {
             settings.touchAreaMap = Self.defaultTouchAreaMap
         }

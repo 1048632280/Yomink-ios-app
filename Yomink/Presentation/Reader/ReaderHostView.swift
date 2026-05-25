@@ -83,6 +83,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let settingsFontDecreaseButton = UIButton(type: .system)
     private let settingsFontValueButton = UIButton(type: .system)
     private let settingsFontIncreaseButton = UIButton(type: .system)
+    private var layoutValueLabels: [LayoutAdjustment: UILabel] = [:]
+    private var settingsControlPanRecognizers: [UIPanGestureRecognizer] = []
+    private var settingsControlDragLastY: CGFloat = 0
     private let keepScreenAwakeSwitch = UISwitch()
     private let autoHideHomeIndicatorSwitch = UISwitch()
     private let autoHideStatusBarSwitch = UISwitch()
@@ -157,6 +160,106 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         case page
         case layout
         case more
+    }
+
+    private enum LayoutAdjustment: CaseIterable, Hashable {
+        case bodyKern
+        case bodyLineSpacing
+        case bodyParagraphSpacing
+        case firstLineIndent
+        case titleKern
+        case titleLineSpacing
+        case titleParagraphSpacing
+        case titleFontSizeDelta
+
+        var titleKey: String {
+            switch self {
+            case .bodyKern:
+                return "reader.settings.layout.bodyKern"
+            case .bodyLineSpacing:
+                return "reader.settings.layout.bodyLineSpacing"
+            case .bodyParagraphSpacing:
+                return "reader.settings.layout.bodyParagraphSpacing"
+            case .firstLineIndent:
+                return "reader.settings.layout.firstLineIndent"
+            case .titleKern:
+                return "reader.settings.layout.titleKern"
+            case .titleLineSpacing:
+                return "reader.settings.layout.titleLineSpacing"
+            case .titleParagraphSpacing:
+                return "reader.settings.layout.titleParagraphSpacing"
+            case .titleFontSizeDelta:
+                return "reader.settings.layout.titleFontSizeDelta"
+            }
+        }
+
+        var step: Double {
+            switch self {
+            case .bodyKern, .titleKern:
+                return 0.5
+            case .firstLineIndent:
+                return 0.5
+            default:
+                return 1
+            }
+        }
+
+        func value(in values: ReaderSettings.LayoutValues) -> Double {
+            switch self {
+            case .bodyKern:
+                return values.bodyKern
+            case .bodyLineSpacing:
+                return values.bodyLineSpacing
+            case .bodyParagraphSpacing:
+                return values.bodyParagraphSpacing
+            case .firstLineIndent:
+                return values.firstLineIndentEms
+            case .titleKern:
+                return values.titleKern
+            case .titleLineSpacing:
+                return values.titleLineSpacing
+            case .titleParagraphSpacing:
+                return values.titleParagraphSpacing
+            case .titleFontSizeDelta:
+                return values.titleFontSizeDelta
+            }
+        }
+
+        func apply(delta: Double, to values: inout ReaderSettings.LayoutValues) {
+            switch self {
+            case .bodyKern:
+                values.bodyKern += delta
+            case .bodyLineSpacing:
+                values.bodyLineSpacing += delta
+            case .bodyParagraphSpacing:
+                values.bodyParagraphSpacing += delta
+            case .firstLineIndent:
+                values.firstLineIndentEms += delta
+            case .titleKern:
+                values.titleKern += delta
+            case .titleLineSpacing:
+                values.titleLineSpacing += delta
+            case .titleParagraphSpacing:
+                values.titleParagraphSpacing += delta
+            case .titleFontSizeDelta:
+                values.titleFontSizeDelta += delta
+            }
+            values = values.normalized
+        }
+
+        func formattedValue(_ value: Double) -> String {
+            switch self {
+            case .bodyKern, .firstLineIndent, .titleKern:
+                return String(format: "%.1f", value)
+            default:
+                return String(format: "%.0f", value)
+            }
+        }
+    }
+
+    private final class LayoutAdjustmentButton: UIButton {
+        var adjustment: LayoutAdjustment = .bodyLineSpacing
+        var delta: Double = 0
     }
 
     private var book: Book
@@ -769,7 +872,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsPanel.clipsToBounds = true
         view.addSubview(settingsPanel)
 
-        settingsPanelScrollView.alwaysBounceVertical = false
+        settingsPanelScrollView.alwaysBounceVertical = true
         settingsPanelScrollView.canCancelContentTouches = true
         settingsPanelScrollView.contentInsetAdjustmentBehavior = .never
         settingsPanelScrollView.delaysContentTouches = false
@@ -814,7 +917,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsPanelStack.addArrangedSubview(pageModeSection)
         let layoutSection = settingsSection(
             title: NSLocalizedString("reader.settings.layoutPreset", comment: ""),
-            control: settingsLayoutPresetControl
+            control: layoutSettingsControl()
         )
         settingsLayoutSection = layoutSection
         settingsPanelStack.addArrangedSubview(layoutSection)
@@ -826,12 +929,15 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             settingsPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             settingsPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            settingsPanel.heightAnchor.constraint(equalToConstant: Layout.settingsPanelContentHeight),
+            settingsPanel.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.settingsPanelContentHeight
+            ),
 
             settingsPanelScrollView.leadingAnchor.constraint(equalTo: settingsPanel.contentView.leadingAnchor),
             settingsPanelScrollView.trailingAnchor.constraint(equalTo: settingsPanel.contentView.trailingAnchor),
             settingsPanelScrollView.topAnchor.constraint(equalTo: settingsPanel.contentView.topAnchor),
-            settingsPanelScrollView.bottomAnchor.constraint(equalTo: settingsPanel.contentView.bottomAnchor),
+            settingsPanelScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
 
             settingsPanelStack.leadingAnchor.constraint(
                 equalTo: settingsPanelScrollView.contentLayoutGuide.leadingAnchor,
@@ -880,6 +986,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         )
         control.translatesAutoresizingMaskIntoConstraints = false
         control.heightAnchor.constraint(equalToConstant: Layout.settingsControlHeight).isActive = true
+        enableSettingsControlDrag(control)
     }
 
     private func settingsSection(title: String, control: UIView) -> UIView {
@@ -919,6 +1026,105 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return stack
     }
 
+    private func layoutSettingsControl() -> UIView {
+        let stack = UIStackView(arrangedSubviews: [
+            settingsLayoutPresetControl,
+            layoutAdjustmentGroup(
+                titleKey: "reader.settings.layout.bodyGroup",
+                adjustments: [.bodyKern, .bodyLineSpacing, .bodyParagraphSpacing, .firstLineIndent]
+            ),
+            layoutAdjustmentGroup(
+                titleKey: "reader.settings.layout.titleGroup",
+                adjustments: [.titleKern, .titleLineSpacing, .titleParagraphSpacing, .titleFontSizeDelta]
+            )
+        ])
+        stack.axis = .vertical
+        stack.spacing = 14
+        return stack
+    }
+
+    private func layoutAdjustmentGroup(titleKey: String, adjustments: [LayoutAdjustment]) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = NSLocalizedString(titleKey, comment: "")
+        titleLabel.font = .preferredFont(forTextStyle: .footnote)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = MenuStyle.secondaryTextColor
+
+        let rows = adjustments.map(layoutAdjustmentRow)
+        let rowStack = UIStackView(arrangedSubviews: rows)
+        rowStack.axis = .vertical
+        rowStack.spacing = 8
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, rowStack])
+        stack.axis = .vertical
+        stack.spacing = 8
+        return stack
+    }
+
+    private func layoutAdjustmentRow(_ adjustment: LayoutAdjustment) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = NSLocalizedString(adjustment.titleKey, comment: "")
+        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = MenuStyle.primaryTextColor
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let valueLabel = UILabel()
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        valueLabel.textColor = MenuStyle.secondaryTextColor
+        valueLabel.textAlignment = .center
+        valueLabel.translatesAutoresizingMaskIntoConstraints = false
+        valueLabel.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        layoutValueLabels[adjustment] = valueLabel
+
+        let decreaseButton = layoutAdjustmentButton(systemName: "minus", adjustment: adjustment, delta: -adjustment.step)
+        let increaseButton = layoutAdjustmentButton(systemName: "plus", adjustment: adjustment, delta: adjustment.step)
+
+        let controlStack = UIStackView(arrangedSubviews: [decreaseButton, valueLabel, increaseButton])
+        controlStack.axis = .horizontal
+        controlStack.alignment = .center
+        controlStack.spacing = 8
+        controlStack.setContentHuggingPriority(.required, for: .horizontal)
+        controlStack.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        let row = UIStackView(arrangedSubviews: [titleLabel, controlStack])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.distribution = .fill
+        row.spacing = 16
+        row.isLayoutMarginsRelativeArrangement = true
+        row.directionalLayoutMargins = NSDirectionalEdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 0)
+        return row
+    }
+
+    private func layoutAdjustmentButton(
+        systemName: String,
+        adjustment: LayoutAdjustment,
+        delta: Double
+    ) -> LayoutAdjustmentButton {
+        let button = LayoutAdjustmentButton(type: .system)
+        button.adjustment = adjustment
+        button.delta = delta
+        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.tintColor = MenuStyle.primaryTextColor
+        button.backgroundColor = MenuStyle.settingsControlSelectedColor
+        button.layer.cornerRadius = Layout.settingsFontButtonHeight / 2
+        button.layer.masksToBounds = true
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.addTarget(self, action: #selector(layoutAdjustmentButtonTapped(_:)), for: .touchUpInside)
+        button.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 14, weight: .semibold),
+            forImageIn: .normal
+        )
+        enableSettingsControlDrag(button)
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight),
+            button.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight)
+        ])
+        return button
+    }
+
     private func configureFontButton(_ button: UIButton, title: String) {
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
@@ -929,6 +1135,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         button.layer.masksToBounds = true
         button.translatesAutoresizingMaskIntoConstraints = false
         button.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight).isActive = true
+        enableSettingsControlDrag(button)
     }
 
     private func settingsMoreControls() -> UIView {
@@ -967,6 +1174,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         label.adjustsFontForContentSizeCategory = true
         toggle.onTintColor = .systemGreen
         toggle.addTarget(self, action: action, for: .valueChanged)
+        enableSettingsControlDrag(toggle)
         toggle.setContentHuggingPriority(.required, for: .horizontal)
         toggle.setContentCompressionResistancePriority(.required, for: .horizontal)
 
@@ -983,6 +1191,45 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             trailing: 0
         )
         return row
+    }
+
+    private func enableSettingsControlDrag(_ control: UIControl) {
+        let panGesture = UIPanGestureRecognizer(target: self, action: #selector(settingsControlPanChanged(_:)))
+        panGesture.cancelsTouchesInView = false
+        panGesture.delegate = self
+        control.addGestureRecognizer(panGesture)
+        settingsControlPanRecognizers.append(panGesture)
+    }
+
+    @objc private func settingsControlPanChanged(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: settingsPanelScrollView)
+        switch gesture.state {
+        case .began:
+            settingsControlDragLastY = translation.y
+            settingsPanelScrollView.panGestureRecognizer.isEnabled = false
+        case .changed:
+            let deltaY = translation.y - settingsControlDragLastY
+            settingsControlDragLastY = translation.y
+            scrollSettingsPanel(by: deltaY)
+        default:
+            settingsControlDragLastY = 0
+            settingsPanelScrollView.panGestureRecognizer.isEnabled = true
+        }
+    }
+
+    private func scrollSettingsPanel(by deltaY: CGFloat) {
+        guard settingsPanelScrollView.contentSize.height > settingsPanelScrollView.bounds.height else {
+            return
+        }
+        let minOffset = -settingsPanelScrollView.adjustedContentInset.top
+        let maxOffset = max(
+            minOffset,
+            settingsPanelScrollView.contentSize.height
+                - settingsPanelScrollView.bounds.height
+                + settingsPanelScrollView.adjustedContentInset.bottom
+        )
+        let targetY = min(max(settingsPanelScrollView.contentOffset.y - deltaY, minOffset), maxOffset)
+        settingsPanelScrollView.setContentOffset(CGPoint(x: 0, y: targetY), animated: false)
     }
 
     private func configureAutoReadPanel() {
@@ -1087,6 +1334,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         tapGesture.cancelsTouchesInView = false
         tapGesture.delegate = self
         collectionView.addGestureRecognizer(tapGesture)
+
+        let nextSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handlePageSwipe(_:)))
+        nextSwipe.direction = .left
+        nextSwipe.delegate = self
+        collectionView.addGestureRecognizer(nextSwipe)
+
+        let previousSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handlePageSwipe(_:)))
+        previousSwipe.direction = .right
+        previousSwipe.delegate = self
+        collectionView.addGestureRecognizer(previousSwipe)
 
         let edgeBack = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdgeBack(_:)))
         edgeBack.edges = .left
@@ -1344,7 +1601,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if pendingTapTargetPageIndex == page.pageIndex,
            let index = pages.firstIndex(of: page) {
             pendingTapTargetPageIndex = nil
-            scrollToPage(at: index, animated: false)
+            turnToPage(at: index, direction: .next)
         }
     }
 
@@ -1367,7 +1624,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if pendingTapTargetPageIndex == page.pageIndex,
            let index = pages.firstIndex(of: page) {
             pendingTapTargetPageIndex = nil
-            scrollToPage(at: index, animated: false)
+            turnToPage(at: index, direction: .previous)
         }
     }
 
@@ -1442,10 +1699,17 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         switch readerSettings.pageMode {
         case .paged:
             layout.scrollDirection = .horizontal
+            collectionView.isScrollEnabled = true
+            collectionView.isPagingEnabled = true
+            collectionView.alwaysBounceVertical = false
+        case .curl:
+            layout.scrollDirection = .horizontal
+            collectionView.isScrollEnabled = false
             collectionView.isPagingEnabled = true
             collectionView.alwaysBounceVertical = false
         case .scroll:
             layout.scrollDirection = .vertical
+            collectionView.isScrollEnabled = true
             collectionView.isPagingEnabled = false
             collectionView.alwaysBounceVertical = true
         }
@@ -1462,6 +1726,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         layout.scrollDirection = .vertical
+        collectionView.isScrollEnabled = true
         collectionView.isPagingEnabled = false
         collectionView.alwaysBounceVertical = true
         collectionView.contentInset = .zero
@@ -1472,7 +1737,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func effectiveReaderLayout() -> ReaderLayoutConfiguration {
-        var layout = readerSettings.normalized.layoutPreset.layoutConfiguration
+        var layout = readerSettings.normalized.effectiveLayoutConfiguration
         let safeAreaInsets = view.safeAreaInsets
         if safeAreaInsets.top > 0 {
             layout.topMargin = max(layout.topMargin, safeAreaInsets.top + 12)
@@ -1524,6 +1789,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         autoHideStatusBarSwitch.isOn = normalized.autoHideStatusBar
         edgeSwipeBackSwitch.isOn = normalized.edgeSwipeBackEnabled
         autoReadSpeedSlider.value = Float(normalized.autoReadSpeed)
+        updateLayoutValueLabels()
         updateSettingsQuickSection()
     }
 
@@ -1531,6 +1797,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsPageModeSection?.isHidden = settingsQuickMode != .page
         settingsLayoutSection?.isHidden = settingsQuickMode != .layout
         settingsMoreSection?.isHidden = settingsQuickMode != .more
+    }
+
+    private func updateLayoutValueLabels() {
+        let values = readerSettings.normalized.effectiveLayoutValues
+        for adjustment in LayoutAdjustment.allCases {
+            layoutValueLabels[adjustment]?.text = adjustment.formattedValue(adjustment.value(in: values))
+        }
     }
 
     private func setMenuVisible(_ visible: Bool, animated: Bool) {
@@ -1772,6 +2045,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         guard oldSettings.pageMode != nextSettings.pageMode
             || oldSettings.fontSize != nextSettings.fontSize
             || oldSettings.layoutPreset != nextSettings.layoutPreset
+            || oldSettings.customLayoutValues != nextSettings.customLayoutValues
             || oldSettings.theme != nextSettings.theme else {
             return
         }
@@ -1870,7 +2144,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         let targetIndex = currentIndex + 1
         if pages.indices.contains(targetIndex) {
-            scrollToPage(at: targetIndex, animated: false)
+            turnToPage(at: targetIndex, direction: .next)
             return
         }
         loadNextPageIfNeeded(scrollAfterLoading: true)
@@ -1883,10 +2157,36 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         let targetIndex = currentIndex - 1
         if pages.indices.contains(targetIndex) {
-            scrollToPage(at: targetIndex, animated: false)
+            turnToPage(at: targetIndex, direction: .previous)
             return
         }
         loadPreviousPageIfNeeded(scrollAfterLoading: true)
+    }
+
+    private func turnToPage(at index: Int, direction: TapPageDirection) {
+        guard readerSettings.pageMode == .curl,
+              !isAutoReading else {
+            scrollToPage(at: index, animated: false)
+            return
+        }
+        curlToPage(at: index, direction: direction)
+    }
+
+    private func curlToPage(at index: Int, direction: TapPageDirection) {
+        guard pages.indices.contains(index) else {
+            return
+        }
+        let transition: UIView.AnimationOptions = direction == .next
+            ? .transitionCurlUp
+            : .transitionCurlDown
+        UIView.transition(
+            with: collectionView,
+            duration: 0.42,
+            options: [transition, .curveEaseInOut, .allowUserInteraction],
+            animations: {
+                self.scrollToPage(at: index, animated: false)
+            }
+        )
     }
 
     private func startAutoReading() {
@@ -2291,6 +2591,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         var settings = readerSettings
         settings.layoutPreset = ReaderSettings.LayoutPreset.allCases[index]
+        if settings.layoutPreset == .custom,
+           settings.customLayoutValues == nil {
+            settings.customLayoutValues = readerSettings.normalized.effectiveLayoutValues
+        }
+        applyReaderSettings(settings)
+    }
+
+    @objc private func layoutAdjustmentButtonTapped(_ sender: LayoutAdjustmentButton) {
+        var settings = readerSettings.normalized
+        var values = settings.effectiveLayoutValues
+        sender.adjustment.apply(delta: sender.delta, to: &values)
+        settings.layoutPreset = .custom
+        settings.customLayoutValues = values
         applyReaderSettings(settings)
     }
 
@@ -2379,6 +2692,21 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             moveToNextPage()
         case .none:
             break
+        }
+    }
+
+    @objc private func handlePageSwipe(_ gesture: UISwipeGestureRecognizer) {
+        guard gesture.state == .ended,
+              readerSettings.pageMode == .curl,
+              !isMenuVisible,
+              !isSettingsPanelVisible,
+              !isAutoReading else {
+            return
+        }
+        if gesture.direction == .left {
+            moveToNextPage()
+        } else if gesture.direction == .right {
+            moveToPreviousPage()
         }
     }
 
@@ -2583,10 +2911,22 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if let panGesture = gestureRecognizer as? UIPanGestureRecognizer,
+           settingsControlPanRecognizers.contains(where: { $0 === panGesture }) {
+            let velocity = panGesture.velocity(in: settingsPanelScrollView)
+            return abs(velocity.y) >= abs(velocity.x)
+        }
         if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
             return readerSettings.edgeSwipeBackEnabled
         }
         return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        settingsControlPanRecognizers.contains { $0 === gestureRecognizer || $0 === otherGestureRecognizer }
     }
 
     private static func selectedChapter(
@@ -2943,7 +3283,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(textView)
 
-        let layout = readerSettings.normalized.layoutPreset.layoutConfiguration
+        let layout = readerSettings.normalized.effectiveLayoutConfiguration
         let leadingConstraint = textView.leadingAnchor.constraint(
                 equalTo: view.safeAreaLayoutGuide.leadingAnchor,
                 constant: layout.leftMargin
@@ -3609,7 +3949,6 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         styleSettingsControl(settingsThemeControl)
         styleSettingsControl(settingsLayoutPresetControl)
         styleSettingsControl(settingsQuickControl)
-        settingsPageModeControl.setEnabled(false, forSegmentAt: 1)
         configureFontSizeButton(
             settingsFontDecreaseButton,
             title: "A-",
@@ -4235,7 +4574,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         textView.transform = .identity
         textView.alpha = 1
 
-        if readerSettings.pageMode == .paged,
+        if readerSettings.pageMode != .scroll,
            let paginator = prefetchedChapter.paginator {
             textView.isScrollEnabled = false
             currentPaginator = paginator
@@ -4259,7 +4598,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
         let targetIndex: Int?
         switch readerSettings.pageMode {
-        case .paged:
+        case .paged, .curl:
             guard let paginator = currentPaginator,
                   paginator.pageCount > 0
             else {
@@ -4325,7 +4664,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 try Task.checkCancellation()
 
                 let paginator: ChapterPaginator?
-                if settings.pageMode == .paged {
+                if settings.pageMode != .scroll {
                     paginator = try await Task.detached(priority: .utility) {
                         try Task.checkCancellation()
                         let filteredText = ReaderTextFilter
@@ -4791,10 +5130,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let requiresImmediateRerender = oldSettings.pageMode != normalizedSettings.pageMode
             || oldSettings.theme != normalizedSettings.theme
             || oldSettings.layoutPreset != normalizedSettings.layoutPreset
+            || oldSettings.customLayoutValues != normalizedSettings.customLayoutValues
         let requiresDeferredRerender = oldSettings.fontSize != normalizedSettings.fontSize
         let onlyChromePreferencesChanged = oldSettings.pageMode == normalizedSettings.pageMode
             && oldSettings.theme == normalizedSettings.theme
             && oldSettings.layoutPreset == normalizedSettings.layoutPreset
+            && oldSettings.customLayoutValues == normalizedSettings.customLayoutValues
             && oldSettings.fontSize == normalizedSettings.fontSize
             && oldSettings.autoReadSpeed == normalizedSettings.autoReadSpeed
             && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
@@ -4802,6 +5143,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let onlyAutoReadSpeedChanged = oldSettings.pageMode == normalizedSettings.pageMode
             && oldSettings.theme == normalizedSettings.theme
             && oldSettings.layoutPreset == normalizedSettings.layoutPreset
+            && oldSettings.customLayoutValues == normalizedSettings.customLayoutValues
             && oldSettings.fontSize == normalizedSettings.fontSize
             && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
             && oldSettings.keepScreenAwake == normalizedSettings.keepScreenAwake
@@ -4844,7 +5186,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func applyReaderLayoutMargins() {
-        let layout = readerSettings.normalized.layoutPreset.layoutConfiguration
+        let layout = readerSettings.normalized.effectiveLayoutConfiguration
         textViewLeadingConstraint?.constant = layout.leftMargin
         textViewTrailingConstraint?.constant = -layout.rightMargin
         textViewTopConstraint?.constant = layout.topMargin
@@ -5629,7 +5971,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         setProvisionalProgress(chapterOffset: offset)
 
         switch readerSettings.pageMode {
-        case .paged:
+        case .paged, .curl:
             textView.isScrollEnabled = false
             guard let paginator = currentPaginator else {
                 rebuildPaginator(anchorByteOffset: offset, savingProgress: saveAfterRender)
@@ -6120,7 +6462,7 @@ private struct ReaderTypography: @unchecked Sendable {
         fontSize = normalizedSettings.fontSize
         textColor = normalizedSettings.theme.textColor
         self.chapterTitle = chapterTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
-        layout = normalizedSettings.layoutPreset.layoutConfiguration
+        layout = normalizedSettings.effectiveLayoutConfiguration
     }
 
     func attributedString(for text: String) -> NSAttributedString {
@@ -6250,56 +6592,88 @@ private struct ReaderTypography: @unchecked Sendable {
 
 private extension ReaderSettings.LayoutPreset {
     var layoutConfiguration: ReaderLayoutConfiguration {
+        layoutConfiguration(customValues: nil)
+    }
+
+    func layoutConfiguration(customValues: ReaderSettings.LayoutValues?) -> ReaderLayoutConfiguration {
+        let values = customValues?.normalized ?? layoutValues
         switch self {
         case .compact:
             return ReaderLayoutConfiguration(
-                bodyKern: 0,
-                bodyLineSpacing: 6,
-                bodyParagraphSpacing: 8,
+                bodyKern: CGFloat(values.bodyKern),
+                bodyLineSpacing: CGFloat(values.bodyLineSpacing),
+                bodyParagraphSpacing: CGFloat(values.bodyParagraphSpacing),
                 topMargin: 56,
                 bottomMargin: 36,
                 leftMargin: 16,
                 rightMargin: 16,
-                firstLineIndentEms: 2,
-                titleKern: 0,
-                titleLineSpacing: 6,
-                titleParagraphSpacing: 10,
-                titleFontSizeDelta: 1,
+                firstLineIndentEms: CGFloat(values.firstLineIndentEms),
+                titleKern: CGFloat(values.titleKern),
+                titleLineSpacing: CGFloat(values.titleLineSpacing),
+                titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
+                titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
                 titleFontWeight: .bold
             )
         case .standard, .custom:
             return ReaderLayoutConfiguration(
-                bodyKern: 0,
-                bodyLineSpacing: 10,
-                bodyParagraphSpacing: 14,
+                bodyKern: CGFloat(values.bodyKern),
+                bodyLineSpacing: CGFloat(values.bodyLineSpacing),
+                bodyParagraphSpacing: CGFloat(values.bodyParagraphSpacing),
                 topMargin: 72,
                 bottomMargin: 46,
                 leftMargin: 20,
                 rightMargin: 20,
-                firstLineIndentEms: 2,
-                titleKern: 0,
-                titleLineSpacing: 10,
-                titleParagraphSpacing: 14,
-                titleFontSizeDelta: 1,
+                firstLineIndentEms: CGFloat(values.firstLineIndentEms),
+                titleKern: CGFloat(values.titleKern),
+                titleLineSpacing: CGFloat(values.titleLineSpacing),
+                titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
+                titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
                 titleFontWeight: .bold
             )
         case .relaxed:
             return ReaderLayoutConfiguration(
-                bodyKern: 0,
-                bodyLineSpacing: 14,
-                bodyParagraphSpacing: 20,
+                bodyKern: CGFloat(values.bodyKern),
+                bodyLineSpacing: CGFloat(values.bodyLineSpacing),
+                bodyParagraphSpacing: CGFloat(values.bodyParagraphSpacing),
                 topMargin: 88,
                 bottomMargin: 58,
                 leftMargin: 24,
                 rightMargin: 24,
-                firstLineIndentEms: 2,
-                titleKern: 0,
-                titleLineSpacing: 14,
-                titleParagraphSpacing: 20,
-                titleFontSizeDelta: 1,
+                firstLineIndentEms: CGFloat(values.firstLineIndentEms),
+                titleKern: CGFloat(values.titleKern),
+                titleLineSpacing: CGFloat(values.titleLineSpacing),
+                titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
+                titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
                 titleFontWeight: .bold
             )
         }
+    }
+
+    var layoutValues: ReaderSettings.LayoutValues {
+        switch self {
+        case .compact:
+            return .compact
+        case .standard, .custom:
+            return .standard
+        case .relaxed:
+            return .relaxed
+        }
+    }
+}
+
+private extension ReaderSettings {
+    var effectiveLayoutValues: LayoutValues {
+        normalized.layoutPreset == .custom
+            ? (normalized.customLayoutValues?.normalized ?? .standard)
+            : normalized.layoutPreset.layoutValues
+    }
+
+    var effectiveLayoutConfiguration: ReaderLayoutConfiguration {
+        normalized.layoutPreset.layoutConfiguration(
+            customValues: normalized.layoutPreset == .custom
+                ? normalized.customLayoutValues
+                : nil
+        )
     }
 }
 
@@ -7203,8 +7577,10 @@ private final class ReaderSettingsViewController: UIViewController {
 private extension ReaderSettings.PageMode {
     init?(settingsPageTurnIndex: Int) {
         switch settingsPageTurnIndex {
-        case 0, 1:
+        case 0:
             self = .paged
+        case 1:
+            self = .curl
         case 2:
             self = .scroll
         default:
@@ -7216,6 +7592,8 @@ private extension ReaderSettings.PageMode {
         switch self {
         case .paged:
             return 0
+        case .curl:
+            return 1
         case .scroll:
             return 2
         }
@@ -7225,6 +7603,8 @@ private extension ReaderSettings.PageMode {
         switch self {
         case .paged:
             return NSLocalizedString("reader.settings.pageMode.paged", comment: "")
+        case .curl:
+            return NSLocalizedString("reader.settings.pageTurn.curl", comment: "")
         case .scroll:
             return NSLocalizedString("reader.settings.pageMode.scroll", comment: "")
         }
@@ -7605,7 +7985,7 @@ private enum CollectionReaderPaginator {
         viewportSize: CGSize,
         safeAreaInsets: UIEdgeInsets
     ) -> ReaderLayoutConfiguration {
-        var layout = settings.layoutPreset.layoutConfiguration
+        var layout = settings.effectiveLayoutConfiguration
         if safeAreaInsets.top > 0 {
             layout.topMargin = max(layout.topMargin, safeAreaInsets.top + 12)
         }

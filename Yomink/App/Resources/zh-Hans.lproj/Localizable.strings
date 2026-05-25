@@ -130,6 +130,16 @@
 "reader.settings.pageTurn.slide" = "左右平移";
 "reader.settings.pageTurn.curl" = "仿真翻页";
 "reader.settings.pageTurn.scroll" = "上下滑动";
+"reader.settings.layout.bodyGroup" = "正文";
+"reader.settings.layout.titleGroup" = "章节标题";
+"reader.settings.layout.bodyKern" = "字间距";
+"reader.settings.layout.bodyLineSpacing" = "行距";
+"reader.settings.layout.bodyParagraphSpacing" = "段距";
+"reader.settings.layout.firstLineIndent" = "首行缩进";
+"reader.settings.layout.titleKern" = "字间距";
+"reader.settings.layout.titleLineSpacing" = "行距";
+"reader.settings.layout.titleParagraphSpacing" = "段后距";
+"reader.settings.layout.titleFontSizeDelta" = "标题字号";
 "reader.autoRead.placeholder" = "自动阅读";
 "reader.autoRead.speed" = "自动阅读速度";
 "reader.autoRead.exit" = "退出自动阅读";
