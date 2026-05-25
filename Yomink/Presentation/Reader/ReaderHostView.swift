@@ -61,13 +61,25 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let darkModePlaceholderButton = UIButton(type: .system)
     private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
     private let settingsPanelStack = UIStackView()
-    private let settingsFontValueLabel = UILabel()
-    private let settingsFontStepper = UIStepper()
+    private let settingsFontDecreaseButton = UIButton(type: .system)
+    private let settingsFontValueButton = UIButton(type: .system)
+    private let settingsFontIncreaseButton = UIButton(type: .system)
     private lazy var settingsPageModeControl = UISegmentedControl(
-        items: ReaderSettings.PageMode.allCases.map(\.localizedTitle)
+        items: [
+            NSLocalizedString("reader.settings.pageTurn.slide", comment: ""),
+            NSLocalizedString("reader.settings.pageTurn.curl", comment: ""),
+            NSLocalizedString("reader.settings.pageTurn.scroll", comment: "")
+        ]
     )
     private lazy var settingsThemeControl = UISegmentedControl(
         items: ReaderSettings.Theme.allCases.map(\.localizedTitle)
+    )
+    private lazy var settingsQuickControl = UISegmentedControl(
+        items: [
+            NSLocalizedString("reader.settings.quick.page", comment: ""),
+            NSLocalizedString("reader.settings.quick.layout", comment: ""),
+            NSLocalizedString("reader.settings.quick.more", comment: "")
+        ]
     )
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
@@ -76,34 +88,45 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let readerVerticalInset: CGFloat = 28
         static let topBarContentHeight: CGFloat = 44
         static let topBarButtonBottomInset: CGFloat = 5
-        static let bottomBarTopInset: CGFloat = 6
-        static let bottomBarSafeAreaInset: CGFloat = 6
-        static let progressRowHeight: CGFloat = 44
-        static let bottomActionRowHeight: CGFloat = 58
-        static let chapterButtonWidth: CGFloat = 78
+        static let bottomBarTopInset: CGFloat = 0
+        static let bottomBarSafeAreaInset: CGFloat = 2
+        static let progressRowHeight: CGFloat = 38
+        static let bottomActionRowHeight: CGFloat = 48
+        static let chapterButtonWidth: CGFloat = 74
+        static let progressSliderHorizontalInset: CGFloat = 18
         static let floatingButtonSize: CGFloat = 46
         static let floatingButtonSpacing: CGFloat = 12
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
-        static let settingsPanelHeightRatio: CGFloat = 0.43
-        static let settingsPanelMinimumHeight: CGFloat = 250
-        static let settingsPanelMaximumHeight: CGFloat = 340
+        static let settingsPanelHeightRatio: CGFloat = 0.46
+        static let settingsPanelMinimumHeight: CGFloat = 330
+        static let settingsPanelMaximumHeight: CGFloat = 420
         static let settingsPanelHorizontalInset: CGFloat = 20
-        static let settingsPanelTopInset: CGFloat = 24
+        static let settingsPanelTopInset: CGFloat = 22
         static let settingsPanelBottomInset: CGFloat = 20
+        static let settingsControlHeight: CGFloat = 34
+        static let settingsFontButtonHeight: CGFloat = 32
     }
 
     private enum MenuStyle {
-        static let barEffect = UIBlurEffect(style: .systemChromeMaterialDark)
-        static let barOverlayColor = UIColor.black.withAlphaComponent(0.28)
-        static let separatorColor = UIColor.white.withAlphaComponent(0.09)
+        static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
+        static let progressRowBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
+        static let separatorColor = UIColor(red: 0.255, green: 0.255, blue: 0.255, alpha: 1)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
-        static let progressTintColor = UIColor(red: 0.88, green: 0.16, blue: 0.11, alpha: 1)
-        static let progressTrackColor = UIColor.white.withAlphaComponent(0.10)
-        static let progressThumbColor = UIColor(white: 0.34, alpha: 1)
-        static let floatingButtonColor = UIColor(white: 0.11, alpha: 0.94)
+        static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
+        static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
+        static let progressThumbColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
+        static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
+        static let settingsControlSelectedColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
+        static let floatingButtonColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let floatingButtonIconColor = UIColor(white: 0.48, alpha: 1)
+    }
+
+    private enum SettingsQuickMode: Int {
+        case page
+        case layout
+        case more
     }
 
     private var book: Book
@@ -142,6 +165,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var isSettingsPanelVisible = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
+    private var settingsQuickMode: SettingsQuickMode = .page
+    private weak var settingsPageModeSection: UIView?
     private var lastPaginationSize = CGSize.zero
 
     init(
@@ -271,8 +296,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func configureMenus() {
-        topBar.effect = MenuStyle.barEffect
-        bottomBar.effect = MenuStyle.barEffect
+        topBar.effect = nil
+        topBar.backgroundColor = MenuStyle.barBackgroundColor
+        topBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
+        bottomBar.effect = nil
+        bottomBar.backgroundColor = MenuStyle.barBackgroundColor
+        bottomBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
         configureTopBar()
         configureBottomBar()
         configureFloatingActionButtons()
@@ -392,10 +421,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func configureBottomBar() {
         bottomBar.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(bottomBar)
-        addMenuOverlay(to: bottomBar)
 
         previousChapterButton.setTitle(NSLocalizedString("reader.previousChapter", comment: ""), for: .normal)
-        previousChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        previousChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
         previousChapterButton.tintColor = MenuStyle.secondaryTextColor
         previousChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
         previousChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
@@ -404,7 +432,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         previousChapterButton.translatesAutoresizingMaskIntoConstraints = false
 
         nextChapterButton.setTitle(NSLocalizedString("reader.nextChapter", comment: ""), for: .normal)
-        nextChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        nextChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
         nextChapterButton.tintColor = MenuStyle.secondaryTextColor
         nextChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
         nextChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
@@ -418,6 +446,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
         progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
         progressSlider.thumbTintColor = MenuStyle.progressThumbColor
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 13), for: .normal)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .highlighted)
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchDown), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
@@ -442,7 +472,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         catalogButton.addTarget(self, action: #selector(catalogButtonTapped), for: .touchUpInside)
         catalogButton.translatesAutoresizingMaskIntoConstraints = false
 
-        settingsButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
+        settingsButton.setImage(UIImage(systemName: "textformat"), for: .normal)
         settingsButton.setTitle(NSLocalizedString("reader.settings", comment: ""), for: .normal)
         configureBottomActionButton(settingsButton)
         settingsButton.accessibilityLabel = NSLocalizedString("reader.settings", comment: "")
@@ -452,11 +482,17 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let leftProgressSeparator = makeVerticalMenuSeparator()
         let rightProgressSeparator = makeVerticalMenuSeparator()
         let actionRowTopSeparator = makeHorizontalMenuSeparator()
+        let progressSliderContainer = UIView()
+        progressSliderContainer.translatesAutoresizingMaskIntoConstraints = false
+        progressSliderContainer.addSubview(progressSlider)
+        let progressRowContainer = UIView()
+        progressRowContainer.backgroundColor = MenuStyle.progressRowBackgroundColor
+        progressRowContainer.translatesAutoresizingMaskIntoConstraints = false
 
         let progressRow = UIStackView(arrangedSubviews: [
             previousChapterButton,
             leftProgressSeparator,
-            progressSlider,
+            progressSliderContainer,
             rightProgressSeparator,
             nextChapterButton
         ])
@@ -473,9 +509,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         actionRow.alignment = .fill
         actionRow.distribution = .fillEqually
         actionRow.spacing = 0
+        actionRow.backgroundColor = MenuStyle.barBackgroundColor
         actionRow.translatesAutoresizingMaskIntoConstraints = false
 
-        bottomBar.contentView.addSubview(progressRow)
+        bottomBar.contentView.addSubview(progressRowContainer)
+        progressRowContainer.addSubview(progressRow)
         bottomBar.contentView.addSubview(actionRowTopSeparator)
         bottomBar.contentView.addSubview(actionRow)
 
@@ -484,22 +522,37 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
 
-            progressRow.topAnchor.constraint(
+            progressRowContainer.topAnchor.constraint(
                 equalTo: bottomBar.topAnchor,
                 constant: Layout.bottomBarTopInset
             ),
-            progressRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
-            progressRow.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+            progressRowContainer.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
+            progressRowContainer.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
+            progressRowContainer.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
+
+            progressRow.leadingAnchor.constraint(equalTo: progressRowContainer.leadingAnchor),
+            progressRow.trailingAnchor.constraint(equalTo: progressRowContainer.trailingAnchor),
+            progressRow.topAnchor.constraint(equalTo: progressRowContainer.topAnchor),
+            progressRow.bottomAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
             progressRow.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
 
             previousChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
             leftProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
+            progressSlider.leadingAnchor.constraint(
+                equalTo: progressSliderContainer.leadingAnchor,
+                constant: Layout.progressSliderHorizontalInset
+            ),
+            progressSlider.trailingAnchor.constraint(
+                equalTo: progressSliderContainer.trailingAnchor,
+                constant: -Layout.progressSliderHorizontalInset
+            ),
+            progressSlider.centerYAnchor.constraint(equalTo: progressSliderContainer.centerYAnchor),
             rightProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
             nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
 
             actionRowTopSeparator.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
             actionRowTopSeparator.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
-            actionRowTopSeparator.topAnchor.constraint(equalTo: progressRow.bottomAnchor),
+            actionRowTopSeparator.topAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
             actionRowTopSeparator.heightAnchor.constraint(equalToConstant: 1),
 
             actionRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
@@ -555,7 +608,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private func addMenuOverlay(to visualEffectView: UIVisualEffectView) {
         let overlayView = UIView()
-        overlayView.backgroundColor = MenuStyle.barOverlayColor
+        overlayView.backgroundColor = MenuStyle.barBackgroundColor
         overlayView.translatesAutoresizingMaskIntoConstraints = false
         overlayView.isUserInteractionEnabled = false
         visualEffectView.contentView.insertSubview(overlayView, at: 0)
@@ -585,12 +638,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         button.tintColor = MenuStyle.secondaryTextColor
         button.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
         button.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
-        button.titleLabel?.font = .preferredFont(forTextStyle: .footnote)
+        button.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.textAlignment = .center
         button.contentHorizontalAlignment = .center
         button.contentVerticalAlignment = .center
-        button.alignImageAboveTitle(spacing: 7)
+        button.alignImageAboveTitle(spacing: 4)
+        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 0, bottom: 2, right: 0)
     }
 
     private func configureFloatingButton(
@@ -608,22 +662,33 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         button.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
+        let size = CGSize(width: diameter, height: diameter)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            MenuStyle.progressThumbColor.setFill()
+            context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
     private func configureSettingsPanel() {
         settingsPanel.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.effect = nil
+        settingsPanel.backgroundColor = MenuStyle.barBackgroundColor
+        settingsPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
         settingsPanel.transform = CGAffineTransform(
             translationX: 0,
             y: Layout.settingsPanelMaximumHeight + 1
         )
         settingsPanel.isUserInteractionEnabled = false
-        settingsPanel.layer.cornerRadius = 18
-        settingsPanel.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        settingsPanel.layer.cornerRadius = 0
+        settingsPanel.layer.maskedCorners = []
         settingsPanel.clipsToBounds = true
-        addMenuOverlay(to: settingsPanel)
         view.addSubview(settingsPanel)
 
         settingsPanelStack.axis = .vertical
         settingsPanelStack.alignment = .fill
-        settingsPanelStack.spacing = 18
+        settingsPanelStack.spacing = 16
         settingsPanelStack.translatesAutoresizingMaskIntoConstraints = false
         settingsPanel.contentView.addSubview(settingsPanelStack)
 
@@ -637,46 +702,56 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             action: #selector(settingsThemeChanged),
             for: .valueChanged
         )
-
-        settingsFontStepper.minimumValue = ReaderSettings.minimumFontSize
-        settingsFontStepper.maximumValue = ReaderSettings.maximumFontSize
-        settingsFontStepper.stepValue = 1
-        settingsFontStepper.addTarget(
+        settingsQuickControl.selectedSegmentIndex = SettingsQuickMode.page.rawValue
+        settingsQuickControl.addTarget(
             self,
-            action: #selector(settingsFontSizeChanged),
+            action: #selector(settingsQuickModeChanged),
             for: .valueChanged
         )
         styleSettingsControl(settingsPageModeControl)
         styleSettingsControl(settingsThemeControl)
-        settingsFontStepper.tintColor = MenuStyle.primaryTextColor
+        styleSettingsControl(settingsQuickControl)
+        settingsPageModeControl.setEnabled(false, forSegmentAt: 1)
+        configureFontSizeButton(
+            settingsFontDecreaseButton,
+            title: "A-",
+            action: #selector(settingsFontDecreaseTapped)
+        )
+        configureFontValueButton()
+        configureFontSizeButton(
+            settingsFontIncreaseButton,
+            title: "A+",
+            action: #selector(settingsFontIncreaseTapped)
+        )
 
         let fontRow = UIStackView(arrangedSubviews: [
-            settingsFontValueLabel,
-            settingsFontStepper
+            settingsPanelTitleLabel(NSLocalizedString("reader.settings.fontSize", comment: "")),
+            makeFontSizeControls()
         ])
         fontRow.axis = .horizontal
         fontRow.alignment = .center
-        fontRow.spacing = 12
-        fontRow.distribution = .equalSpacing
+        fontRow.spacing = 16
+        fontRow.distribution = .fill
 
-        settingsPanelStack.addArrangedSubview(
-            settingsPanelSection(
-                title: NSLocalizedString("reader.settings.pageMode", comment: ""),
-                control: settingsPageModeControl
-            )
-        )
-        settingsPanelStack.addArrangedSubview(
-            settingsPanelSection(
-                title: NSLocalizedString("reader.settings.fontSize", comment: ""),
-                control: fontRow
-            )
-        )
+        settingsPanelStack.addArrangedSubview(fontRow)
         settingsPanelStack.addArrangedSubview(
             settingsPanelSection(
                 title: NSLocalizedString("reader.settings.theme", comment: ""),
                 control: settingsThemeControl
             )
         )
+        settingsPanelStack.addArrangedSubview(
+            settingsPanelSection(
+                title: NSLocalizedString("reader.settings.quick", comment: ""),
+                control: settingsQuickControl
+            )
+        )
+        let pageModeSection = settingsPanelSection(
+            title: NSLocalizedString("reader.settings.pageTurn", comment: ""),
+            control: settingsPageModeControl
+        )
+        settingsPageModeSection = pageModeSection
+        settingsPanelStack.addArrangedSubview(pageModeSection)
 
         let heightRatioConstraint = settingsPanel.heightAnchor.constraint(
             equalTo: view.heightAnchor,
@@ -718,56 +793,115 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func styleSettingsControl(_ control: UISegmentedControl) {
-        control.backgroundColor = UIColor.white.withAlphaComponent(0.06)
-        control.selectedSegmentTintColor = UIColor.white.withAlphaComponent(0.16)
+        control.backgroundColor = MenuStyle.settingsControlBackgroundColor
+        control.selectedSegmentTintColor = MenuStyle.settingsControlSelectedColor
         control.setTitleTextAttributes(
             [
-                .foregroundColor: UIColor.white.withAlphaComponent(0.56)
+                .font: UIFont.preferredFont(forTextStyle: .footnote),
+                .foregroundColor: MenuStyle.secondaryTextColor
             ],
             for: .normal
         )
         control.setTitleTextAttributes(
             [
-                .foregroundColor: UIColor.white
+                .font: UIFont.preferredFont(forTextStyle: .footnote),
+                .foregroundColor: MenuStyle.primaryTextColor
             ],
             for: .selected
         )
+        control.setTitleTextAttributes(
+            [
+                .font: UIFont.preferredFont(forTextStyle: .footnote),
+                .foregroundColor: UIColor(red: 0.39, green: 0.39, blue: 0.39, alpha: 1)
+            ],
+            for: .disabled
+        )
+        control.heightAnchor.constraint(equalToConstant: Layout.settingsControlHeight).isActive = true
     }
 
     private func settingsPanelSection(title: String, control: UIView) -> UIView {
-        let titleLabel = UILabel()
-        titleLabel.text = title
-        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.textColor = MenuStyle.secondaryTextColor
+        let titleLabel = settingsPanelTitleLabel(title)
 
         let stackView = UIStackView(arrangedSubviews: [
             titleLabel,
             control
         ])
         stackView.axis = .vertical
-        stackView.spacing = 8
+        stackView.spacing = 9
         return stackView
+    }
+
+    private func settingsPanelTitleLabel(_ title: String) -> UILabel {
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = MenuStyle.secondaryTextColor
+        return titleLabel
+    }
+
+    private func configureFontSizeButton(_ button: UIButton, title: String, action: Selector) {
+        button.setTitle(title, for: .normal)
+        button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
+        button.backgroundColor = MenuStyle.settingsControlBackgroundColor
+        button.layer.cornerRadius = Layout.settingsFontButtonHeight / 2
+        button.layer.masksToBounds = true
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func configureFontValueButton() {
+        settingsFontValueButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        settingsFontValueButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        settingsFontValueButton.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
+        settingsFontValueButton.backgroundColor = MenuStyle.settingsControlSelectedColor
+        settingsFontValueButton.layer.cornerRadius = Layout.settingsFontButtonHeight / 2
+        settingsFontValueButton.layer.masksToBounds = true
+        settingsFontValueButton.accessibilityLabel = NSLocalizedString("reader.settings.fontSize.reset", comment: "")
+        settingsFontValueButton.addTarget(self, action: #selector(settingsFontResetTapped), for: .touchUpInside)
+        settingsFontValueButton.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func makeFontSizeControls() -> UIStackView {
+        let controls = UIStackView(arrangedSubviews: [
+            settingsFontDecreaseButton,
+            settingsFontValueButton,
+            settingsFontIncreaseButton
+        ])
+        controls.axis = .horizontal
+        controls.alignment = .center
+        controls.distribution = .fillEqually
+        controls.spacing = 8
+        controls.translatesAutoresizingMaskIntoConstraints = false
+
+        NSLayoutConstraint.activate([
+            controls.widthAnchor.constraint(equalToConstant: 158),
+            settingsFontDecreaseButton.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight),
+            settingsFontValueButton.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight),
+            settingsFontIncreaseButton.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight)
+        ])
+
+        return controls
     }
 
     private func syncSettingsPanelControls() {
         let normalizedSettings = readerSettings.normalized
-        settingsPageModeControl.selectedSegmentIndex = ReaderSettings.PageMode.allCases
-            .firstIndex(of: normalizedSettings.pageMode) ?? 0
+        settingsPageModeControl.selectedSegmentIndex = normalizedSettings.pageMode.settingsPageTurnIndex
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases
             .firstIndex(of: normalizedSettings.theme) ?? 0
-        settingsFontStepper.value = normalizedSettings.fontSize
+        settingsQuickControl.selectedSegmentIndex = settingsQuickMode.rawValue
+        updateSettingsQuickSection()
         updateSettingsFontValueLabel()
     }
 
     private func updateSettingsFontValueLabel() {
-        settingsFontValueLabel.text = String(
-            format: NSLocalizedString("reader.settings.fontSize.value", comment: ""),
-            Int(readerSettings.normalized.fontSize)
-        )
-        settingsFontValueLabel.font = .preferredFont(forTextStyle: .body)
-        settingsFontValueLabel.adjustsFontForContentSizeCategory = true
-        settingsFontValueLabel.textColor = MenuStyle.primaryTextColor
+        settingsFontValueButton.setTitle("\(Int(readerSettings.normalized.fontSize))", for: .normal)
+    }
+
+    private func updateSettingsQuickSection() {
+        settingsPageModeSection?.isHidden = settingsQuickMode != .page
     }
 
     private func configureLoadingIndicator() {
@@ -2286,11 +2420,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     @objc private func settingsPageModeChanged() {
         let index = settingsPageModeControl.selectedSegmentIndex
-        guard ReaderSettings.PageMode.allCases.indices.contains(index) else {
-            return
-        }
+        guard let pageMode = ReaderSettings.PageMode(settingsPageTurnIndex: index) else { return }
         var settings = readerSettings
-        settings.pageMode = ReaderSettings.PageMode.allCases[index]
+        settings.pageMode = pageMode
         applyReaderSettings(settings)
     }
 
@@ -2304,9 +2436,32 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         applyReaderSettings(settings)
     }
 
-    @objc private func settingsFontSizeChanged() {
+    @objc private func settingsQuickModeChanged() {
+        settingsQuickMode = SettingsQuickMode(rawValue: settingsQuickControl.selectedSegmentIndex) ?? .page
+        updateSettingsQuickSection()
+    }
+
+    @objc private func settingsFontDecreaseTapped() {
         var settings = readerSettings
-        settings.fontSize = settingsFontStepper.value
+        settings.fontSize = max(
+            ReaderSettings.minimumFontSize,
+            readerSettings.normalized.fontSize - 1
+        )
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsFontIncreaseTapped() {
+        var settings = readerSettings
+        settings.fontSize = min(
+            ReaderSettings.maximumFontSize,
+            readerSettings.normalized.fontSize + 1
+        )
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsFontResetTapped() {
+        var settings = readerSettings
+        settings.fontSize = ReaderSettings.default.fontSize
         applyReaderSettings(settings)
     }
 
@@ -3457,6 +3612,26 @@ private final class ReaderSettingsViewController: UIViewController {
 }
 
 private extension ReaderSettings.PageMode {
+    init?(settingsPageTurnIndex: Int) {
+        switch settingsPageTurnIndex {
+        case 0:
+            self = .paged
+        case 2:
+            self = .scroll
+        default:
+            return nil
+        }
+    }
+
+    var settingsPageTurnIndex: Int {
+        switch self {
+        case .paged:
+            return 0
+        case .scroll:
+            return 2
+        }
+    }
+
     var localizedTitle: String {
         switch self {
         case .paged:
