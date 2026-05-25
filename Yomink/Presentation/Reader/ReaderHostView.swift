@@ -2610,7 +2610,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         static let searchHeaderHeight: CGFloat = 56
         static let catalogEstimatedRowHeight: CGFloat = 52
         static let bookmarkEstimatedRowHeight: CGFloat = 118
-        static let segmentedControlMinimumWidth: CGFloat = 156
+        static let segmentedControlMinimumWidth: CGFloat = 128
     }
 
     private struct ChapterListItem {
@@ -2734,7 +2734,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
             for: .valueChanged
         )
         segmentedControl.setTitleTextAttributes(
-            [.font: UIFont.preferredFont(forTextStyle: .subheadline)],
+            [.font: UIFont.preferredFont(forTextStyle: .footnote)],
             for: .normal
         )
         segmentedControl.widthAnchor.constraint(
