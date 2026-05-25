@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import QuartzCore
 
 struct ReaderHostView: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
@@ -59,6 +60,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let floatingActionStack = UIStackView()
     private let autoReadPlaceholderButton = UIButton(type: .system)
     private let darkModePlaceholderButton = UIButton(type: .system)
+    private let autoReadPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let autoReadSpeedSlider = UISlider()
+    private let autoReadExitButton = UIButton(type: .system)
     private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
     private let settingsPanelStack = UIStackView()
     private let settingsFontDecreaseButton = UIButton(type: .system)
@@ -107,6 +111,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let settingsControlHeight: CGFloat = 34
         static let settingsFontButtonHeight: CGFloat = 32
         static let menuSeparatorThickness: CGFloat = 2
+        static let autoReadPanelHeight: CGFloat = 158
+        static let autoReadPanelHorizontalInset: CGFloat = 22
+        static let autoReadPanelTopInset: CGFloat = 18
+        static let autoReadPanelBottomInset: CGFloat = 12
+        static let autoReadIconSize: CGFloat = 24
+        static let autoReadExitButtonHeight: CGFloat = 38
     }
 
     private enum MenuStyle {
@@ -165,11 +175,17 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var currentBookmark: Bookmark?
     private var isMenuVisible = false
     private var isSettingsPanelVisible = false
+    private var isAutoReading = false
+    private var isAutoReadPanelVisible = false
+    private var isAutoReadWaitingForChapter = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
     private var settingsQuickMode: SettingsQuickMode = .page
     private weak var settingsPageModeSection: UIView?
     private var lastPaginationSize = CGSize.zero
+    private var autoReadDisplayLink: CADisplayLink?
+    private var lastAutoReadTimestamp: CFTimeInterval?
+    private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
 
     init(
         book: Book,
@@ -190,6 +206,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     deinit {
+        stopAutoReadDisplayLink()
+        NotificationCenter.default.removeObserver(self)
         loadTask?.cancel()
         paginateTask?.cancel()
         saveTask?.cancel()
@@ -206,6 +224,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         configureMenus()
         configureLoadingIndicator()
         configureGestures()
+        configureLifecycleObservers()
         applyTheme()
         startInitialLoad()
     }
@@ -219,6 +238,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
         applyMenuPosition(animated: false)
         applySettingsPanelPosition(animated: false)
+        applyAutoReadPanelPosition()
 
         let size = textView.bounds.size
         guard currentChapterText.isEmpty == false,
@@ -250,6 +270,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         saveSettingsImmediately()
     }
@@ -308,7 +329,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         configureBottomBar()
         configureFloatingActionButtons()
         configureSettingsPanel()
+        configureAutoReadPanel()
         setMenuVisible(false, animated: false)
+        setAutoReadPanelVisible(false, animated: false)
     }
 
     private func configureTopBar() {
@@ -574,8 +597,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func configureFloatingActionButtons() {
         configureFloatingButton(
             autoReadPlaceholderButton,
-            imageName: "circle",
+            imageName: "play.fill",
             accessibilityKey: "reader.autoRead.placeholder"
+        )
+        autoReadPlaceholderButton.addTarget(
+            self,
+            action: #selector(autoReadButtonTapped),
+            for: .touchUpInside
         )
         configureFloatingButton(
             darkModePlaceholderButton,
@@ -701,6 +729,111 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             context.cgContext.setLineWidth(1)
             context.cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
         }
+    }
+
+    private func configureAutoReadPanel() {
+        autoReadPanel.translatesAutoresizingMaskIntoConstraints = false
+        autoReadPanel.effect = nil
+        autoReadPanel.backgroundColor = MenuStyle.barBackgroundColor
+        autoReadPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
+        autoReadPanel.isUserInteractionEnabled = false
+        autoReadPanel.transform = CGAffineTransform(
+            translationX: 0,
+            y: Layout.autoReadPanelHeight + 1
+        )
+        view.addSubview(autoReadPanel)
+
+        autoReadSpeedSlider.minimumValue = Float(ReaderSettings.minimumAutoReadSpeed)
+        autoReadSpeedSlider.maximumValue = Float(ReaderSettings.maximumAutoReadSpeed)
+        autoReadSpeedSlider.minimumTrackTintColor = MenuStyle.progressTintColor
+        autoReadSpeedSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
+        autoReadSpeedSlider.thumbTintColor = MenuStyle.progressThumbColor
+        autoReadSpeedSlider.setThumbImage(makeSliderThumbImage(diameter: 13), for: .normal)
+        autoReadSpeedSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .highlighted)
+        autoReadSpeedSlider.accessibilityLabel = NSLocalizedString("reader.autoRead.speed", comment: "")
+        autoReadSpeedSlider.addTarget(
+            self,
+            action: #selector(autoReadSpeedSliderChanged),
+            for: .valueChanged
+        )
+        autoReadSpeedSlider.translatesAutoresizingMaskIntoConstraints = false
+
+        autoReadExitButton.setTitle(NSLocalizedString("reader.autoRead.exit", comment: ""), for: .normal)
+        autoReadExitButton.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
+        autoReadExitButton.setTitleColor(MenuStyle.secondaryTextColor, for: .highlighted)
+        autoReadExitButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        autoReadExitButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        autoReadExitButton.backgroundColor = MenuStyle.settingsControlBackgroundColor
+        autoReadExitButton.layer.cornerRadius = Layout.autoReadExitButtonHeight / 2
+        autoReadExitButton.layer.masksToBounds = true
+        autoReadExitButton.addTarget(self, action: #selector(exitAutoReadButtonTapped), for: .touchUpInside)
+
+        let speedRow = UIStackView(arrangedSubviews: [
+            autoReadIcon(named: "tortoise.fill", fallbackName: "tortoise"),
+            autoReadSpeedSlider,
+            autoReadIcon(named: "hare.fill", fallbackName: "hare")
+        ])
+        speedRow.axis = .horizontal
+        speedRow.alignment = .center
+        speedRow.spacing = 14
+
+        let stackView = UIStackView(arrangedSubviews: [
+            speedRow,
+            autoReadExitButton
+        ])
+        stackView.axis = .vertical
+        stackView.alignment = .fill
+        stackView.spacing = 14
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        autoReadPanel.contentView.addSubview(stackView)
+
+        NSLayoutConstraint.activate([
+            autoReadPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            autoReadPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            autoReadPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            autoReadPanel.heightAnchor.constraint(equalToConstant: Layout.autoReadPanelHeight),
+
+            stackView.leadingAnchor.constraint(
+                equalTo: autoReadPanel.contentView.leadingAnchor,
+                constant: Layout.autoReadPanelHorizontalInset
+            ),
+            stackView.trailingAnchor.constraint(
+                equalTo: autoReadPanel.contentView.trailingAnchor,
+                constant: -Layout.autoReadPanelHorizontalInset
+            ),
+            stackView.topAnchor.constraint(
+                equalTo: autoReadPanel.contentView.topAnchor,
+                constant: Layout.autoReadPanelTopInset
+            ),
+            stackView.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.autoReadPanelBottomInset
+            ),
+            autoReadExitButton.heightAnchor.constraint(equalToConstant: Layout.autoReadExitButtonHeight)
+        ])
+
+        syncAutoReadPanelControls()
+    }
+
+    private func autoReadIcon(
+        named imageName: String,
+        fallbackName: String
+    ) -> UIImageView {
+        let imageView = UIImageView(image: UIImage(systemName: imageName) ?? UIImage(systemName: fallbackName))
+        imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: Layout.autoReadIconSize,
+            weight: .regular
+        )
+        imageView.tintColor = MenuStyle.secondaryTextColor
+        imageView.contentMode = .scaleAspectFit
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: Layout.autoReadIconSize),
+            imageView.heightAnchor.constraint(equalToConstant: Layout.autoReadIconSize)
+        ])
+        return imageView
     }
 
     private func configureSettingsPanel() {
@@ -926,6 +1059,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         settingsQuickControl.selectedSegmentIndex = settingsQuickMode.rawValue
         updateSettingsQuickSection()
         updateSettingsFontValueLabel()
+        syncAutoReadPanelControls()
+    }
+
+    private func syncAutoReadPanelControls() {
+        autoReadSpeedSlider.value = Float(readerSettings.normalized.autoReadSpeed)
     }
 
     private func updateSettingsFontValueLabel() {
@@ -981,7 +1119,23 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         panGesture.require(toFail: edgeBackGesture)
     }
 
+    private func configureLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+    }
+
     private func startInitialLoad() {
+        stopAutoReading(restoreLayout: false, animated: false)
         loadTask?.cancel()
         paginateTask?.cancel()
         saveTask?.cancel()
@@ -1036,7 +1190,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                     from: chapters,
                     progress: progress
                 ) else {
-                    await self?.showEmptyReader()
+                    await MainActor.run {
+                        self?.showEmptyReader()
+                    }
                     return
                 }
 
@@ -1047,19 +1203,23 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 )
                 try Task.checkCancellation()
 
-                await self?.applyLoadedContent(
-                    chapters: chapters,
-                    bookmarks: bookmarks,
-                    filterRules: filterRules,
-                    chapterIndex: selected.index,
-                    text: text,
-                    startOffset: selected.offset,
-                    settings: settings,
-                    saveAfterRender: false
-                )
+                await MainActor.run {
+                    self?.applyLoadedContent(
+                        chapters: chapters,
+                        bookmarks: bookmarks,
+                        filterRules: filterRules,
+                        chapterIndex: selected.index,
+                        text: text,
+                        startOffset: selected.offset,
+                        settings: settings,
+                        saveAfterRender: false
+                    )
+                }
             } catch is CancellationError {
             } catch {
-                await self?.showError(error)
+                await MainActor.run {
+                    self?.showError(error)
+                }
             }
         }
     }
@@ -1105,16 +1265,20 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 )
                 try Task.checkCancellation()
 
-                await self?.applyLoadedContent(
-                    chapters: chapters,
-                    chapterIndex: index,
-                    text: text,
-                    startOffset: startOffset,
-                    saveAfterRender: saveAfterRender
-                )
+                await MainActor.run {
+                    self?.applyLoadedContent(
+                        chapters: chapters,
+                        chapterIndex: index,
+                        text: text,
+                        startOffset: startOffset,
+                        saveAfterRender: saveAfterRender
+                    )
+                }
             } catch is CancellationError {
             } catch {
-                await self?.showError(error)
+                await MainActor.run {
+                    self?.showError(error)
+                }
             }
         }
     }
@@ -1145,6 +1309,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentPaginator = nil
         currentPageIndex = 0
         pendingAnchorByteOffset = startOffset
+        isAutoReadWaitingForChapter = false
+        autoReadDisplayLink?.isPaused = false
+        lastAutoReadTimestamp = nil
         setProvisionalProgress(chapterOffset: startOffset)
         refreshBookmarkState()
         if prefetchedChapter?.chapter.id != chapters[chapterIndex].id {
@@ -1181,18 +1348,17 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         textView.transform = .identity
         textView.alpha = 1
 
-        switch readerSettings.pageMode {
-        case .paged:
-            textView.isScrollEnabled = false
-            rebuildPaginator(
-                anchorByteOffset: anchorByteOffset,
-                savingProgress: savingProgress
-            )
-        case .scroll:
+        if isAutoReading || readerSettings.pageMode == .scroll {
             paginateTask?.cancel()
             paginateGeneration += 1
             currentPaginator = nil
             renderScrollContent(
+                anchorByteOffset: anchorByteOffset,
+                savingProgress: savingProgress
+            )
+        } else {
+            textView.isScrollEnabled = false
+            rebuildPaginator(
                 anchorByteOffset: anchorByteOffset,
                 savingProgress: savingProgress
             )
@@ -1408,12 +1574,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func showEmptyReader() {
+        stopAutoReading(restoreLayout: false, animated: false)
         showLoading(false, message: nil)
         textView.text = NSLocalizedString("reader.emptyChapter", comment: "")
         progressLabel.text = nil
     }
 
     private func showError(_ error: Error) {
+        stopAutoReading(restoreLayout: false, animated: false)
         showLoading(false, message: nil)
         textView.text = nil
         statusLabel.text = error.localizedDescription
@@ -1524,6 +1692,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         if shouldSave {
             scheduleProgressSave()
         }
+
     }
 
     private func renderCurrentPage(savingProgress shouldSave: Bool) {
@@ -1717,8 +1886,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         )
     }
 
-    private func updateScrollProgressFromContentOffset() {
-        guard readerSettings.pageMode == .scroll,
+    private func updateScrollProgressFromContentOffset(shouldPrefetch: Bool = true) {
+        guard (readerSettings.pageMode == .scroll || isAutoReading),
               chapters.indices.contains(currentChapterIndex)
         else {
             return
@@ -1732,9 +1901,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             atDisplayUTF16Index: displayIndex
         )
         updateProgress(chapterOffset: chapterOffset)
-        // Phase 7 performance: prefetch checks are cheap but run during active
-        // scrolling; throttle or move them to scroll-end callbacks if needed.
-        prefetchAdjacentChapterIfNeeded()
+        if shouldPrefetch {
+            // Phase 7 performance: prefetch checks are cheap but run during active
+            // scrolling; throttle or move them to scroll-end callbacks if needed.
+            prefetchAdjacentChapterIfNeeded()
+        }
     }
 
     private func scheduleProgressSave() {
@@ -1784,6 +1955,17 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             || oldSettings.theme != normalizedSettings.theme
         let requiresDeferredRerender = oldSettings.fontSize != normalizedSettings.fontSize
         readerSettings = normalizedSettings
+        let onlyAutoReadSpeedChanged = oldSettings.pageMode == normalizedSettings.pageMode
+            && oldSettings.theme == normalizedSettings.theme
+            && oldSettings.fontSize == normalizedSettings.fontSize
+            && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
+            && oldSettings.autoReadSpeed != normalizedSettings.autoReadSpeed
+        if onlyAutoReadSpeedChanged {
+            scheduleSettingsSave()
+            syncAutoReadPanelControls()
+            return
+        }
+
         invalidatePrefetch()
         applyTheme()
         if requiresImmediateRerender {
@@ -1999,8 +2181,178 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
+    private func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
+        isAutoReadPanelVisible = visible
+        autoReadPanel.isUserInteractionEnabled = visible
+        view.layoutIfNeeded()
+
+        if animated {
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: {
+                    self.applyAutoReadPanelPosition()
+                }
+            )
+        } else {
+            applyAutoReadPanelPosition()
+        }
+    }
+
+    private func applyAutoReadPanelPosition() {
+        let hiddenOffset = max(autoReadPanel.bounds.height, Layout.autoReadPanelHeight) + 1
+        autoReadPanel.transform = isAutoReadPanelVisible
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: hiddenOffset)
+    }
+
+    private func startAutoReading() {
+        guard currentChapterText.isEmpty == false else {
+            return
+        }
+
+        if isAutoReading {
+            setAutoReadPanelVisible(true, animated: true)
+            return
+        }
+
+        let anchorByteOffset = currentDisplayByteOffset()
+        syncAutoReadPanelControls()
+        cancelSettingsRender()
+        invalidatePrefetch()
+        isAutoReading = true
+        isAutoReadWaitingForChapter = false
+        setMenuVisible(false, animated: true)
+        setSettingsPanelVisible(false, animated: false)
+        renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
+        textView.panGestureRecognizer.isEnabled = false
+        autoReadPlaceholderButton.setImage(UIImage(systemName: "pause.fill"), for: .normal)
+        setAutoReadPanelVisible(true, animated: true)
+        startAutoReadDisplayLink()
+    }
+
+    private func stopAutoReading(
+        restoreLayout: Bool,
+        animated: Bool
+    ) {
+        guard isAutoReading || autoReadDisplayLink != nil || isAutoReadPanelVisible else {
+            return
+        }
+
+        let wasAutoReading = isAutoReading
+        if wasAutoReading {
+            updateScrollProgressFromContentOffset(shouldPrefetch: false)
+        }
+
+        isAutoReading = false
+        isAutoReadWaitingForChapter = false
+        textView.panGestureRecognizer.isEnabled = true
+        stopAutoReadDisplayLink()
+        autoReadPlaceholderButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        setAutoReadPanelVisible(false, animated: animated)
+        saveProgressImmediately()
+
+        if restoreLayout {
+            renderContent(anchorByteOffset: currentDisplayByteOffset(), savingProgress: false)
+        }
+    }
+
+    private func startAutoReadDisplayLink() {
+        stopAutoReadDisplayLink()
+        lastAutoReadTimestamp = nil
+        lastAutoReadProgressUpdateTimestamp = 0
+
+        let displayLink = CADisplayLink(
+            target: self,
+            selector: #selector(autoReadDisplayLinkDidTick(_:))
+        )
+        if #available(iOS 15.0, *) {
+            displayLink.preferredFrameRateRange = CAFrameRateRange(
+                minimum: 60,
+                maximum: 60,
+                preferred: 60
+            )
+        } else {
+            displayLink.preferredFramesPerSecond = 60
+        }
+        displayLink.add(to: .main, forMode: .common)
+        autoReadDisplayLink = displayLink
+    }
+
+    private func stopAutoReadDisplayLink() {
+        autoReadDisplayLink?.invalidate()
+        autoReadDisplayLink = nil
+        lastAutoReadTimestamp = nil
+    }
+
+    @objc private func autoReadDisplayLinkDidTick(_ displayLink: CADisplayLink) {
+        guard isAutoReading,
+              textView.isScrollEnabled,
+              !isAutoReadWaitingForChapter
+        else {
+            lastAutoReadTimestamp = displayLink.timestamp
+            return
+        }
+
+        let previousTimestamp = lastAutoReadTimestamp ?? displayLink.timestamp
+        lastAutoReadTimestamp = displayLink.timestamp
+        let deltaTime = min(max(displayLink.timestamp - previousTimestamp, 0), 1.0 / 20.0)
+        guard deltaTime > 0 else {
+            return
+        }
+
+        let speed = min(
+            max(readerSettings.normalized.autoReadSpeed, ReaderSettings.minimumAutoReadSpeed),
+            ReaderSettings.maximumAutoReadSpeed
+        )
+        let maxOffset = max(textView.contentSize.height - textView.bounds.height, 0)
+        let currentY = textView.contentOffset.y
+        let targetY = min(currentY + CGFloat(speed * deltaTime), maxOffset)
+
+        if targetY > currentY {
+            isApplyingProgrammaticScroll = true
+            textView.contentOffset = CGPoint(x: 0, y: targetY)
+            isApplyingProgrammaticScroll = false
+            updateAutoReadProgressIfNeeded(timestamp: displayLink.timestamp)
+            return
+        }
+
+        moveAutoReadToNextChapterIfPossible()
+    }
+
+    private func updateAutoReadProgressIfNeeded(timestamp: CFTimeInterval) {
+        guard timestamp - lastAutoReadProgressUpdateTimestamp >= 0.25 else {
+            return
+        }
+
+        lastAutoReadProgressUpdateTimestamp = timestamp
+        updateScrollProgressFromContentOffset(shouldPrefetch: false)
+        scheduleProgressSave()
+    }
+
+    private func moveAutoReadToNextChapterIfPossible() {
+        let nextChapterIndex = currentChapterIndex + 1
+        guard chapters.indices.contains(nextChapterIndex) else {
+            stopAutoReading(restoreLayout: true, animated: true)
+            return
+        }
+
+        isAutoReadWaitingForChapter = true
+        autoReadDisplayLink?.isPaused = true
+        loadChapter(at: nextChapterIndex, startOffset: 0, saveAfterRender: true)
+    }
+
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         let location = gesture.location(in: view)
+        if isAutoReading {
+            guard autoReadPanel.frame.contains(location) == false else {
+                return
+            }
+            setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
+            return
+        }
+
         if isSettingsPanelVisible {
             guard settingsPanel.frame.contains(location) == false else {
                 return
@@ -2044,6 +2396,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        guard !isAutoReading else {
+            return
+        }
+
         let translation = gesture.translation(in: view)
         let width = max(view.bounds.width, 1)
 
@@ -2096,7 +2452,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard !isSettingsPanelVisible else {
+        guard !isSettingsPanelVisible,
+              !isAutoReadPanelVisible || isAutoReading
+        else {
             return
         }
 
@@ -2110,6 +2468,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             return
         }
 
+        stopAutoReading(restoreLayout: false, animated: false)
         closeButtonTapped()
     }
 
@@ -2130,10 +2489,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func progressSliderTouchDown() {
+        stopAutoReading(restoreLayout: true, animated: true)
         isTrackingProgressSlider = true
     }
 
     @objc private func progressSliderChanged() {
+        stopAutoReading(restoreLayout: true, animated: true)
         guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
             return
         }
@@ -2162,6 +2523,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func catalogButtonTapped() {
+        stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         presentContents()
     }
@@ -2190,6 +2552,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func showBookDetail() {
+        stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         let detailViewController = ReaderBookDetailViewController(
             book: book,
@@ -2220,6 +2583,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func showContentSearch() {
+        stopAutoReading(restoreLayout: false, animated: false)
         let searchViewController = ReaderContentSearchViewController(
             book: book,
             fileStore: fileStore,
@@ -2236,6 +2600,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func showFilterRules() {
+        stopAutoReading(restoreLayout: false, animated: false)
         let filterViewController = ReaderFilterRulesViewController(
             bookID: book.id,
             repository: repository,
@@ -2251,6 +2616,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func showPageTouchAreas() {
+        stopAutoReading(restoreLayout: false, animated: false)
         let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
             self?.applyReaderSettings(settings)
         }
@@ -2315,6 +2681,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func jumpTo(_ target: ReaderContentTarget) {
+        stopAutoReading(restoreLayout: false, animated: false)
         guard let index = chapters.firstIndex(where: { $0.id == target.chapterID }) else {
             return
         }
@@ -2445,9 +2812,38 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func settingsButtonTapped() {
+        guard !isAutoReading else {
+            setAutoReadPanelVisible(true, animated: true)
+            return
+        }
+
         syncSettingsPanelControls()
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(true, animated: true)
+    }
+
+    @objc private func autoReadButtonTapped() {
+        startAutoReading()
+    }
+
+    @objc private func autoReadSpeedSliderChanged() {
+        var settings = readerSettings
+        settings.autoReadSpeed = Double(autoReadSpeedSlider.value)
+        applyReaderSettings(settings)
+    }
+
+    @objc private func exitAutoReadButtonTapped() {
+        stopAutoReading(restoreLayout: true, animated: true)
+    }
+
+    @objc private func applicationWillResignActive() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        saveProgressImmediately()
+    }
+
+    @objc private func applicationDidEnterBackground() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        saveProgressImmediately()
     }
 
     @objc private func settingsPageModeChanged() {
@@ -2539,6 +2935,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func closeButtonTapped() {
+        stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         saveSettingsImmediately()
         onClose()
@@ -2573,6 +2970,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
+            return !isSettingsPanelVisible || isAutoReading
+        }
+
         if isSettingsPanelVisible {
             return gestureRecognizer is UITapGestureRecognizer
         }
@@ -2581,11 +2982,20 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             return true
         }
 
+        let location = panGesture.location(in: view)
+        if isAutoReadPanelVisible,
+           autoReadPanel.frame.contains(location) {
+            return false
+        }
+
+        if isAutoReading {
+            return false
+        }
+
         guard readerSettings.pageMode != .scroll else {
             return false
         }
 
-        let location = panGesture.location(in: view)
         guard !(isMenuVisible && topBar.frame.contains(location)),
               !(isMenuVisible && bottomBar.frame.contains(location)),
               !(isMenuVisible && floatingActionStack.frame.contains(location))
