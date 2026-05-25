@@ -6549,44 +6549,101 @@ private struct ReaderTypography: @unchecked Sendable {
         nsText: NSString,
         paragraphRange: NSRange
     ) -> [NSAttributedString.Key: Any] {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .justified
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        if #available(iOS 14.0, *) {
-            paragraphStyle.lineBreakStrategy = .standard
-        }
-        paragraphStyle.lineSpacing = layout.bodyLineSpacing
-        paragraphStyle.paragraphSpacing = layout.bodyParagraphSpacing
-        if !hasExistingFirstLineIndent(in: nsText, paragraphRange: paragraphRange) {
-            paragraphStyle.firstLineHeadIndent = font.pointSize * layout.firstLineIndentEms
-        }
+        let firstLineIndent = hasExistingFirstLineIndent(in: nsText, paragraphRange: paragraphRange)
+            ? 0
+            : font.pointSize * layout.firstLineIndentEms
 
         return [
             .font: font,
             .foregroundColor: textColor,
             .kern: layout.bodyKern,
-            .paragraphStyle: paragraphStyle,
+            .paragraphStyle: coreTextParagraphStyle(
+                lineSpacing: layout.bodyLineSpacing,
+                paragraphSpacing: layout.bodyParagraphSpacing,
+                firstLineIndent: firstLineIndent
+            ),
             .ligature: 0
         ]
     }
 
     private func titleAttributes(font: UIFont) -> [NSAttributedString.Key: Any] {
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .justified
-        paragraphStyle.lineBreakMode = .byWordWrapping
-        if #available(iOS 14.0, *) {
-            paragraphStyle.lineBreakStrategy = .standard
-        }
-        paragraphStyle.lineSpacing = layout.titleLineSpacing
-        paragraphStyle.paragraphSpacing = layout.titleParagraphSpacing
-
         return [
             .font: font,
             .foregroundColor: textColor,
             .kern: layout.titleKern,
-            .paragraphStyle: paragraphStyle,
+            .paragraphStyle: coreTextParagraphStyle(
+                lineSpacing: layout.titleLineSpacing,
+                paragraphSpacing: layout.titleParagraphSpacing,
+                firstLineIndent: 0
+            ),
             .ligature: 0
         ]
+    }
+
+    private func coreTextParagraphStyle(
+        lineSpacing: CGFloat,
+        paragraphSpacing: CGFloat,
+        firstLineIndent: CGFloat
+    ) -> CTParagraphStyle {
+        var alignment = CTTextAlignment.justified
+        var lineBreakMode = CTLineBreakMode.byWordWrapping
+        var lineSpacingAdjustment = lineSpacing
+        var minimumLineSpacing = lineSpacing
+        var maximumLineSpacing = lineSpacing
+        var paragraphSpacingValue = paragraphSpacing
+        var firstLineIndentValue = firstLineIndent
+        return withUnsafePointer(to: &alignment) { alignmentPointer in
+            withUnsafePointer(to: &lineBreakMode) { lineBreakPointer in
+                withUnsafePointer(to: &lineSpacingAdjustment) { lineSpacingAdjustmentPointer in
+                    withUnsafePointer(to: &minimumLineSpacing) { minimumLineSpacingPointer in
+                        withUnsafePointer(to: &maximumLineSpacing) { maximumLineSpacingPointer in
+                            withUnsafePointer(to: &paragraphSpacingValue) { paragraphSpacingPointer in
+                                withUnsafePointer(to: &firstLineIndentValue) { firstLineIndentPointer in
+                                    let settings = [
+                                        CTParagraphStyleSetting(
+                                            spec: .alignment,
+                                            valueSize: MemoryLayout<CTTextAlignment>.size,
+                                            value: UnsafeRawPointer(alignmentPointer)
+                                        ),
+                                        CTParagraphStyleSetting(
+                                            spec: .lineBreakMode,
+                                            valueSize: MemoryLayout<CTLineBreakMode>.size,
+                                            value: UnsafeRawPointer(lineBreakPointer)
+                                        ),
+                                        CTParagraphStyleSetting(
+                                            spec: .lineSpacingAdjustment,
+                                            valueSize: MemoryLayout<CGFloat>.size,
+                                            value: UnsafeRawPointer(lineSpacingAdjustmentPointer)
+                                        ),
+                                        CTParagraphStyleSetting(
+                                            spec: .minimumLineSpacing,
+                                            valueSize: MemoryLayout<CGFloat>.size,
+                                            value: UnsafeRawPointer(minimumLineSpacingPointer)
+                                        ),
+                                        CTParagraphStyleSetting(
+                                            spec: .maximumLineSpacing,
+                                            valueSize: MemoryLayout<CGFloat>.size,
+                                            value: UnsafeRawPointer(maximumLineSpacingPointer)
+                                        ),
+                                        CTParagraphStyleSetting(
+                                            spec: .paragraphSpacing,
+                                            valueSize: MemoryLayout<CGFloat>.size,
+                                            value: UnsafeRawPointer(paragraphSpacingPointer)
+                                        ),
+                                        CTParagraphStyleSetting(
+                                            spec: .firstLineHeadIndent,
+                                            valueSize: MemoryLayout<CGFloat>.size,
+                                            value: UnsafeRawPointer(firstLineIndentPointer)
+                                        )
+                                    ]
+                                    return CTParagraphStyleCreate(settings, settings.count)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private func titleParagraphRange(in nsText: NSString, fullRange: NSRange) -> NSRange? {
@@ -7758,71 +7815,30 @@ private final class ChapterPaginator: @unchecked Sendable {
             return
         }
 
-        let layoutManager = NSLayoutManager()
-        let textStorage = NSTextStorage(attributedString: attributedText)
-        textStorage.addLayoutManager(layoutManager)
-        layoutManager.usesFontLeading = false
-
-        let textContainer = NSTextContainer(
-            size: CGSize(
-                width: max(fittingSize.width, 1),
-                height: .greatestFiniteMagnitude
-            )
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        let pageRect = CGRect(
+            x: 0,
+            y: 0,
+            width: max(fittingSize.width, 1),
+            height: max(fittingSize.height, 1)
         )
-        textContainer.lineFragmentPadding = 0
-        textContainer.lineBreakMode = .byWordWrapping
-        textContainer.maximumNumberOfLines = 0
-        layoutManager.addTextContainer(textContainer)
-        layoutManager.ensureLayout(for: textContainer)
+        let path = CGMutablePath()
+        path.addRect(pageRect)
+        var startIndex = 0
 
-        let glyphCount = layoutManager.numberOfGlyphs
-        var pageStartGlyphIndex = 0
-        let pageHeight = max(fittingSize.height, 1)
-
-        while pageStartGlyphIndex < glyphCount {
-            let firstLineRect = layoutManager.lineFragmentUsedRect(
-                forGlyphAt: pageStartGlyphIndex,
-                effectiveRange: nil
+        while startIndex < textLength {
+            let frame = CTFramesetterCreateFrame(
+                framesetter,
+                CFRange(location: startIndex, length: 0),
+                path,
+                nil
             )
-            let pageBottom = firstLineRect.minY + pageHeight
-            var scanGlyphIndex = pageStartGlyphIndex
-            var pageEndGlyphIndex = pageStartGlyphIndex
-
-            while scanGlyphIndex < glyphCount {
-                var lineRange = NSRange()
-                let lineRect = layoutManager.lineFragmentUsedRect(
-                    forGlyphAt: scanGlyphIndex,
-                    effectiveRange: &lineRange
-                )
-                let isFirstLine = pageEndGlyphIndex == pageStartGlyphIndex
-                if !isFirstLine,
-                   lineRect.maxY > pageBottom {
-                    break
-                }
-
-                pageEndGlyphIndex = max(
-                    pageEndGlyphIndex,
-                    lineRange.location + lineRange.length
-                )
-
-                guard pageEndGlyphIndex > scanGlyphIndex else {
-                    pageEndGlyphIndex = scanGlyphIndex + 1
-                    break
-                }
-
-                scanGlyphIndex = pageEndGlyphIndex
-            }
-
-            let pageGlyphRange = NSRange(
-                location: pageStartGlyphIndex,
-                length: max(pageEndGlyphIndex - pageStartGlyphIndex, 1)
+            let visibleRange = CTFrameGetVisibleStringRange(frame)
+            let visibleLength = max(visibleRange.length, 1)
+            let characterRange = NSRange(
+                location: startIndex,
+                length: min(visibleLength, textLength - startIndex)
             )
-            var characterRange = layoutManager.characterRange(
-                forGlyphRange: pageGlyphRange,
-                actualGlyphRange: nil
-            )
-            characterRange.location = min(characterRange.location, textLength)
-            characterRange.length = min(characterRange.length, textLength - characterRange.location)
 
             guard characterRange.length > 0 else {
                 break
@@ -7831,10 +7847,7 @@ private final class ChapterPaginator: @unchecked Sendable {
             pageCharacterRanges.append(characterRange)
             pageStartDisplayUTF16Indexes.append(characterRange.location)
 
-            if pageEndGlyphIndex >= glyphCount {
-                break
-            }
-            pageStartGlyphIndex = pageEndGlyphIndex
+            startIndex = characterRange.location + characterRange.length
         }
 
         if pageCharacterRanges.isEmpty {
@@ -8116,7 +8129,8 @@ private final class CollectionCoreTextPageView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard attributedText.length > 0 else {
+        guard attributedText.length > 0,
+              let context = UIGraphicsGetCurrentContext() else {
             return
         }
 
@@ -8126,19 +8140,22 @@ private final class CollectionCoreTextPageView: UIView {
             return
         }
 
-        let textStorage = NSTextStorage(attributedString: attributedText)
-        let layoutManager = NSLayoutManager()
-        let textContainer = NSTextContainer(size: contentRect.size)
-        textContainer.lineFragmentPadding = 0
-        textContainer.lineBreakMode = .byWordWrapping
-        textContainer.maximumNumberOfLines = 0
-        layoutManager.usesFontLeading = false
-        layoutManager.addTextContainer(textContainer)
-        textStorage.addLayoutManager(layoutManager)
+        context.saveGState()
+        context.textMatrix = .identity
+        context.translateBy(x: 0, y: bounds.height)
+        context.scaleBy(x: 1, y: -1)
 
-        let glyphRange = layoutManager.glyphRange(for: textContainer)
-        layoutManager.drawBackground(forGlyphRange: glyphRange, at: contentRect.origin)
-        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: contentRect.origin)
+        let path = CGMutablePath()
+        path.addRect(contentRect)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: 0),
+            path,
+            nil
+        )
+        CTFrameDraw(frame, context)
+        context.restoreGState()
     }
 }
 
