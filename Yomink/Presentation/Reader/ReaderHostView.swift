@@ -59,6 +59,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let floatingActionStack = UIStackView()
     private let autoReadPlaceholderButton = UIButton(type: .system)
     private let darkModePlaceholderButton = UIButton(type: .system)
+    private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let settingsPanelStack = UIStackView()
+    private let settingsFontValueLabel = UILabel()
+    private let settingsFontStepper = UIStepper()
+    private lazy var settingsPageModeControl = UISegmentedControl(
+        items: ReaderSettings.PageMode.allCases.map(\.localizedTitle)
+    )
+    private lazy var settingsThemeControl = UISegmentedControl(
+        items: ReaderSettings.Theme.allCases.map(\.localizedTitle)
+    )
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private enum Layout {
@@ -75,6 +85,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let floatingButtonSpacing: CGFloat = 12
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
+        static let settingsPanelHeightRatio: CGFloat = 0.43
+        static let settingsPanelMinimumHeight: CGFloat = 250
+        static let settingsPanelMaximumHeight: CGFloat = 340
+        static let settingsPanelHorizontalInset: CGFloat = 20
+        static let settingsPanelTopInset: CGFloat = 24
+        static let settingsPanelBottomInset: CGFloat = 20
     }
 
     private enum MenuStyle {
@@ -123,6 +139,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var prefetchingChapterID: UUID?
     private var currentBookmark: Bookmark?
     private var isMenuVisible = false
+    private var isSettingsPanelVisible = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
     private var lastPaginationSize = CGSize.zero
@@ -174,6 +191,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         super.viewDidLayoutSubviews()
 
         applyMenuPosition(animated: false)
+        applySettingsPanelPosition(animated: false)
 
         let size = textView.bounds.size
         guard currentChapterText.isEmpty == false,
@@ -258,6 +276,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         configureTopBar()
         configureBottomBar()
         configureFloatingActionButtons()
+        configureSettingsPanel()
         setMenuVisible(false, animated: false)
     }
 
@@ -587,6 +606,168 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         button.accessibilityLabel = NSLocalizedString(accessibilityKey, comment: "")
         button.isUserInteractionEnabled = true
         button.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func configureSettingsPanel() {
+        settingsPanel.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.transform = CGAffineTransform(
+            translationX: 0,
+            y: Layout.settingsPanelMaximumHeight + 1
+        )
+        settingsPanel.isUserInteractionEnabled = false
+        settingsPanel.layer.cornerRadius = 18
+        settingsPanel.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner]
+        settingsPanel.clipsToBounds = true
+        addMenuOverlay(to: settingsPanel)
+        view.addSubview(settingsPanel)
+
+        settingsPanelStack.axis = .vertical
+        settingsPanelStack.alignment = .fill
+        settingsPanelStack.spacing = 18
+        settingsPanelStack.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.contentView.addSubview(settingsPanelStack)
+
+        settingsPageModeControl.addTarget(
+            self,
+            action: #selector(settingsPageModeChanged),
+            for: .valueChanged
+        )
+        settingsThemeControl.addTarget(
+            self,
+            action: #selector(settingsThemeChanged),
+            for: .valueChanged
+        )
+
+        settingsFontStepper.minimumValue = ReaderSettings.minimumFontSize
+        settingsFontStepper.maximumValue = ReaderSettings.maximumFontSize
+        settingsFontStepper.stepValue = 1
+        settingsFontStepper.addTarget(
+            self,
+            action: #selector(settingsFontSizeChanged),
+            for: .valueChanged
+        )
+        styleSettingsControl(settingsPageModeControl)
+        styleSettingsControl(settingsThemeControl)
+        settingsFontStepper.tintColor = MenuStyle.primaryTextColor
+
+        let fontRow = UIStackView(arrangedSubviews: [
+            settingsFontValueLabel,
+            settingsFontStepper
+        ])
+        fontRow.axis = .horizontal
+        fontRow.alignment = .center
+        fontRow.spacing = 12
+        fontRow.distribution = .equalSpacing
+
+        settingsPanelStack.addArrangedSubview(
+            settingsPanelSection(
+                title: NSLocalizedString("reader.settings.pageMode", comment: ""),
+                control: settingsPageModeControl
+            )
+        )
+        settingsPanelStack.addArrangedSubview(
+            settingsPanelSection(
+                title: NSLocalizedString("reader.settings.fontSize", comment: ""),
+                control: fontRow
+            )
+        )
+        settingsPanelStack.addArrangedSubview(
+            settingsPanelSection(
+                title: NSLocalizedString("reader.settings.theme", comment: ""),
+                control: settingsThemeControl
+            )
+        )
+
+        let heightRatioConstraint = settingsPanel.heightAnchor.constraint(
+            equalTo: view.heightAnchor,
+            multiplier: Layout.settingsPanelHeightRatio
+        )
+        heightRatioConstraint.priority = .defaultHigh
+
+        NSLayoutConstraint.activate([
+            settingsPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            settingsPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            heightRatioConstraint,
+            settingsPanel.heightAnchor.constraint(
+                greaterThanOrEqualToConstant: Layout.settingsPanelMinimumHeight
+            ),
+            settingsPanel.heightAnchor.constraint(
+                lessThanOrEqualToConstant: Layout.settingsPanelMaximumHeight
+            ),
+
+            settingsPanelStack.leadingAnchor.constraint(
+                equalTo: settingsPanel.contentView.leadingAnchor,
+                constant: Layout.settingsPanelHorizontalInset
+            ),
+            settingsPanelStack.trailingAnchor.constraint(
+                equalTo: settingsPanel.contentView.trailingAnchor,
+                constant: -Layout.settingsPanelHorizontalInset
+            ),
+            settingsPanelStack.topAnchor.constraint(
+                equalTo: settingsPanel.contentView.topAnchor,
+                constant: Layout.settingsPanelTopInset
+            ),
+            settingsPanelStack.bottomAnchor.constraint(
+                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.settingsPanelBottomInset
+            )
+        ])
+
+        syncSettingsPanelControls()
+    }
+
+    private func styleSettingsControl(_ control: UISegmentedControl) {
+        control.backgroundColor = UIColor.white.withAlphaComponent(0.06)
+        control.selectedSegmentTintColor = UIColor.white.withAlphaComponent(0.16)
+        control.setTitleTextAttributes(
+            [
+                .foregroundColor: UIColor.white.withAlphaComponent(0.56)
+            ],
+            for: .normal
+        )
+        control.setTitleTextAttributes(
+            [
+                .foregroundColor: UIColor.white
+            ],
+            for: .selected
+        )
+    }
+
+    private func settingsPanelSection(title: String, control: UIView) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = MenuStyle.secondaryTextColor
+
+        let stackView = UIStackView(arrangedSubviews: [
+            titleLabel,
+            control
+        ])
+        stackView.axis = .vertical
+        stackView.spacing = 8
+        return stackView
+    }
+
+    private func syncSettingsPanelControls() {
+        let normalizedSettings = readerSettings.normalized
+        settingsPageModeControl.selectedSegmentIndex = ReaderSettings.PageMode.allCases
+            .firstIndex(of: normalizedSettings.pageMode) ?? 0
+        settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases
+            .firstIndex(of: normalizedSettings.theme) ?? 0
+        settingsFontStepper.value = normalizedSettings.fontSize
+        updateSettingsFontValueLabel()
+    }
+
+    private func updateSettingsFontValueLabel() {
+        settingsFontValueLabel.text = String(
+            format: NSLocalizedString("reader.settings.fontSize.value", comment: ""),
+            Int(readerSettings.normalized.fontSize)
+        )
+        settingsFontValueLabel.font = .preferredFont(forTextStyle: .body)
+        settingsFontValueLabel.adjustsFontForContentSizeCategory = true
+        settingsFontValueLabel.textColor = MenuStyle.primaryTextColor
     }
 
     private func configureLoadingIndicator() {
@@ -1446,6 +1627,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             scheduleSettingsRender(anchorByteOffset: anchorByteOffset)
         }
         scheduleSettingsSave()
+        syncSettingsPanelControls()
     }
 
     private func invalidatePrefetch() {
@@ -1625,8 +1807,42 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
+    private func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
+        isSettingsPanelVisible = visible
+        settingsPanel.isUserInteractionEnabled = visible
+        view.layoutIfNeeded()
+
+        if animated {
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: {
+                    self.applySettingsPanelPosition(animated: true)
+                }
+            )
+        } else {
+            applySettingsPanelPosition(animated: false)
+        }
+    }
+
+    private func applySettingsPanelPosition(animated: Bool) {
+        let hiddenOffset = settingsPanel.bounds.height + 1
+        settingsPanel.transform = isSettingsPanelVisible
+            ? .identity
+            : CGAffineTransform(translationX: 0, y: hiddenOffset)
+    }
+
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         let location = gesture.location(in: view)
+        if isSettingsPanelVisible {
+            guard settingsPanel.frame.contains(location) == false else {
+                return
+            }
+            setSettingsPanelVisible(false, animated: true)
+            return
+        }
+
         if isMenuVisible {
             guard topBar.frame.contains(location) == false,
                   bottomBar.frame.contains(location) == false,
@@ -1714,6 +1930,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard !isSettingsPanelVisible else {
+            return
+        }
+
         guard gesture.state == .ended else {
             return
         }
@@ -2059,15 +2279,35 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func settingsButtonTapped() {
-        let settingsViewController = ReaderSettingsViewController(
-            settings: readerSettings
-        ) { [weak self] settings in
-            self?.applyReaderSettings(settings)
+        syncSettingsPanelControls()
+        setMenuVisible(false, animated: true)
+        setSettingsPanelVisible(true, animated: true)
+    }
+
+    @objc private func settingsPageModeChanged() {
+        let index = settingsPageModeControl.selectedSegmentIndex
+        guard ReaderSettings.PageMode.allCases.indices.contains(index) else {
+            return
         }
-        let navigationController = UINavigationController(rootViewController: settingsViewController)
-        navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
-        navigationController.modalPresentationStyle = .pageSheet
-        present(navigationController, animated: true)
+        var settings = readerSettings
+        settings.pageMode = ReaderSettings.PageMode.allCases[index]
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsThemeChanged() {
+        let index = settingsThemeControl.selectedSegmentIndex
+        guard ReaderSettings.Theme.allCases.indices.contains(index) else {
+            return
+        }
+        var settings = readerSettings
+        settings.theme = ReaderSettings.Theme.allCases[index]
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsFontSizeChanged() {
+        var settings = readerSettings
+        settings.fontSize = settingsFontStepper.value
+        applyReaderSettings(settings)
     }
 
     private func currentDisplayByteOffset() -> Int {
@@ -2146,6 +2386,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if isSettingsPanelVisible {
+            return gestureRecognizer is UITapGestureRecognizer
+        }
+
         guard let panGesture = gestureRecognizer as? UIPanGestureRecognizer else {
             return true
         }
