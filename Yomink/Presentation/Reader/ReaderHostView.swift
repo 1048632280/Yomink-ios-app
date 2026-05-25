@@ -1669,8 +1669,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         let distance = CGFloat(removePrefixCount) * pageExtentForCurrentMode()
+        let minimumY = -collectionView.contentInset.top
         let adjusted = usesVerticalScrolling
-            ? CGPoint(x: collectionView.contentOffset.x, y: max(0, collectionView.contentOffset.y - distance))
+            ? CGPoint(x: collectionView.contentOffset.x, y: max(minimumY, collectionView.contentOffset.y - distance))
             : CGPoint(x: max(0, collectionView.contentOffset.x - distance), y: collectionView.contentOffset.y)
         collectionView.setContentOffset(adjusted, animated: false)
     }
@@ -1696,25 +1697,29 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             configureCollectionViewForAutoReading()
             return
         }
+        let contentInsets: UIEdgeInsets
         switch readerSettings.pageMode {
         case .paged:
             layout.scrollDirection = .horizontal
             collectionView.isScrollEnabled = true
             collectionView.isPagingEnabled = true
             collectionView.alwaysBounceVertical = false
+            contentInsets = .zero
         case .curl:
             layout.scrollDirection = .horizontal
             collectionView.isScrollEnabled = false
             collectionView.isPagingEnabled = true
             collectionView.alwaysBounceVertical = false
+            contentInsets = .zero
         case .scroll:
             layout.scrollDirection = .vertical
             collectionView.isScrollEnabled = true
             collectionView.isPagingEnabled = false
             collectionView.alwaysBounceVertical = true
+            contentInsets = verticalContinuousInsets()
         }
-        collectionView.contentInset = .zero
-        collectionView.scrollIndicatorInsets = .zero
+        collectionView.contentInset = contentInsets
+        collectionView.scrollIndicatorInsets = contentInsets
         collectionView.showsVerticalScrollIndicator = false
         collectionView.showsHorizontalScrollIndicator = false
         layout.invalidateLayout()
@@ -1729,8 +1734,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.isScrollEnabled = true
         collectionView.isPagingEnabled = false
         collectionView.alwaysBounceVertical = true
-        collectionView.contentInset = .zero
-        collectionView.scrollIndicatorInsets = .zero
+        let contentInsets = verticalContinuousInsets()
+        collectionView.contentInset = contentInsets
+        collectionView.scrollIndicatorInsets = contentInsets
         collectionView.showsVerticalScrollIndicator = false
         layout.invalidateLayout()
         collectionView.layoutIfNeeded()
@@ -1752,6 +1758,25 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             layout.rightMargin = max(layout.rightMargin, safeAreaInsets.right + 12)
         }
         return layout
+    }
+
+    private func displayLayoutForCurrentMode() -> ReaderLayoutConfiguration {
+        var layout = effectiveReaderLayout()
+        if usesVerticalScrolling {
+            layout.topMargin = 0
+            layout.bottomMargin = 0
+        }
+        return layout
+    }
+
+    private func verticalContinuousInsets() -> UIEdgeInsets {
+        let layout = effectiveReaderLayout()
+        return UIEdgeInsets(top: layout.topMargin, left: 0, bottom: layout.bottomMargin, right: 0)
+    }
+
+    private func verticalContinuousPageHeight() -> CGFloat {
+        let insets = verticalContinuousInsets()
+        return max(1, collectionView.bounds.height - insets.top - insets.bottom)
     }
 
     private func applyTheme() {
@@ -2086,7 +2111,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 + autoReadPageHeight() * 0.5
             rawIndex = centeredOffset / extent
         } else if usesVerticalScrolling {
-            rawIndex = collectionView.contentOffset.y / extent
+            rawIndex = (collectionView.contentOffset.y + collectionView.contentInset.top) / extent
         } else {
             rawIndex = collectionView.contentOffset.x / extent
         }
@@ -2101,20 +2126,20 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return autoReadPageHeight()
         }
         return usesVerticalScrolling
-            ? collectionView.bounds.height
+            ? verticalContinuousPageHeight()
             : collectionView.bounds.width
     }
 
     private func autoReadPageHeight() -> CGFloat {
-        guard collectionView.bounds.height > 1 else {
-            return 1
-        }
-        return collectionView.bounds.height
+        verticalContinuousPageHeight()
     }
 
     private func contentOffset(forPageAt index: Int) -> CGPoint {
         if usesVerticalScrolling {
-            return CGPoint(x: 0, y: CGFloat(index) * pageExtentForCurrentMode())
+            return CGPoint(
+                x: 0,
+                y: CGFloat(index) * pageExtentForCurrentMode() - collectionView.contentInset.top
+            )
         }
         return CGPoint(x: CGFloat(index) * pageExtentForCurrentMode(), y: 0)
     }
@@ -2834,7 +2859,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         cell.configure(
             page: pages[indexPath.item],
             settings: readerSettings.normalized,
-            layout: effectiveReaderLayout(),
+            layout: displayLayoutForCurrentMode(),
             isAutoReading: isAutoReading
         )
         return cell
@@ -2904,8 +2929,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         layout collectionViewLayout: UICollectionViewLayout,
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
-        if isAutoReading {
-            return CGSize(width: collectionView.bounds.width, height: autoReadPageHeight())
+        if usesVerticalScrolling {
+            return CGSize(width: collectionView.bounds.width, height: verticalContinuousPageHeight())
         }
         return collectionView.bounds.size
     }
@@ -6525,6 +6550,11 @@ private struct ReaderTypography: @unchecked Sendable {
         paragraphRange: NSRange
     ) -> [NSAttributedString.Key: Any] {
         let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .justified
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        if #available(iOS 14.0, *) {
+            paragraphStyle.lineBreakStrategy = .standard
+        }
         paragraphStyle.lineSpacing = layout.bodyLineSpacing
         paragraphStyle.paragraphSpacing = layout.bodyParagraphSpacing
         if !hasExistingFirstLineIndent(in: nsText, paragraphRange: paragraphRange) {
@@ -6535,12 +6565,18 @@ private struct ReaderTypography: @unchecked Sendable {
             .font: font,
             .foregroundColor: textColor,
             .kern: layout.bodyKern,
-            .paragraphStyle: paragraphStyle
+            .paragraphStyle: paragraphStyle,
+            .ligature: 0
         ]
     }
 
     private func titleAttributes(font: UIFont) -> [NSAttributedString.Key: Any] {
         let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .justified
+        paragraphStyle.lineBreakMode = .byWordWrapping
+        if #available(iOS 14.0, *) {
+            paragraphStyle.lineBreakStrategy = .standard
+        }
         paragraphStyle.lineSpacing = layout.titleLineSpacing
         paragraphStyle.paragraphSpacing = layout.titleParagraphSpacing
 
@@ -6548,7 +6584,8 @@ private struct ReaderTypography: @unchecked Sendable {
             .font: font,
             .foregroundColor: textColor,
             .kern: layout.titleKern,
-            .paragraphStyle: paragraphStyle
+            .paragraphStyle: paragraphStyle,
+            .ligature: 0
         ]
     }
 
@@ -7724,6 +7761,7 @@ private final class ChapterPaginator: @unchecked Sendable {
         let layoutManager = NSLayoutManager()
         let textStorage = NSTextStorage(attributedString: attributedText)
         textStorage.addLayoutManager(layoutManager)
+        layoutManager.usesFontLeading = false
 
         let textContainer = NSTextContainer(
             size: CGSize(
@@ -7732,6 +7770,7 @@ private final class ChapterPaginator: @unchecked Sendable {
             )
         )
         textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byWordWrapping
         textContainer.maximumNumberOfLines = 0
         layoutManager.addTextContainer(textContainer)
         layoutManager.ensureLayout(for: textContainer)
@@ -8077,27 +8116,29 @@ private final class CollectionCoreTextPageView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard attributedText.length > 0,
-              let context = UIGraphicsGetCurrentContext() else {
+        guard attributedText.length > 0 else {
             return
         }
 
-        context.saveGState()
-        context.textMatrix = .identity
-        context.translateBy(x: 0, y: bounds.height)
-        context.scaleBy(x: 1, y: -1)
+        let contentRect = layout.contentRect(in: bounds)
+        guard contentRect.width > 0,
+              contentRect.height > 0 else {
+            return
+        }
 
-        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
-        let path = CGMutablePath()
-        path.addRect(layout.contentRect(in: bounds))
-        let frame = CTFramesetterCreateFrame(
-            framesetter,
-            CFRange(location: 0, length: 0),
-            path,
-            nil
-        )
-        CTFrameDraw(frame, context)
-        context.restoreGState()
+        let textStorage = NSTextStorage(attributedString: attributedText)
+        let layoutManager = NSLayoutManager()
+        let textContainer = NSTextContainer(size: contentRect.size)
+        textContainer.lineFragmentPadding = 0
+        textContainer.lineBreakMode = .byWordWrapping
+        textContainer.maximumNumberOfLines = 0
+        layoutManager.usesFontLeading = false
+        layoutManager.addTextContainer(textContainer)
+        textStorage.addLayoutManager(layoutManager)
+
+        let glyphRange = layoutManager.glyphRange(for: textContainer)
+        layoutManager.drawBackground(forGlyphRange: glyphRange, at: contentRect.origin)
+        layoutManager.drawGlyphs(forGlyphRange: glyphRange, at: contentRect.origin)
     }
 }
 
