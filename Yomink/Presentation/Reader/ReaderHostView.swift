@@ -3,6 +3,12 @@ import UIKit
 import QuartzCore
 import CoreText
 
+private final class ReaderSettingsPanelScrollView: UIScrollView {
+    override func touchesShouldCancel(in view: UIView) -> Bool {
+        true
+    }
+}
+
 struct ReaderHostView: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
 
@@ -72,7 +78,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let autoReadSpeedSlider = UISlider()
     private let autoReadExitButton = UIButton(type: .system)
     private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
-    private let settingsPanelScrollView = UIScrollView()
+    private let settingsPanelScrollView = ReaderSettingsPanelScrollView()
     private let settingsPanelStack = UIStackView()
     private let settingsFontDecreaseButton = UIButton(type: .system)
     private let settingsFontValueButton = UIButton(type: .system)
@@ -104,21 +110,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private enum Layout {
-        static let topBarContentHeight: CGFloat = 45
+        static let topBarContentHeight: CGFloat = 46
         static let topBarButtonBottomInset: CGFloat = 5
         static let bottomBarTopInset: CGFloat = 0
         static let bottomBarSafeAreaInset: CGFloat = 2
-        static let progressRowHeight: CGFloat = 42
-        static let bottomActionRowHeight: CGFloat = 46
+        static let progressRowHeight: CGFloat = 46
+        static let bottomActionRowHeight: CGFloat = 48
         static let chapterButtonWidth: CGFloat = 74
         static let progressSliderHorizontalInset: CGFloat = 18
         static let floatingButtonSize: CGFloat = 42
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
-        static let settingsPanelHeightRatio: CGFloat = 0.40
-        static let settingsPanelMinimumHeight: CGFloat = 315
-        static let settingsPanelMaximumHeight: CGFloat = 360
+        static let settingsPanelContentHeight: CGFloat = 315
         static let settingsPanelHorizontalInset: CGFloat = 20
         static let settingsPanelTopInset: CGFloat = 22
         static let settingsControlHeight: CGFloat = 34
@@ -400,7 +404,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 constant: Layout.topBarContentHeight
             ),
 
-            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 6),
             closeButton.bottomAnchor.constraint(
                 equalTo: topBar.contentView.bottomAnchor,
                 constant: -Layout.topBarButtonBottomInset
@@ -409,7 +413,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             closeButton.heightAnchor.constraint(equalToConstant: 36),
 
             titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 10),
+            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 4),
 
             actionStack.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
             actionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
@@ -451,8 +455,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
         progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
         progressSlider.thumbTintColor = MenuStyle.progressThumbColor
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .normal)
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 17), for: .highlighted)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 18), for: .normal)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .highlighted)
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchBegan), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
@@ -573,7 +577,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         floatingActionStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(floatingActionStack)
 
-        configureFloatingButton(autoReadButton, systemName: "play.fill", titleKey: "reader.autoRead.placeholder")
+        configureFloatingButton(autoReadButton, systemName: "circle", titleKey: "reader.autoRead.placeholder")
         autoReadButton.addTarget(self, action: #selector(autoReadButtonTapped), for: .touchUpInside)
 
         configureFloatingButton(darkModeButton, systemName: "moon.stars", titleKey: "reader.darkMode.placeholder")
@@ -650,7 +654,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         button.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
         button.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
         button.setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: 16, weight: .regular),
+            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
             forImageIn: .normal
         )
         button.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
@@ -664,19 +668,45 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
-        let size = CGSize(width: diameter, height: diameter)
+        let shadowPadding: CGFloat = 2
+        let size = CGSize(
+            width: diameter + shadowPadding * 2,
+            height: diameter + shadowPadding * 2
+        )
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
-            let bounds = CGRect(origin: .zero, size: size)
-            UIColor(red: 0.22, green: 0.22, blue: 0.22, alpha: 1).setFill()
-            context.cgContext.fillEllipse(in: bounds)
+            let bounds = CGRect(
+                x: shadowPadding,
+                y: shadowPadding,
+                width: diameter,
+                height: diameter
+            )
+            let cgContext = context.cgContext
+            cgContext.setShadow(
+                offset: CGSize(width: 0, height: 1.5),
+                blur: 3,
+                color: UIColor.black.withAlphaComponent(0.32).cgColor
+            )
 
+            UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1).setFill()
+            cgContext.fillEllipse(in: bounds)
+            cgContext.setShadow(offset: .zero, blur: 0, color: nil)
             MenuStyle.progressThumbColor.setFill()
-            context.cgContext.fillEllipse(in: bounds.insetBy(dx: 1.5, dy: 1.5))
+            cgContext.fillEllipse(in: bounds.insetBy(dx: 2, dy: 2))
+
+            UIColor(white: 0.64, alpha: 0.28).setFill()
+            cgContext.fillEllipse(
+                in: CGRect(
+                    x: bounds.minX + diameter * 0.30,
+                    y: bounds.minY + diameter * 0.22,
+                    width: diameter * 0.40,
+                    height: diameter * 0.18
+                )
+            )
 
             UIColor(red: 0.39, green: 0.39, blue: 0.39, alpha: 1).setStroke()
-            context.cgContext.setLineWidth(1)
-            context.cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+            cgContext.setLineWidth(1)
+            cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
         }
     }
 
@@ -731,7 +761,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
         settingsPanel.transform = CGAffineTransform(
             translationX: 0,
-            y: Layout.settingsPanelMaximumHeight + 1
+            y: Layout.settingsPanelContentHeight + 1
         )
         settingsPanel.isUserInteractionEnabled = false
         settingsPanel.layer.cornerRadius = 0
@@ -739,7 +769,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsPanel.clipsToBounds = true
         view.addSubview(settingsPanel)
 
-        settingsPanelScrollView.alwaysBounceVertical = true
+        settingsPanelScrollView.alwaysBounceVertical = false
+        settingsPanelScrollView.canCancelContentTouches = true
         settingsPanelScrollView.contentInsetAdjustmentBehavior = .never
         settingsPanelScrollView.delaysContentTouches = false
         settingsPanelScrollView.showsVerticalScrollIndicator = true
@@ -791,28 +822,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsMoreSection = moreSection
         settingsPanelStack.addArrangedSubview(moreSection)
 
-        let heightRatioConstraint = settingsPanel.heightAnchor.constraint(
-            equalTo: view.heightAnchor,
-            multiplier: Layout.settingsPanelHeightRatio
-        )
-        heightRatioConstraint.priority = .defaultHigh
-
         NSLayoutConstraint.activate([
             settingsPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             settingsPanel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            heightRatioConstraint,
-            settingsPanel.heightAnchor.constraint(
-                greaterThanOrEqualToConstant: Layout.settingsPanelMinimumHeight
-            ),
-            settingsPanel.heightAnchor.constraint(
-                lessThanOrEqualToConstant: Layout.settingsPanelMaximumHeight
-            ),
+            settingsPanel.heightAnchor.constraint(equalToConstant: Layout.settingsPanelContentHeight),
 
             settingsPanelScrollView.leadingAnchor.constraint(equalTo: settingsPanel.contentView.leadingAnchor),
             settingsPanelScrollView.trailingAnchor.constraint(equalTo: settingsPanel.contentView.trailingAnchor),
             settingsPanelScrollView.topAnchor.constraint(equalTo: settingsPanel.contentView.topAnchor),
-            settingsPanelScrollView.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor),
+            settingsPanelScrollView.bottomAnchor.constraint(equalTo: settingsPanel.contentView.bottomAnchor),
 
             settingsPanelStack.leadingAnchor.constraint(
                 equalTo: settingsPanelScrollView.contentLayoutGuide.leadingAnchor,
@@ -1477,12 +1496,17 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         loadingIndicator.color = readerSettings.theme.secondaryTextColor
         progressLabel.textColor = readerSettings.theme.secondaryTextColor
         updateDarkModeButton()
+        updateAutoReadButton()
         setNeedsStatusBarAppearanceUpdate()
     }
 
     private func updateDarkModeButton() {
         let imageName = readerSettings.theme == .dark ? "sun.max.fill" : "moon.stars"
         darkModeButton.setImage(UIImage(systemName: imageName), for: .normal)
+    }
+
+    private func updateAutoReadButton() {
+        autoReadButton.setImage(UIImage(systemName: "circle"), for: .normal)
     }
 
     private func updateReaderChromePreferences() {
@@ -1881,7 +1905,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.reloadData()
         alignContentOffsetToCurrentPage()
         setAutoReadPanelVisible(true, animated: true)
-        autoReadButton.setImage(UIImage(systemName: "pause.fill"), for: .normal)
+        updateAutoReadButton()
         startAutoReadDisplayLink()
     }
 
@@ -1894,7 +1918,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         updateCurrentPageFromVisiblePage()
         isAutoReading = false
         setAutoReadPanelVisible(false, animated: animated)
-        autoReadButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        updateAutoReadButton()
         if restoreLayout {
             configureCollectionViewForActiveSettings()
             collectionView.reloadData()
@@ -2238,7 +2262,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     @objc private func settingsQuickModeChanged() {
         settingsQuickMode = SettingsQuickMode(rawValue: settingsQuickControl.selectedSegmentIndex) ?? .page
-        settingsPanelScrollView.setContentOffset(.zero, animated: false)
         updateSettingsQuickSection()
     }
 
