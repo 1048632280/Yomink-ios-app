@@ -64,6 +64,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let autoReadSpeedSlider = UISlider()
     private let autoReadExitButton = UIButton(type: .system)
     private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let settingsPanelScrollView = UIScrollView()
     private let settingsPanelStack = UIStackView()
     private let settingsFontDecreaseButton = UIButton(type: .system)
     private let settingsFontValueButton = UIButton(type: .system)
@@ -106,12 +107,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
-        static let settingsPanelHeightRatio: CGFloat = 0.52
-        static let settingsPanelMinimumHeight: CGFloat = 390
-        static let settingsPanelMaximumHeight: CGFloat = 460
+        static let settingsPanelHeightRatio: CGFloat = 0.40
+        static let settingsPanelMinimumHeight: CGFloat = 315
+        static let settingsPanelMaximumHeight: CGFloat = 360
         static let settingsPanelHorizontalInset: CGFloat = 20
         static let settingsPanelTopInset: CGFloat = 22
-        static let settingsPanelBottomInset: CGFloat = 20
         static let settingsControlHeight: CGFloat = 34
         static let settingsFontButtonHeight: CGFloat = 32
         static let menuSeparatorThickness: CGFloat = 2
@@ -238,8 +238,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     override var prefersStatusBarHidden: Bool {
-        readerSettings.autoHideStatusBar
-            && (!isMenuVisible || isSettingsPanelVisible || isAutoReading)
+        guard readerSettings.autoHideStatusBar else {
+            return false
+        }
+        if isMenuVisible,
+           !isSettingsPanelVisible,
+           !isAutoReadPanelVisible,
+           !isAutoReading {
+            return false
+        }
+        return true
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -922,11 +930,18 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         settingsPanel.clipsToBounds = true
         view.addSubview(settingsPanel)
 
+        settingsPanelScrollView.alwaysBounceVertical = true
+        settingsPanelScrollView.contentInsetAdjustmentBehavior = .never
+        settingsPanelScrollView.delaysContentTouches = false
+        settingsPanelScrollView.showsVerticalScrollIndicator = true
+        settingsPanelScrollView.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.contentView.addSubview(settingsPanelScrollView)
+
         settingsPanelStack.axis = .vertical
         settingsPanelStack.alignment = .fill
         settingsPanelStack.spacing = 16
         settingsPanelStack.translatesAutoresizingMaskIntoConstraints = false
-        settingsPanel.contentView.addSubview(settingsPanelStack)
+        settingsPanelScrollView.addSubview(settingsPanelStack)
 
         settingsPageModeControl.addTarget(
             self,
@@ -1026,21 +1041,37 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                 lessThanOrEqualToConstant: Layout.settingsPanelMaximumHeight
             ),
 
+            settingsPanelScrollView.leadingAnchor.constraint(
+                equalTo: settingsPanel.contentView.leadingAnchor
+            ),
+            settingsPanelScrollView.trailingAnchor.constraint(
+                equalTo: settingsPanel.contentView.trailingAnchor
+            ),
+            settingsPanelScrollView.topAnchor.constraint(
+                equalTo: settingsPanel.contentView.topAnchor
+            ),
+            settingsPanelScrollView.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor
+            ),
+
             settingsPanelStack.leadingAnchor.constraint(
-                equalTo: settingsPanel.contentView.leadingAnchor,
+                equalTo: settingsPanelScrollView.contentLayoutGuide.leadingAnchor,
                 constant: Layout.settingsPanelHorizontalInset
             ),
             settingsPanelStack.trailingAnchor.constraint(
-                equalTo: settingsPanel.contentView.trailingAnchor,
+                equalTo: settingsPanelScrollView.contentLayoutGuide.trailingAnchor,
                 constant: -Layout.settingsPanelHorizontalInset
             ),
             settingsPanelStack.topAnchor.constraint(
-                equalTo: settingsPanel.contentView.topAnchor,
+                equalTo: settingsPanelScrollView.contentLayoutGuide.topAnchor,
                 constant: Layout.settingsPanelTopInset
             ),
             settingsPanelStack.bottomAnchor.constraint(
-                lessThanOrEqualTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -Layout.settingsPanelBottomInset
+                equalTo: settingsPanelScrollView.contentLayoutGuide.bottomAnchor
+            ),
+            settingsPanelStack.widthAnchor.constraint(
+                equalTo: settingsPanelScrollView.frameLayoutGuide.widthAnchor,
+                constant: -Layout.settingsPanelHorizontalInset * 2
             )
         ])
 
@@ -1096,7 +1127,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func configureSettingsSwitch(_ control: UISwitch, action: Selector) {
-        control.onTintColor = MenuStyle.progressTintColor
+        control.onTintColor = .systemGreen
         control.addTarget(self, action: action, for: .valueChanged)
         control.setContentHuggingPriority(.required, for: .horizontal)
         control.setContentCompressionResistancePriority(.required, for: .horizontal)
@@ -3108,6 +3139,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     @objc private func settingsQuickModeChanged() {
         settingsQuickMode = SettingsQuickMode(rawValue: settingsQuickControl.selectedSegmentIndex) ?? .page
+        settingsPanelScrollView.setContentOffset(.zero, animated: false)
         updateSettingsQuickSection()
     }
 

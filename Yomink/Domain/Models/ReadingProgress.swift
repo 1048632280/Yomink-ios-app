@@ -105,7 +105,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             autoReadSpeed: 80,
             touchAreaMap: Self.defaultTouchAreaMap,
             keepScreenAwake: false,
-            autoHideHomeIndicator: false,
+            autoHideHomeIndicator: true,
             autoHideStatusBar: true,
             edgeSwipeBackEnabled: true
         )
@@ -118,7 +118,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         autoReadSpeed: Double = 80,
         touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap,
         keepScreenAwake: Bool = false,
-        autoHideHomeIndicator: Bool = false,
+        autoHideHomeIndicator: Bool = true,
         autoHideStatusBar: Bool = true,
         edgeSwipeBackEnabled: Bool = true
     ) {
@@ -142,7 +142,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         touchAreaMap = (try? container.decodeIfPresent([TouchAreaAction].self, forKey: .touchAreaMap))
             ?? Self.defaultTouchAreaMap
         keepScreenAwake = (try? container.decodeIfPresent(Bool.self, forKey: .keepScreenAwake)) ?? false
-        autoHideHomeIndicator = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideHomeIndicator)) ?? false
+        autoHideHomeIndicator = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideHomeIndicator)) ?? true
         autoHideStatusBar = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideStatusBar)) ?? true
         edgeSwipeBackEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .edgeSwipeBackEnabled)) ?? true
     }
