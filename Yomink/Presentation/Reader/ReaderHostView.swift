@@ -111,12 +111,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let settingsControlHeight: CGFloat = 34
         static let settingsFontButtonHeight: CGFloat = 32
         static let menuSeparatorThickness: CGFloat = 2
-        static let autoReadPanelHeight: CGFloat = 158
+        static let autoReadPanelHeight: CGFloat = 190
         static let autoReadPanelHorizontalInset: CGFloat = 22
-        static let autoReadPanelTopInset: CGFloat = 18
-        static let autoReadPanelBottomInset: CGFloat = 12
+        static let autoReadPanelTopInset: CGFloat = 28
+        static let autoReadPanelBottomInset: CGFloat = 18
         static let autoReadIconSize: CGFloat = 24
-        static let autoReadExitButtonHeight: CGFloat = 38
+        static let autoReadExitButtonHeight: CGFloat = 42
     }
 
     private enum MenuStyle {
@@ -178,6 +178,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var isAutoReading = false
     private var isAutoReadPanelVisible = false
     private var isAutoReadWaitingForChapter = false
+    private var isAutoReadPausedForBackground = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
     private var settingsQuickMode: SettingsQuickMode = .page
@@ -269,7 +270,6 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         saveSettingsImmediately()
     }
@@ -730,6 +730,50 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
     }
 
+    private func makeAutoReadSliderThumbImage(diameter: CGFloat) -> UIImage {
+        let shadowPadding: CGFloat = 4
+        let size = CGSize(
+            width: diameter + shadowPadding * 2,
+            height: diameter + shadowPadding * 2
+        )
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            let bounds = CGRect(
+                x: shadowPadding,
+                y: shadowPadding,
+                width: diameter,
+                height: diameter
+            )
+            let cgContext = context.cgContext
+            cgContext.setShadow(
+                offset: CGSize(width: 0, height: 2),
+                blur: 4,
+                color: UIColor.black.withAlphaComponent(0.36).cgColor
+            )
+
+            UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1).setFill()
+            cgContext.fillEllipse(in: bounds)
+            cgContext.setShadow(offset: .zero, blur: 0, color: nil)
+
+            MenuStyle.progressThumbColor.setFill()
+            cgContext.fillEllipse(in: bounds.insetBy(dx: 3, dy: 3))
+
+            UIColor(white: 0.64, alpha: 0.36).setFill()
+            cgContext.fillEllipse(
+                in: CGRect(
+                    x: bounds.minX + diameter * 0.31,
+                    y: bounds.minY + diameter * 0.24,
+                    width: diameter * 0.38,
+                    height: diameter * 0.18
+                )
+            )
+
+            UIColor(red: 0.42, green: 0.42, blue: 0.42, alpha: 1).setStroke()
+            cgContext.setLineWidth(1)
+            cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
+        }
+    }
+
     private func configureAutoReadPanel() {
         autoReadPanel.translatesAutoresizingMaskIntoConstraints = false
         autoReadPanel.effect = nil
@@ -747,8 +791,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         autoReadSpeedSlider.minimumTrackTintColor = MenuStyle.progressTintColor
         autoReadSpeedSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
         autoReadSpeedSlider.thumbTintColor = MenuStyle.progressThumbColor
-        autoReadSpeedSlider.setThumbImage(makeSliderThumbImage(diameter: 13), for: .normal)
-        autoReadSpeedSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .highlighted)
+        autoReadSpeedSlider.setThumbImage(makeAutoReadSliderThumbImage(diameter: 24), for: .normal)
+        autoReadSpeedSlider.setThumbImage(makeAutoReadSliderThumbImage(diameter: 28), for: .highlighted)
         autoReadSpeedSlider.accessibilityLabel = NSLocalizedString("reader.autoRead.speed", comment: "")
         autoReadSpeedSlider.addTarget(
             self,
@@ -782,7 +826,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         ])
         stackView.axis = .vertical
         stackView.alignment = .fill
-        stackView.spacing = 14
+        stackView.spacing = 22
         stackView.translatesAutoresizingMaskIntoConstraints = false
         autoReadPanel.contentView.addSubview(stackView)
 
@@ -1131,6 +1175,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
 
     private func startInitialLoad() {
@@ -1309,7 +1359,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         currentPageIndex = 0
         pendingAnchorByteOffset = startOffset
         isAutoReadWaitingForChapter = false
-        autoReadDisplayLink?.isPaused = false
+        autoReadDisplayLink?.isPaused = isAutoReadPausedForBackground
         lastAutoReadTimestamp = nil
         setProvisionalProgress(chapterOffset: startOffset)
         refreshBookmarkState()
@@ -2222,12 +2272,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         invalidatePrefetch()
         isAutoReading = true
         isAutoReadWaitingForChapter = false
+        isAutoReadPausedForBackground = false
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(false, animated: false)
         renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
         textView.panGestureRecognizer.isEnabled = false
         autoReadPlaceholderButton.setImage(UIImage(systemName: "pause.fill"), for: .normal)
-        setAutoReadPanelVisible(true, animated: true)
+        setAutoReadPanelVisible(false, animated: false)
         startAutoReadDisplayLink()
     }
 
@@ -2246,6 +2297,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
         isAutoReading = false
         isAutoReadWaitingForChapter = false
+        isAutoReadPausedForBackground = false
         textView.panGestureRecognizer.isEnabled = true
         stopAutoReadDisplayLink()
         autoReadPlaceholderButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
@@ -2283,6 +2335,34 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         autoReadDisplayLink?.invalidate()
         autoReadDisplayLink = nil
         lastAutoReadTimestamp = nil
+    }
+
+    private func pauseAutoReadForBackground() {
+        guard isAutoReading else {
+            return
+        }
+
+        updateScrollProgressFromContentOffset(shouldPrefetch: false)
+        isAutoReadPausedForBackground = true
+        autoReadDisplayLink?.isPaused = true
+        lastAutoReadTimestamp = nil
+        saveProgressImmediately()
+    }
+
+    private func resumeAutoReadAfterBackground() {
+        guard isAutoReading,
+              isAutoReadPausedForBackground
+        else {
+            return
+        }
+
+        isAutoReadPausedForBackground = false
+        lastAutoReadTimestamp = nil
+        if autoReadDisplayLink == nil {
+            startAutoReadDisplayLink()
+        } else if !isAutoReadWaitingForChapter {
+            autoReadDisplayLink?.isPaused = false
+        }
     }
 
     @objc private func autoReadDisplayLinkDidTick(_ displayLink: CADisplayLink) {
@@ -2836,13 +2916,19 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func applicationWillResignActive() {
-        stopAutoReading(restoreLayout: true, animated: false)
         saveProgressImmediately()
     }
 
     @objc private func applicationDidEnterBackground() {
-        stopAutoReading(restoreLayout: true, animated: false)
-        saveProgressImmediately()
+        if isAutoReading {
+            pauseAutoReadForBackground()
+        } else {
+            saveProgressImmediately()
+        }
+    }
+
+    @objc private func applicationDidBecomeActive() {
+        resumeAutoReadAfterBackground()
     }
 
     @objc private func settingsPageModeChanged() {

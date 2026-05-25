@@ -73,7 +73,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     static let minimumFontSize = 14.0
     static let maximumFontSize = 28.0
     static let minimumAutoReadSpeed = 20.0
-    static let maximumAutoReadSpeed = 240.0
+    static let maximumAutoReadSpeed = 180.0
     static let touchAreaCount = 9
     static let defaultTouchAreaMap: [TouchAreaAction] = [
         .previousPage, .menu, .nextPage,
