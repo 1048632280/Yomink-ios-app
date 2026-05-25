@@ -221,7 +221,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         saveTask?.cancel()
         settingsSaveTask?.cancel()
         bookmarkTask?.cancel()
-        invalidateAutoReadDisplayLink()
+        autoReadDisplayLink?.invalidate()
+        autoReadDisplayLink = nil
     }
 
     override var prefersStatusBarHidden: Bool {
