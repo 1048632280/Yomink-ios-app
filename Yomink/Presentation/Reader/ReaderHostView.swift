@@ -3635,7 +3635,7 @@ private struct ReaderTypography: @unchecked Sendable {
             return false
         }
 
-        nsText.substring(with: paragraphRange).hasPrefix("　　")
+        return nsText.substring(with: paragraphRange).hasPrefix("　　")
     }
 }
 
