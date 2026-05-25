@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import QuartzCore
+import CoreText
 
 struct ReaderHostView: UIViewControllerRepresentable {
     @Environment(\.dismiss) private var dismiss
@@ -32,6 +33,2246 @@ struct ReaderHostView: UIViewControllerRepresentable {
 
     func updateUIViewController(
         _ uiViewController: ReaderViewController,
+        context: Context
+    ) {
+        uiViewController.update(book: book)
+    }
+}
+
+@MainActor
+final class CollectionReaderViewController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout, UIGestureRecognizerDelegate {
+    private enum Section {
+        case main
+    }
+
+    private enum TapPageDirection {
+        case previous
+        case next
+    }
+
+    private let fileStore: AppFileStore
+    private let repository: any LibraryRepository
+    private let onClose: () -> Void
+    private let collectionView: UICollectionView
+    private let topBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    private let titleLabel = UILabel()
+    private let bookmarkButton = UIButton(type: .system)
+    private let moreButton = UIButton(type: .system)
+    private let progressLabel = UILabel()
+    private let progressSlider = UISlider()
+    private let previousChapterButton = UIButton(type: .system)
+    private let nextChapterButton = UIButton(type: .system)
+    private let catalogButton = UIButton(type: .system)
+    private let settingsButton = UIButton(type: .system)
+    private let floatingActionStack = UIStackView()
+    private let autoReadButton = UIButton(type: .system)
+    private let darkModeButton = UIButton(type: .system)
+    private let autoReadPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let autoReadSpeedSlider = UISlider()
+    private let autoReadExitButton = UIButton(type: .system)
+    private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    private let settingsPanelStack = UIStackView()
+    private let settingsFontDecreaseButton = UIButton(type: .system)
+    private let settingsFontValueButton = UIButton(type: .system)
+    private let settingsFontIncreaseButton = UIButton(type: .system)
+    private let keepScreenAwakeSwitch = UISwitch()
+    private let autoHideHomeIndicatorSwitch = UISwitch()
+    private let autoHideStatusBarSwitch = UISwitch()
+    private let edgeSwipeBackSwitch = UISwitch()
+    private lazy var settingsPageModeControl = UISegmentedControl(
+        items: [
+            NSLocalizedString("reader.settings.pageTurn.slide", comment: ""),
+            NSLocalizedString("reader.settings.pageTurn.curl", comment: ""),
+            NSLocalizedString("reader.settings.pageTurn.scroll", comment: "")
+        ]
+    )
+    private lazy var settingsThemeControl = UISegmentedControl(
+        items: ReaderSettings.Theme.allCases.map(\.localizedTitle)
+    )
+    private lazy var settingsLayoutPresetControl = UISegmentedControl(
+        items: ReaderSettings.LayoutPreset.allCases.map(\.localizedTitle)
+    )
+    private lazy var settingsQuickControl = UISegmentedControl(
+        items: [
+            NSLocalizedString("reader.settings.quick.page", comment: ""),
+            NSLocalizedString("reader.settings.quick.layout", comment: ""),
+            NSLocalizedString("reader.settings.quick.more", comment: "")
+        ]
+    )
+    private let loadingIndicator = UIActivityIndicatorView(style: .large)
+
+    private enum Layout {
+        static let topBarContentHeight: CGFloat = 44
+        static let topBarButtonBottomInset: CGFloat = 5
+        static let bottomBarSafeAreaInset: CGFloat = 2
+        static let progressRowHeight: CGFloat = 40
+        static let bottomActionRowHeight: CGFloat = 48
+        static let chapterButtonWidth: CGFloat = 74
+        static let progressSliderHorizontalInset: CGFloat = 18
+        static let floatingButtonSize: CGFloat = 42
+        static let floatingButtonSpacing: CGFloat = 16
+        static let floatingButtonTrailingInset: CGFloat = 18
+        static let floatingButtonBottomInset: CGFloat = 20
+        static let settingsPanelHeightRatio: CGFloat = 0.40
+        static let settingsPanelMinimumHeight: CGFloat = 315
+        static let settingsPanelMaximumHeight: CGFloat = 360
+        static let settingsPanelHorizontalInset: CGFloat = 20
+        static let settingsPanelTopInset: CGFloat = 22
+        static let settingsControlHeight: CGFloat = 34
+        static let settingsFontButtonHeight: CGFloat = 32
+        static let menuSeparatorThickness: CGFloat = 2
+        static let autoReadPanelHeight: CGFloat = 190
+        static let autoReadPanelHorizontalInset: CGFloat = 22
+        static let autoReadPanelTopInset: CGFloat = 28
+        static let autoReadPanelBottomInset: CGFloat = 18
+        static let autoReadExitButtonHeight: CGFloat = 42
+        static let maximumResidentPages = 14
+    }
+
+    private enum MenuStyle {
+        static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
+        static let progressRowBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
+        static let separatorColor = UIColor(red: 0.125, green: 0.125, blue: 0.125, alpha: 1)
+        static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
+        static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
+        static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
+        static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
+        static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
+        static let settingsControlSelectedColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
+        static let floatingButtonColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
+        static let floatingButtonIconColor = UIColor(white: 0.48, alpha: 1)
+    }
+
+    private enum SettingsQuickMode: Int {
+        case page
+        case layout
+        case more
+    }
+
+    private var book: Book
+    private var chapters: [Chapter] = []
+    private var bookmarks: [Bookmark] = []
+    private var filterRules: [TextFilterRule] = []
+    private var pages: [CollectionReaderPage] = []
+    private var currentPage: CollectionReaderPage?
+    private var currentProgress: ReadingProgress?
+    private var currentBookmark: Bookmark?
+    private var readerSettings = ReaderSettings.default
+    private var settingsQuickMode: SettingsQuickMode = .page
+    private var loadTask: Task<Void, Never>?
+    private var pageTask: Task<Void, Never>?
+    private var saveTask: Task<Void, Never>?
+    private var settingsSaveTask: Task<Void, Never>?
+    private var bookmarkTask: Task<Void, Never>?
+    private var pagingGeneration = 0
+    private var saveGeneration = 0
+    private var settingsSaveGeneration = 0
+    private var isMenuVisible = false
+    private var isSettingsPanelVisible = false
+    private var isAutoReading = false
+    private var isAutoReadPanelVisible = false
+    private var isTrackingProgressSlider = false
+    private var isApplyingProgrammaticScroll = false
+    private var didStartOpening = false
+    private var didReachEndOfBook = false
+    private var isLoadingNextPage = false
+    private var pendingTapTargetPageIndex: Int?
+    private var autoReadDisplayLink: CADisplayLink?
+    private var lastAutoReadTimestamp: CFTimeInterval?
+    private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
+    private var lastViewportSize = CGSize.zero
+
+    private var usesVerticalScrolling: Bool {
+        isAutoReading || readerSettings.pageMode == .scroll
+    }
+
+    init(
+        book: Book,
+        fileStore: AppFileStore,
+        repository: any LibraryRepository,
+        onClose: @escaping () -> Void
+    ) {
+        self.book = book
+        self.fileStore = fileStore
+        self.repository = repository
+
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .horizontal
+        layout.minimumLineSpacing = 0
+        layout.minimumInteritemSpacing = 0
+        self.collectionView = UICollectionView(frame: .zero, collectionViewLayout: layout)
+        self.onClose = onClose
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    deinit {
+        Task { @MainActor in
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
+        NotificationCenter.default.removeObserver(self)
+        loadTask?.cancel()
+        pageTask?.cancel()
+        saveTask?.cancel()
+        settingsSaveTask?.cancel()
+        bookmarkTask?.cancel()
+        invalidateAutoReadDisplayLink()
+    }
+
+    override var prefersStatusBarHidden: Bool {
+        guard readerSettings.autoHideStatusBar else {
+            return false
+        }
+        if isMenuVisible,
+           !isSettingsPanelVisible,
+           !isAutoReadPanelVisible,
+           !isAutoReading {
+            return false
+        }
+        return true
+    }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        readerSettings.theme == .dark ? .lightContent : .darkContent
+    }
+
+    override var prefersHomeIndicatorAutoHidden: Bool {
+        readerSettings.autoHideHomeIndicator
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        configureCollectionView()
+        configureMenus()
+        configureLoadingIndicator()
+        configureGestures()
+        configureLifecycleObservers()
+        applyTheme()
+        startInitialLoad()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        applyMenuPosition(animated: false)
+        applySettingsPanelPosition(animated: false)
+        applyAutoReadPanelPosition()
+
+        let size = collectionView.bounds.size
+        guard didStartOpening,
+              size.width > 1,
+              size.height > 1,
+              (
+                abs(size.width - lastViewportSize.width) > 1
+                    || abs(size.height - lastViewportSize.height) > 1
+              )
+        else {
+            return
+        }
+
+        lastViewportSize = size
+        let offset = currentDisplayByteOffset()
+        reopen(atAbsoluteOffset: offset, enforceChapterBoundary: true)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        UIApplication.shared.isIdleTimerDisabled = false
+        stopAutoReading(restoreLayout: false, animated: false)
+        saveProgressImmediately()
+        saveSettingsImmediately()
+    }
+
+    func update(book: Book) {
+        guard book.id != self.book.id else {
+            return
+        }
+
+        self.book = book
+        startInitialLoad()
+    }
+
+    private func configureCollectionView() {
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        collectionView.backgroundColor = readerSettings.theme.backgroundColor
+        collectionView.isPagingEnabled = true
+        collectionView.showsHorizontalScrollIndicator = false
+        collectionView.showsVerticalScrollIndicator = false
+        collectionView.contentInsetAdjustmentBehavior = .never
+        collectionView.contentInset = .zero
+        collectionView.scrollIndicatorInsets = .zero
+        collectionView.delegate = self
+        collectionView.dataSource = self
+        collectionView.register(
+            CollectionReaderPageCell.self,
+            forCellWithReuseIdentifier: CollectionReaderPageCell.reuseIdentifier
+        )
+        view.addSubview(collectionView)
+
+        NSLayoutConstraint.activate([
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func configureMenus() {
+        topBar.effect = nil
+        topBar.backgroundColor = MenuStyle.barBackgroundColor
+        topBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
+        bottomBar.effect = nil
+        bottomBar.backgroundColor = MenuStyle.barBackgroundColor
+        bottomBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
+        configureTopBar()
+        configureBottomBar()
+        configureFloatingActionButtons()
+        configureSettingsPanel()
+        configureAutoReadPanel()
+        setMenuVisible(false, animated: false)
+        setSettingsPanelVisible(false, animated: false)
+        setAutoReadPanelVisible(false, animated: false)
+    }
+
+    private func configureTopBar() {
+        topBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topBar)
+
+        let closeButton = UIButton(type: .system)
+        closeButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
+        closeButton.tintColor = MenuStyle.primaryTextColor
+        closeButton.accessibilityLabel = NSLocalizedString("reader.close", comment: "")
+        closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+
+        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textAlignment = .left
+        titleLabel.numberOfLines = 1
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.textColor = MenuStyle.secondaryTextColor
+        titleLabel.text = book.title
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        bookmarkButton.setImage(UIImage(systemName: "bookmark"), for: .normal)
+        bookmarkButton.tintColor = MenuStyle.primaryTextColor
+        bookmarkButton.accessibilityLabel = NSLocalizedString("reader.bookmark.add", comment: "")
+        bookmarkButton.addTarget(self, action: #selector(bookmarkButtonTapped), for: .touchUpInside)
+        bookmarkButton.translatesAutoresizingMaskIntoConstraints = false
+
+        moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
+        moreButton.tintColor = MenuStyle.primaryTextColor
+        moreButton.accessibilityLabel = NSLocalizedString("reader.more", comment: "")
+        moreButton.showsMenuAsPrimaryAction = true
+        moreButton.menu = makeMoreMenu()
+        moreButton.translatesAutoresizingMaskIntoConstraints = false
+
+        let actionStack = UIStackView(arrangedSubviews: [bookmarkButton, moreButton])
+        actionStack.axis = .horizontal
+        actionStack.alignment = .center
+        actionStack.spacing = 4
+        actionStack.translatesAutoresizingMaskIntoConstraints = false
+
+        topBar.contentView.addSubview(closeButton)
+        topBar.contentView.addSubview(titleLabel)
+        topBar.contentView.addSubview(actionStack)
+
+        NSLayoutConstraint.activate([
+            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topBar.topAnchor.constraint(equalTo: view.topAnchor),
+            topBar.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.topAnchor,
+                constant: Layout.topBarContentHeight
+            ),
+
+            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 12),
+            closeButton.bottomAnchor.constraint(
+                equalTo: topBar.contentView.bottomAnchor,
+                constant: -Layout.topBarButtonBottomInset
+            ),
+            closeButton.widthAnchor.constraint(equalToConstant: 44),
+            closeButton.heightAnchor.constraint(equalToConstant: 36),
+
+            titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 10),
+
+            actionStack.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
+            actionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
+            actionStack.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
+
+            bookmarkButton.widthAnchor.constraint(equalToConstant: 44),
+            bookmarkButton.heightAnchor.constraint(equalToConstant: 36),
+            moreButton.widthAnchor.constraint(equalToConstant: 44),
+            moreButton.heightAnchor.constraint(equalToConstant: 36)
+        ])
+    }
+
+    private func configureBottomBar() {
+        bottomBar.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(bottomBar)
+
+        previousChapterButton.setTitle(NSLocalizedString("reader.previousChapter", comment: ""), for: .normal)
+        previousChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        previousChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        previousChapterButton.addTarget(self, action: #selector(previousChapterButtonTapped), for: .touchUpInside)
+        previousChapterButton.translatesAutoresizingMaskIntoConstraints = false
+
+        nextChapterButton.setTitle(NSLocalizedString("reader.nextChapter", comment: ""), for: .normal)
+        nextChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        nextChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
+        nextChapterButton.addTarget(self, action: #selector(nextChapterButtonTapped), for: .touchUpInside)
+        nextChapterButton.translatesAutoresizingMaskIntoConstraints = false
+
+        progressSlider.minimumValue = 0
+        progressSlider.maximumValue = 1
+        progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
+        progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
+        progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
+        progressSlider.addTarget(self, action: #selector(progressSliderTouchBegan), for: .touchDown)
+        progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
+        progressSlider.addTarget(
+            self,
+            action: #selector(progressSliderTouchFinished),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
+        progressSlider.translatesAutoresizingMaskIntoConstraints = false
+
+        progressLabel.font = .preferredFont(forTextStyle: .caption1)
+        progressLabel.adjustsFontForContentSizeCategory = true
+        progressLabel.textColor = MenuStyle.secondaryTextColor
+        progressLabel.textAlignment = .center
+        progressLabel.numberOfLines = 2
+        progressLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        catalogButton.setTitle(NSLocalizedString("reader.catalog", comment: ""), for: .normal)
+        catalogButton.setImage(UIImage(systemName: "list.bullet"), for: .normal)
+        catalogButton.tintColor = MenuStyle.secondaryTextColor
+        catalogButton.addTarget(self, action: #selector(catalogButtonTapped), for: .touchUpInside)
+
+        settingsButton.setTitle(NSLocalizedString("reader.settings", comment: ""), for: .normal)
+        settingsButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
+        settingsButton.tintColor = MenuStyle.secondaryTextColor
+        settingsButton.addTarget(self, action: #selector(settingsButtonTapped), for: .touchUpInside)
+
+        [catalogButton, settingsButton].forEach { button in
+            button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+            button.semanticContentAttribute = .forceLeftToRight
+            button.translatesAutoresizingMaskIntoConstraints = false
+        }
+
+        let progressRow = UIStackView(arrangedSubviews: [
+            previousChapterButton,
+            progressSlider,
+            nextChapterButton
+        ])
+        progressRow.axis = .horizontal
+        progressRow.alignment = .center
+        progressRow.spacing = 10
+        progressRow.translatesAutoresizingMaskIntoConstraints = false
+
+        let actionRow = UIStackView(arrangedSubviews: [catalogButton, settingsButton])
+        actionRow.axis = .horizontal
+        actionRow.distribution = .fillEqually
+        actionRow.alignment = .center
+        actionRow.translatesAutoresizingMaskIntoConstraints = false
+
+        bottomBar.contentView.addSubview(progressLabel)
+        bottomBar.contentView.addSubview(progressRow)
+        bottomBar.contentView.addSubview(actionRow)
+
+        NSLayoutConstraint.activate([
+            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            bottomBar.topAnchor.constraint(
+                equalTo: progressLabel.topAnchor,
+                constant: -8
+            ),
+            bottomBar.bottomAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: Layout.bottomBarSafeAreaInset
+            ),
+
+            progressLabel.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: 20),
+            progressLabel.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -20),
+
+            progressRow.topAnchor.constraint(equalTo: progressLabel.bottomAnchor, constant: 4),
+            progressRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor, constant: Layout.progressSliderHorizontalInset),
+            progressRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor, constant: -Layout.progressSliderHorizontalInset),
+            progressRow.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
+
+            actionRow.topAnchor.constraint(equalTo: progressRow.bottomAnchor),
+            actionRow.leadingAnchor.constraint(equalTo: bottomBar.contentView.leadingAnchor),
+            actionRow.trailingAnchor.constraint(equalTo: bottomBar.contentView.trailingAnchor),
+            actionRow.bottomAnchor.constraint(equalTo: bottomBar.contentView.bottomAnchor),
+            actionRow.heightAnchor.constraint(equalToConstant: Layout.bottomActionRowHeight),
+
+            previousChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
+            nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth)
+        ])
+    }
+
+    private func configureFloatingActionButtons() {
+        floatingActionStack.axis = .vertical
+        floatingActionStack.alignment = .fill
+        floatingActionStack.spacing = Layout.floatingButtonSpacing
+        floatingActionStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(floatingActionStack)
+
+        configureFloatingButton(autoReadButton, systemName: "play.fill", titleKey: "reader.autoRead.placeholder")
+        autoReadButton.addTarget(self, action: #selector(autoReadButtonTapped), for: .touchUpInside)
+
+        configureFloatingButton(darkModeButton, systemName: "moon.stars", titleKey: "reader.darkMode.placeholder")
+        darkModeButton.addTarget(self, action: #selector(darkModeButtonTapped), for: .touchUpInside)
+
+        floatingActionStack.addArrangedSubview(autoReadButton)
+        floatingActionStack.addArrangedSubview(darkModeButton)
+
+        NSLayoutConstraint.activate([
+            floatingActionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -Layout.floatingButtonTrailingInset),
+            floatingActionStack.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -Layout.floatingButtonBottomInset),
+            autoReadButton.widthAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
+            autoReadButton.heightAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
+            darkModeButton.widthAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
+            darkModeButton.heightAnchor.constraint(equalToConstant: Layout.floatingButtonSize)
+        ])
+    }
+
+    private func configureFloatingButton(_ button: UIButton, systemName: String, titleKey: String) {
+        button.setImage(UIImage(systemName: systemName), for: .normal)
+        button.tintColor = MenuStyle.floatingButtonIconColor
+        button.backgroundColor = MenuStyle.floatingButtonColor
+        button.layer.cornerRadius = Layout.floatingButtonSize / 2
+        button.accessibilityLabel = NSLocalizedString(titleKey, comment: "")
+        button.translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    private func configureSettingsPanel() {
+        settingsPanel.effect = nil
+        settingsPanel.backgroundColor = MenuStyle.barBackgroundColor
+        settingsPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
+        settingsPanel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(settingsPanel)
+
+        settingsPanelStack.axis = .vertical
+        settingsPanelStack.spacing = 14
+        settingsPanelStack.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanel.contentView.addSubview(settingsPanelStack)
+
+        settingsQuickControl.selectedSegmentIndex = 0
+        settingsQuickControl.addTarget(self, action: #selector(settingsQuickModeChanged), for: .valueChanged)
+        styleSettingsControl(settingsQuickControl)
+
+        settingsPageModeControl.addTarget(self, action: #selector(settingsPageModeChanged), for: .valueChanged)
+        settingsThemeControl.addTarget(self, action: #selector(settingsThemeChanged), for: .valueChanged)
+        settingsLayoutPresetControl.addTarget(self, action: #selector(settingsLayoutPresetChanged), for: .valueChanged)
+        styleSettingsControl(settingsPageModeControl)
+        styleSettingsControl(settingsThemeControl)
+        styleSettingsControl(settingsLayoutPresetControl)
+
+        settingsPanelStack.addArrangedSubview(settingsQuickControl)
+        settingsPanelStack.addArrangedSubview(settingsSection(
+            title: NSLocalizedString("reader.settings.pageTurn", comment: ""),
+            control: settingsPageModeControl
+        ))
+        settingsPanelStack.addArrangedSubview(settingsSection(
+            title: NSLocalizedString("reader.settings.fontSize", comment: ""),
+            control: fontSizeControl()
+        ))
+        settingsPanelStack.addArrangedSubview(settingsSection(
+            title: NSLocalizedString("reader.settings.theme", comment: ""),
+            control: settingsThemeControl
+        ))
+        settingsPanelStack.addArrangedSubview(settingsSection(
+            title: NSLocalizedString("reader.settings.layoutPreset", comment: ""),
+            control: settingsLayoutPresetControl
+        ))
+        settingsPanelStack.addArrangedSubview(switchRow(
+            title: NSLocalizedString("reader.settings.keepScreenAwake", comment: ""),
+            toggle: keepScreenAwakeSwitch,
+            action: #selector(keepScreenAwakeChanged)
+        ))
+        settingsPanelStack.addArrangedSubview(switchRow(
+            title: NSLocalizedString("reader.settings.autoHideHomeIndicator", comment: ""),
+            toggle: autoHideHomeIndicatorSwitch,
+            action: #selector(autoHideHomeIndicatorChanged)
+        ))
+        settingsPanelStack.addArrangedSubview(switchRow(
+            title: NSLocalizedString("reader.settings.autoHideStatusBar", comment: ""),
+            toggle: autoHideStatusBarSwitch,
+            action: #selector(autoHideStatusBarChanged)
+        ))
+        settingsPanelStack.addArrangedSubview(switchRow(
+            title: NSLocalizedString("reader.settings.edgeSwipeBack", comment: ""),
+            toggle: edgeSwipeBackSwitch,
+            action: #selector(edgeSwipeBackChanged)
+        ))
+
+        NSLayoutConstraint.activate([
+            settingsPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            settingsPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            settingsPanel.topAnchor.constraint(equalTo: view.topAnchor),
+            settingsPanel.heightAnchor.constraint(
+                equalToConstant: min(
+                    max(view.bounds.height * Layout.settingsPanelHeightRatio, Layout.settingsPanelMinimumHeight),
+                    Layout.settingsPanelMaximumHeight
+                )
+            ),
+            settingsPanelStack.leadingAnchor.constraint(equalTo: settingsPanel.contentView.leadingAnchor, constant: Layout.settingsPanelHorizontalInset),
+            settingsPanelStack.trailingAnchor.constraint(equalTo: settingsPanel.contentView.trailingAnchor, constant: -Layout.settingsPanelHorizontalInset),
+            settingsPanelStack.topAnchor.constraint(equalTo: settingsPanel.contentView.topAnchor, constant: Layout.settingsPanelTopInset)
+        ])
+    }
+
+    private func styleSettingsControl(_ control: UISegmentedControl) {
+        control.selectedSegmentTintColor = MenuStyle.settingsControlSelectedColor
+        control.backgroundColor = MenuStyle.settingsControlBackgroundColor
+        control.setTitleTextAttributes(
+            [.foregroundColor: MenuStyle.secondaryTextColor],
+            for: .normal
+        )
+        control.setTitleTextAttributes(
+            [.foregroundColor: MenuStyle.primaryTextColor],
+            for: .selected
+        )
+        control.translatesAutoresizingMaskIntoConstraints = false
+        control.heightAnchor.constraint(equalToConstant: Layout.settingsControlHeight).isActive = true
+    }
+
+    private func settingsSection(title: String, control: UIView) -> UIView {
+        let label = UILabel()
+        label.text = title
+        label.font = .preferredFont(forTextStyle: .caption1)
+        label.textColor = MenuStyle.secondaryTextColor
+        label.adjustsFontForContentSizeCategory = true
+
+        let stack = UIStackView(arrangedSubviews: [label, control])
+        stack.axis = .vertical
+        stack.spacing = 7
+        return stack
+    }
+
+    private func fontSizeControl() -> UIView {
+        configureFontButton(settingsFontDecreaseButton, title: "-")
+        configureFontButton(settingsFontIncreaseButton, title: "+")
+        configureFontButton(settingsFontValueButton, title: "\(Int(readerSettings.normalized.fontSize))")
+        settingsFontDecreaseButton.addTarget(self, action: #selector(settingsFontDecreaseTapped), for: .touchUpInside)
+        settingsFontIncreaseButton.addTarget(self, action: #selector(settingsFontIncreaseTapped), for: .touchUpInside)
+        settingsFontValueButton.addTarget(self, action: #selector(settingsFontResetTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [
+            settingsFontDecreaseButton,
+            settingsFontValueButton,
+            settingsFontIncreaseButton
+        ])
+        stack.axis = .horizontal
+        stack.distribution = .fillEqually
+        stack.spacing = 10
+        return stack
+    }
+
+    private func configureFontButton(_ button: UIButton, title: String) {
+        button.setTitle(title, for: .normal)
+        button.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
+        button.backgroundColor = MenuStyle.settingsControlSelectedColor
+        button.layer.cornerRadius = Layout.settingsFontButtonHeight / 2
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.heightAnchor.constraint(equalToConstant: Layout.settingsFontButtonHeight).isActive = true
+    }
+
+    private func switchRow(title: String, toggle: UISwitch, action: Selector) -> UIView {
+        let label = UILabel()
+        label.text = title
+        label.font = .preferredFont(forTextStyle: .callout)
+        label.textColor = MenuStyle.primaryTextColor
+        label.adjustsFontForContentSizeCategory = true
+        toggle.addTarget(self, action: action, for: .valueChanged)
+
+        let row = UIStackView(arrangedSubviews: [label, toggle])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.spacing = 12
+        return row
+    }
+
+    private func configureAutoReadPanel() {
+        autoReadPanel.effect = nil
+        autoReadPanel.backgroundColor = MenuStyle.barBackgroundColor
+        autoReadPanel.contentView.backgroundColor = MenuStyle.barBackgroundColor
+        autoReadPanel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(autoReadPanel)
+
+        let titleLabel = UILabel()
+        titleLabel.text = NSLocalizedString("reader.autoRead.speed", comment: "")
+        titleLabel.font = .preferredFont(forTextStyle: .headline)
+        titleLabel.textColor = MenuStyle.primaryTextColor
+
+        autoReadSpeedSlider.minimumValue = Float(ReaderSettings.minimumAutoReadSpeed)
+        autoReadSpeedSlider.maximumValue = Float(ReaderSettings.maximumAutoReadSpeed)
+        autoReadSpeedSlider.value = Float(readerSettings.autoReadSpeed)
+        autoReadSpeedSlider.tintColor = MenuStyle.progressTintColor
+        autoReadSpeedSlider.addTarget(self, action: #selector(autoReadSpeedChanged), for: .valueChanged)
+
+        autoReadExitButton.setTitle(NSLocalizedString("reader.autoRead.exit", comment: ""), for: .normal)
+        autoReadExitButton.setImage(UIImage(systemName: "stop.circle"), for: .normal)
+        autoReadExitButton.tintColor = MenuStyle.primaryTextColor
+        autoReadExitButton.addTarget(self, action: #selector(autoReadExitTapped), for: .touchUpInside)
+
+        let stack = UIStackView(arrangedSubviews: [
+            titleLabel,
+            autoReadSpeedSlider,
+            autoReadExitButton
+        ])
+        stack.axis = .vertical
+        stack.spacing = 14
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        autoReadPanel.contentView.addSubview(stack)
+
+        NSLayoutConstraint.activate([
+            autoReadPanel.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            autoReadPanel.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            autoReadPanel.topAnchor.constraint(equalTo: view.topAnchor),
+            autoReadPanel.heightAnchor.constraint(equalToConstant: Layout.autoReadPanelHeight),
+            stack.leadingAnchor.constraint(equalTo: autoReadPanel.contentView.leadingAnchor, constant: Layout.autoReadPanelHorizontalInset),
+            stack.trailingAnchor.constraint(equalTo: autoReadPanel.contentView.trailingAnchor, constant: -Layout.autoReadPanelHorizontalInset),
+            stack.topAnchor.constraint(equalTo: autoReadPanel.contentView.topAnchor, constant: Layout.autoReadPanelTopInset),
+            autoReadExitButton.heightAnchor.constraint(equalToConstant: Layout.autoReadExitButtonHeight)
+        ])
+    }
+
+    private func configureLoadingIndicator() {
+        loadingIndicator.hidesWhenStopped = true
+        loadingIndicator.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(loadingIndicator)
+        NSLayoutConstraint.activate([
+            loadingIndicator.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            loadingIndicator.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
+
+    private func configureGestures() {
+        let tapGesture = UITapGestureRecognizer(target: self, action: #selector(handleTap(_:)))
+        tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = self
+        collectionView.addGestureRecognizer(tapGesture)
+
+        let edgeBack = UIScreenEdgePanGestureRecognizer(target: self, action: #selector(handleEdgeBack(_:)))
+        edgeBack.edges = .left
+        edgeBack.delegate = self
+        view.addGestureRecognizer(edgeBack)
+    }
+
+    private func configureLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+    }
+
+    private func startInitialLoad() {
+        showLoading(true)
+        loadTask?.cancel()
+        pageTask?.cancel()
+        pagingGeneration += 1
+        let generation = pagingGeneration
+        let targetBook = book
+        let libraryRepository = repository
+        let appFileStore = fileStore
+
+        loadTask = Task { [weak self] in
+            do {
+                async let chaptersTask = libraryRepository.fetchChapters(bookID: targetBook.id)
+                async let bookmarksTask = libraryRepository.fetchBookmarks(bookID: targetBook.id)
+                async let filterRulesTask = libraryRepository.fetchFilterRules(bookID: targetBook.id)
+                async let progressTask = libraryRepository.fetchReadingProgress(bookID: targetBook.id)
+                async let settingsTask = libraryRepository.fetchReaderSettings()
+                let loadedChapters = try await chaptersTask
+                let loadedBookmarks = try await bookmarksTask
+                let loadedFilterRules = try await filterRulesTask
+                let progress = try await progressTask
+                let settings = try await settingsTask
+                try await libraryRepository.markBookOpened(id: targetBook.id, at: Date())
+                guard !Task.isCancelled else {
+                    return
+                }
+                await MainActor.run {
+                    guard let self,
+                          self.pagingGeneration == generation else {
+                        return
+                    }
+                    self.chapters = loadedChapters
+                    self.bookmarks = loadedBookmarks
+                    self.filterRules = loadedFilterRules
+                    self.readerSettings = settings.normalized
+                    self.updateReaderChromePreferences()
+                    self.applyTheme()
+                    self.configureCollectionViewForActiveSettings()
+                    self.didStartOpening = true
+                    let selected = Self.selectedChapter(from: loadedChapters, progress: progress)
+                    let absoluteOffset = selected
+                        .map { $0.chapter.startOffset + $0.offset }
+                        ?? 0
+                    self.openPage(absoluteOffset: absoluteOffset, generation: generation, fileStore: appFileStore)
+                }
+            } catch {
+                await MainActor.run {
+                    self?.showLoading(false)
+                    self?.showError(error)
+                }
+            }
+        }
+    }
+
+    private func openPage(
+        absoluteOffset: Int,
+        generation: Int? = nil,
+        fileStore: AppFileStore? = nil
+    ) {
+        guard !chapters.isEmpty,
+              collectionView.bounds.width > 1,
+              collectionView.bounds.height > 1 else {
+            showLoading(false)
+            return
+        }
+
+        pageTask?.cancel()
+        let activeGeneration = generation ?? {
+            pagingGeneration += 1
+            return pagingGeneration
+        }()
+        let requestOffset = min(max(absoluteOffset, 0), max(chapters.last?.endOffset ?? 1, 1) - 1)
+        let targetBook = book
+        let loadedChapters = chapters
+        let activeRules = filterRules
+        let settings = readerSettings.normalized
+        let viewportSize = collectionView.bounds.size
+        let safeAreaInsets = view.safeAreaInsets
+        let appFileStore = fileStore ?? self.fileStore
+        didReachEndOfBook = false
+        isLoadingNextPage = true
+        showLoading(true)
+
+        pageTask = Task { [weak self] in
+            do {
+                let page = try await CollectionReaderPaginator.makePage(
+                    book: targetBook,
+                    chapters: loadedChapters,
+                    absoluteOffset: requestOffset,
+                    settings: settings,
+                    filterRules: activeRules,
+                    viewportSize: viewportSize,
+                    safeAreaInsets: safeAreaInsets,
+                    fileStore: appFileStore
+                )
+                try Task.checkCancellation()
+                await MainActor.run {
+                    guard let self,
+                          self.pagingGeneration == activeGeneration else {
+                        return
+                    }
+                    self.pageTask = nil
+                    self.pages = [page]
+                    self.currentPage = page
+                    self.collectionView.reloadData()
+                    self.collectionView.layoutIfNeeded()
+                    self.collectionView.setContentOffset(self.contentOffset(forPageAt: 0), animated: false)
+                    self.showLoading(false)
+                    self.updateSessionState(isLoadingNextPage: false)
+                    self.prefetchPagesNearCurrent()
+                }
+            } catch {
+                await MainActor.run {
+                    self?.pageTask = nil
+                    self?.showLoading(false)
+                    self?.showError(error)
+                }
+            }
+        }
+    }
+
+    private func reopen(atAbsoluteOffset offset: Int, enforceChapterBoundary _: Bool) {
+        guard didStartOpening else {
+            return
+        }
+        pagingGeneration += 1
+        openPage(absoluteOffset: offset, generation: pagingGeneration)
+    }
+
+    private func loadNextPageIfNeeded(scrollAfterLoading: Bool = false) {
+        guard pageTask == nil,
+              !didReachEndOfBook,
+              let lastPage = pages.last else {
+            return
+        }
+        guard lastPage.endAbsoluteOffset < (chapters.last?.endOffset ?? 0) else {
+            didReachEndOfBook = true
+            updateSessionState(isLoadingNextPage: false)
+            return
+        }
+
+        if scrollAfterLoading {
+            pendingTapTargetPageIndex = lastPage.pageIndex + 1
+        }
+        loadPage(
+            absoluteOffset: lastPage.endAbsoluteOffset,
+            pageIndex: lastPage.pageIndex + 1,
+            insertingAtEnd: true
+        )
+    }
+
+    private func loadPreviousPageIfNeeded(scrollAfterLoading: Bool = false) {
+        guard pageTask == nil,
+              let firstPage = pages.first,
+              firstPage.startAbsoluteOffset > 0 else {
+            return
+        }
+
+        if scrollAfterLoading {
+            pendingTapTargetPageIndex = firstPage.pageIndex - 1
+        }
+        let targetOffset = previousPageStartOffset(before: firstPage.startAbsoluteOffset)
+        loadPage(
+            absoluteOffset: targetOffset,
+            pageIndex: firstPage.pageIndex - 1,
+            insertingAtEnd: false
+        )
+    }
+
+    private func loadPage(
+        absoluteOffset: Int,
+        pageIndex: Int,
+        insertingAtEnd: Bool
+    ) {
+        let requestOffset = min(max(absoluteOffset, 0), max(chapters.last?.endOffset ?? 1, 1) - 1)
+        let generation = pagingGeneration
+        let targetBook = book
+        let loadedChapters = chapters
+        let activeRules = filterRules
+        let settings = readerSettings.normalized
+        let viewportSize = collectionView.bounds.size
+        let safeAreaInsets = view.safeAreaInsets
+        let appFileStore = fileStore
+        isLoadingNextPage = insertingAtEnd
+        updateSessionState(isLoadingNextPage: insertingAtEnd)
+
+        pageTask = Task { [weak self] in
+            do {
+                let page = try await CollectionReaderPaginator.makePage(
+                    book: targetBook,
+                    chapters: loadedChapters,
+                    absoluteOffset: requestOffset,
+                    forcedPageIndex: pageIndex,
+                    settings: settings,
+                    filterRules: activeRules,
+                    viewportSize: viewportSize,
+                    safeAreaInsets: safeAreaInsets,
+                    fileStore: appFileStore
+                )
+                try Task.checkCancellation()
+                await MainActor.run {
+                    guard let self,
+                          self.pagingGeneration == generation else {
+                        return
+                    }
+                    self.pageTask = nil
+                    if insertingAtEnd {
+                        self.appendPage(page)
+                    } else {
+                        self.prependPage(page)
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          self.pagingGeneration == generation else {
+                        return
+                    }
+                    self.pageTask = nil
+                    if !(error is CancellationError) {
+                        self.showError(error)
+                    }
+                    self.updateSessionState(isLoadingNextPage: false)
+                }
+            }
+        }
+    }
+
+    private func appendPage(_ page: CollectionReaderPage) {
+        if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset }) {
+            updateSessionState(isLoadingNextPage: false)
+            return
+        }
+        pages.append(page)
+        let removedPrefix = trimResidentPagesIfNeeded()
+        collectionView.reloadData()
+        adjustContentOffsetAfterRemovingPrefix(removedPrefix)
+        updateSessionState(isLoadingNextPage: false)
+        if pendingTapTargetPageIndex == page.pageIndex,
+           let index = pages.firstIndex(of: page) {
+            pendingTapTargetPageIndex = nil
+            scrollToPage(at: index, animated: false)
+        }
+    }
+
+    private func prependPage(_ page: CollectionReaderPage) {
+        if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset }) {
+            updateSessionState(isLoadingNextPage: false)
+            return
+        }
+        let extent = pageExtentForCurrentMode()
+        pages.insert(page, at: 0)
+        trimResidentPagesAfterPrepending()
+        collectionView.reloadData()
+        if extent > 0 {
+            let adjusted = usesVerticalScrolling
+                ? CGPoint(x: collectionView.contentOffset.x, y: collectionView.contentOffset.y + extent)
+                : CGPoint(x: collectionView.contentOffset.x + extent, y: collectionView.contentOffset.y)
+            collectionView.setContentOffset(adjusted, animated: false)
+        }
+        updateSessionState(isLoadingNextPage: false)
+        if pendingTapTargetPageIndex == page.pageIndex,
+           let index = pages.firstIndex(of: page) {
+            pendingTapTargetPageIndex = nil
+            scrollToPage(at: index, animated: false)
+        }
+    }
+
+    private func previousPageStartOffset(before absoluteOffset: Int) -> Int {
+        max(0, absoluteOffset - 1)
+    }
+
+    private func trimResidentPagesIfNeeded() -> Int {
+        guard pages.count > Layout.maximumResidentPages,
+              let currentPage,
+              let currentIndex = pages.firstIndex(of: currentPage),
+              currentIndex > 3 else {
+            return 0
+        }
+        let overflow = pages.count - Layout.maximumResidentPages
+        let removableBeforeCurrent = max(0, currentIndex - 3)
+        let removeCount = min(overflow, removableBeforeCurrent)
+        guard removeCount > 0 else {
+            return 0
+        }
+        pages.removeFirst(removeCount)
+        return removeCount
+    }
+
+    private func trimResidentPagesAfterPrepending() {
+        guard pages.count > Layout.maximumResidentPages,
+              let currentPage,
+              let currentIndex = pages.firstIndex(of: currentPage) else {
+            return
+        }
+        let overflow = pages.count - Layout.maximumResidentPages
+        let removableAfterCurrent = max(0, pages.count - currentIndex - 4)
+        let removeCount = min(overflow, removableAfterCurrent)
+        guard removeCount > 0 else {
+            return
+        }
+        pages.removeLast(removeCount)
+    }
+
+    private func adjustContentOffsetAfterRemovingPrefix(_ removePrefixCount: Int) {
+        guard removePrefixCount > 0 else {
+            return
+        }
+        let distance = CGFloat(removePrefixCount) * pageExtentForCurrentMode()
+        let adjusted = usesVerticalScrolling
+            ? CGPoint(x: collectionView.contentOffset.x, y: max(0, collectionView.contentOffset.y - distance))
+            : CGPoint(x: max(0, collectionView.contentOffset.x - distance), y: collectionView.contentOffset.y)
+        collectionView.setContentOffset(adjusted, animated: false)
+    }
+
+    private func prefetchPagesNearCurrent() {
+        guard let currentPage,
+              let index = pages.firstIndex(of: currentPage) else {
+            return
+        }
+        if index <= 1 {
+            loadPreviousPageIfNeeded()
+        }
+        if index >= pages.count - 2 {
+            loadNextPageIfNeeded()
+        }
+    }
+
+    private func configureCollectionViewForActiveSettings() {
+        guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
+            return
+        }
+        if isAutoReading {
+            configureCollectionViewForAutoReading()
+            return
+        }
+        switch readerSettings.pageMode {
+        case .paged:
+            layout.scrollDirection = .horizontal
+            collectionView.isPagingEnabled = true
+            collectionView.alwaysBounceVertical = false
+        case .scroll:
+            layout.scrollDirection = .vertical
+            collectionView.isPagingEnabled = false
+            collectionView.alwaysBounceVertical = true
+        }
+        collectionView.contentInset = .zero
+        collectionView.scrollIndicatorInsets = .zero
+        collectionView.showsVerticalScrollIndicator = false
+        collectionView.showsHorizontalScrollIndicator = false
+        layout.invalidateLayout()
+        collectionView.layoutIfNeeded()
+    }
+
+    private func configureCollectionViewForAutoReading() {
+        guard let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout else {
+            return
+        }
+        layout.scrollDirection = .vertical
+        collectionView.isPagingEnabled = false
+        collectionView.alwaysBounceVertical = true
+        collectionView.contentInset = .zero
+        collectionView.scrollIndicatorInsets = .zero
+        collectionView.showsVerticalScrollIndicator = false
+        layout.invalidateLayout()
+        collectionView.layoutIfNeeded()
+    }
+
+    private func effectiveReaderLayout() -> ReaderLayoutConfiguration {
+        var layout = readerSettings.normalized.layoutPreset.layoutConfiguration
+        let safeAreaInsets = view.safeAreaInsets
+        if safeAreaInsets.top > 0 {
+            layout.topMargin = max(layout.topMargin, safeAreaInsets.top + 12)
+        }
+        if safeAreaInsets.bottom > 0 {
+            layout.bottomMargin = max(layout.bottomMargin, safeAreaInsets.bottom + 2)
+        }
+        if safeAreaInsets.left > 0 {
+            layout.leftMargin = max(layout.leftMargin, safeAreaInsets.left + 12)
+        }
+        if safeAreaInsets.right > 0 {
+            layout.rightMargin = max(layout.rightMargin, safeAreaInsets.right + 12)
+        }
+        return layout
+    }
+
+    private func applyTheme() {
+        overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+        view.backgroundColor = readerSettings.theme.backgroundColor
+        collectionView.backgroundColor = readerSettings.theme.backgroundColor
+        loadingIndicator.color = readerSettings.theme.secondaryTextColor
+        progressLabel.textColor = readerSettings.theme.secondaryTextColor
+        updateDarkModeButton()
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    private func updateDarkModeButton() {
+        let imageName = readerSettings.theme == .dark ? "sun.max.fill" : "moon.stars"
+        darkModeButton.setImage(UIImage(systemName: imageName), for: .normal)
+    }
+
+    private func updateReaderChromePreferences() {
+        let normalized = readerSettings.normalized
+        UIApplication.shared.isIdleTimerDisabled = normalized.keepScreenAwake
+        setNeedsStatusBarAppearanceUpdate()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        settingsPageModeControl.selectedSegmentIndex = normalized.pageMode.settingsPageTurnIndex
+        settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases.firstIndex(of: normalized.theme) ?? 0
+        settingsLayoutPresetControl.selectedSegmentIndex = ReaderSettings.LayoutPreset.allCases.firstIndex(of: normalized.layoutPreset) ?? 0
+        settingsFontValueButton.setTitle("\(Int(normalized.fontSize))", for: .normal)
+        keepScreenAwakeSwitch.isOn = normalized.keepScreenAwake
+        autoHideHomeIndicatorSwitch.isOn = normalized.autoHideHomeIndicator
+        autoHideStatusBarSwitch.isOn = normalized.autoHideStatusBar
+        edgeSwipeBackSwitch.isOn = normalized.edgeSwipeBackEnabled
+        autoReadSpeedSlider.value = Float(normalized.autoReadSpeed)
+    }
+
+    private func setMenuVisible(_ visible: Bool, animated: Bool) {
+        isMenuVisible = visible
+        topBar.isUserInteractionEnabled = visible
+        bottomBar.isUserInteractionEnabled = visible
+        floatingActionStack.isUserInteractionEnabled = visible
+        setNeedsStatusBarAppearanceUpdate()
+        view.layoutIfNeeded()
+        let updates = {
+            self.applyMenuPosition(animated: animated)
+        }
+        if animated {
+            UIView.animate(withDuration: 0.24, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+        } else {
+            updates()
+        }
+    }
+
+    private func applyMenuPosition(animated _: Bool) {
+        let topTranslation = isMenuVisible ? 0 : -topBar.bounds.height
+        let bottomTranslation = isMenuVisible ? 0 : bottomBar.bounds.height
+        topBar.transform = CGAffineTransform(translationX: 0, y: topTranslation)
+        bottomBar.transform = CGAffineTransform(translationX: 0, y: bottomTranslation)
+        floatingActionStack.alpha = isMenuVisible ? 1 : 0
+    }
+
+    private func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
+        isSettingsPanelVisible = visible
+        settingsPanel.isUserInteractionEnabled = visible
+        let updates = {
+            self.applySettingsPanelPosition(animated: animated)
+        }
+        if animated {
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+        } else {
+            updates()
+        }
+    }
+
+    private func applySettingsPanelPosition(animated _: Bool) {
+        let height = settingsPanel.bounds.height > 0 ? settingsPanel.bounds.height : Layout.settingsPanelMinimumHeight
+        settingsPanel.transform = isSettingsPanelVisible
+            ? CGAffineTransform(translationX: 0, y: view.bounds.height - height)
+            : CGAffineTransform(translationX: 0, y: view.bounds.height)
+    }
+
+    private func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
+        isAutoReadPanelVisible = visible
+        autoReadPanel.isUserInteractionEnabled = visible
+        setNeedsStatusBarAppearanceUpdate()
+        let updates = {
+            self.applyAutoReadPanelPosition()
+        }
+        if animated {
+            UIView.animate(withDuration: 0.22, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: updates)
+        } else {
+            updates()
+        }
+    }
+
+    private func applyAutoReadPanelPosition() {
+        let height = autoReadPanel.bounds.height > 0 ? autoReadPanel.bounds.height : Layout.autoReadPanelHeight
+        autoReadPanel.transform = isAutoReadPanelVisible
+            ? CGAffineTransform(translationX: 0, y: view.bounds.height - height)
+            : CGAffineTransform(translationX: 0, y: view.bounds.height)
+    }
+
+    private func showLoading(_ isLoading: Bool) {
+        if isLoading {
+            loadingIndicator.startAnimating()
+        } else {
+            loadingIndicator.stopAnimating()
+        }
+    }
+
+    private func updateSessionState(isLoadingNextPage: Bool) {
+        self.isLoadingNextPage = isLoadingNextPage
+        updateCurrentProgress()
+        refreshBookmarkState()
+    }
+
+    private func updateCurrentProgress() {
+        guard let currentPage,
+              let chapter = chapter(containingAbsoluteOffset: currentPage.startAbsoluteOffset) else {
+            currentProgress = nil
+            return
+        }
+
+        let chapterOffset = currentPage.startAbsoluteOffset - chapter.startOffset
+        let total = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
+        let globalProgress = min(max(Double(currentPage.startAbsoluteOffset) / Double(total), 0), 1)
+        currentProgress = ReadingProgress(
+            bookID: book.id,
+            chapterID: chapter.id,
+            chapterOffset: Int64(max(chapterOffset, 0)),
+            globalProgress: globalProgress
+        )
+        progressLabel.text = progressText(
+            chapter: chapter,
+            chapterProgress: chapter.byteLength > 0 ? Double(max(chapterOffset, 0)) / Double(chapter.byteLength) : 0,
+            globalProgress: globalProgress
+        )
+        if !isTrackingProgressSlider {
+            progressSlider.value = Float(globalProgress)
+        }
+    }
+
+    private func progressText(
+        chapter: Chapter,
+        chapterProgress: Double,
+        globalProgress: Double
+    ) -> String {
+        String(
+            format: NSLocalizedString("reader.progress.format", comment: ""),
+            chapter.title,
+            NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(chapterProgress, 0), 1))) ?? "0%",
+            NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(globalProgress, 0), 1))) ?? "0%"
+        )
+    }
+
+    private func refreshBookmarkState() {
+        guard let currentProgress else {
+            currentBookmark = nil
+            updateBookmarkButton()
+            return
+        }
+        currentBookmark = bookmarks.first { bookmark in
+            bookmark.chapterID == currentProgress.chapterID
+                && abs(bookmark.offset - Int(currentProgress.chapterOffset)) < 12
+        }
+        updateBookmarkButton()
+    }
+
+    private func updateBookmarkButton() {
+        let imageName = currentBookmark == nil ? "bookmark" : "bookmark.fill"
+        bookmarkButton.setImage(UIImage(systemName: imageName), for: .normal)
+        bookmarkButton.accessibilityLabel = NSLocalizedString(
+            currentBookmark == nil ? "reader.bookmark.add" : "reader.bookmark.remove",
+            comment: ""
+        )
+    }
+
+    private func scheduleProgressSave() {
+        guard let progress = currentProgress else {
+            return
+        }
+        saveGeneration += 1
+        let generation = saveGeneration
+        saveTask?.cancel()
+        let repository = repository
+        saveTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: 800_000_000)
+                try Task.checkCancellation()
+                guard generation == saveGeneration else {
+                    return
+                }
+                try await repository.saveReadingProgress(progress)
+            } catch {
+            }
+        }
+    }
+
+    private func saveProgressImmediately() {
+        guard let progress = currentProgress else {
+            return
+        }
+        saveTask?.cancel()
+        let repository = repository
+        Task {
+            try? await repository.saveReadingProgress(progress)
+        }
+    }
+
+    private func saveSettingsImmediately() {
+        settingsSaveTask?.cancel()
+        let settings = readerSettings.normalized
+        let repository = repository
+        Task {
+            try? await repository.saveReaderSettings(settings)
+        }
+    }
+
+    private func scheduleSettingsSave() {
+        settingsSaveGeneration += 1
+        let generation = settingsSaveGeneration
+        settingsSaveTask?.cancel()
+        let settings = readerSettings.normalized
+        let repository = repository
+        settingsSaveTask = Task {
+            do {
+                try await Task.sleep(nanoseconds: 500_000_000)
+                try Task.checkCancellation()
+                guard generation == settingsSaveGeneration else {
+                    return
+                }
+                try await repository.saveReaderSettings(settings)
+            } catch {
+            }
+        }
+    }
+
+    private func applyReaderSettings(_ settings: ReaderSettings) {
+        let oldSettings = readerSettings.normalized
+        let nextSettings = settings.normalized
+        let anchor = currentDisplayByteOffset()
+        readerSettings = nextSettings
+        updateReaderChromePreferences()
+        applyTheme()
+        configureCollectionViewForActiveSettings()
+        collectionView.reloadData()
+        scheduleSettingsSave()
+        guard oldSettings.pageMode != nextSettings.pageMode
+            || oldSettings.fontSize != nextSettings.fontSize
+            || oldSettings.layoutPreset != nextSettings.layoutPreset
+            || oldSettings.theme != nextSettings.theme else {
+            return
+        }
+        pagingGeneration += 1
+        openPage(absoluteOffset: anchor, generation: pagingGeneration)
+    }
+
+    private func currentDisplayByteOffset() -> Int {
+        updateCurrentPageFromVisiblePage()
+        return currentPage?.startAbsoluteOffset ?? 0
+    }
+
+    private func updateCurrentPageFromVisiblePage() {
+        guard let visibleIndex = visiblePageIndex(),
+              pages.indices.contains(visibleIndex) else {
+            return
+        }
+        let page = pages[visibleIndex]
+        guard currentPage != page else {
+            return
+        }
+        currentPage = page
+        updateCurrentProgress()
+    }
+
+    private func visiblePageIndex() -> Int? {
+        guard !pages.isEmpty else {
+            return nil
+        }
+        let extent = pageExtentForCurrentMode()
+        guard extent > 1 else {
+            return nil
+        }
+        let rawIndex: CGFloat
+        if isAutoReading {
+            let centeredOffset = collectionView.contentOffset.y
+                + collectionView.contentInset.top
+                + autoReadPageHeight() * 0.5
+            rawIndex = centeredOffset / extent
+        } else if usesVerticalScrolling {
+            rawIndex = collectionView.contentOffset.y / extent
+        } else {
+            rawIndex = collectionView.contentOffset.x / extent
+        }
+        let visibleIndex = isAutoReading
+            ? Int(rawIndex.rounded(.down))
+            : Int(round(rawIndex))
+        return min(max(visibleIndex, 0), pages.count - 1)
+    }
+
+    private func pageExtentForCurrentMode() -> CGFloat {
+        if isAutoReading {
+            return autoReadPageHeight()
+        }
+        return usesVerticalScrolling
+            ? collectionView.bounds.height
+            : collectionView.bounds.width
+    }
+
+    private func autoReadPageHeight() -> CGFloat {
+        guard collectionView.bounds.height > 1 else {
+            return 1
+        }
+        return collectionView.bounds.height
+    }
+
+    private func contentOffset(forPageAt index: Int) -> CGPoint {
+        if usesVerticalScrolling {
+            return CGPoint(x: 0, y: CGFloat(index) * pageExtentForCurrentMode())
+        }
+        return CGPoint(x: CGFloat(index) * pageExtentForCurrentMode(), y: 0)
+    }
+
+    private func scrollToPage(at index: Int, animated _: Bool) {
+        guard pages.indices.contains(index) else {
+            return
+        }
+        collectionView.layoutIfNeeded()
+        collectionView.setContentOffset(contentOffset(forPageAt: index), animated: false)
+        currentPage = pages[index]
+        updateSessionState(isLoadingNextPage: pageTask != nil)
+        prefetchPagesNearCurrent()
+        scheduleProgressSave()
+    }
+
+    private func finishPageTurn() {
+        updateCurrentPageFromVisiblePage()
+        prefetchPagesNearCurrent()
+        scheduleProgressSave()
+    }
+
+    private func moveToNextPage() {
+        guard let currentPage,
+              let currentIndex = pages.firstIndex(of: currentPage) else {
+            return
+        }
+        let targetIndex = currentIndex + 1
+        if pages.indices.contains(targetIndex) {
+            scrollToPage(at: targetIndex, animated: false)
+            return
+        }
+        loadNextPageIfNeeded(scrollAfterLoading: true)
+    }
+
+    private func moveToPreviousPage() {
+        guard let currentPage,
+              let currentIndex = pages.firstIndex(of: currentPage) else {
+            return
+        }
+        let targetIndex = currentIndex - 1
+        if pages.indices.contains(targetIndex) {
+            scrollToPage(at: targetIndex, animated: false)
+            return
+        }
+        loadPreviousPageIfNeeded(scrollAfterLoading: true)
+    }
+
+    private func startAutoReading() {
+        guard !isAutoReading else {
+            setAutoReadPanelVisible(true, animated: true)
+            return
+        }
+        updateCurrentPageFromVisiblePage()
+        guard currentPage != nil,
+              !pages.isEmpty else {
+            return
+        }
+        setMenuVisible(false, animated: true)
+        isAutoReading = true
+        configureCollectionViewForAutoReading()
+        collectionView.reloadData()
+        alignContentOffsetToCurrentPage()
+        setAutoReadPanelVisible(true, animated: true)
+        autoReadButton.setImage(UIImage(systemName: "pause.fill"), for: .normal)
+        startAutoReadDisplayLink()
+    }
+
+    private func stopAutoReading(restoreLayout: Bool, animated: Bool) {
+        guard isAutoReading || autoReadDisplayLink != nil else {
+            return
+        }
+        invalidateAutoReadDisplayLink()
+        collectionView.layer.removeAllAnimations()
+        updateCurrentPageFromVisiblePage()
+        isAutoReading = false
+        setAutoReadPanelVisible(false, animated: animated)
+        autoReadButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
+        if restoreLayout {
+            configureCollectionViewForActiveSettings()
+            collectionView.reloadData()
+            alignContentOffsetToCurrentPage()
+        }
+        saveProgressImmediately()
+    }
+
+    private func alignContentOffsetToCurrentPage() {
+        guard let currentPage,
+              let index = pages.firstIndex(of: currentPage) else {
+            return
+        }
+        collectionView.layoutIfNeeded()
+        collectionView.setContentOffset(contentOffset(forPageAt: index), animated: false)
+    }
+
+    private func startAutoReadDisplayLink() {
+        invalidateAutoReadDisplayLink()
+        lastAutoReadTimestamp = nil
+        lastAutoReadProgressUpdateTimestamp = 0
+        let displayLink = CADisplayLink(target: self, selector: #selector(autoReadDisplayLinkDidTick(_:)))
+        if #available(iOS 15.0, *) {
+            displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        } else {
+            displayLink.preferredFramesPerSecond = 60
+        }
+        displayLink.add(to: .main, forMode: .common)
+        autoReadDisplayLink = displayLink
+    }
+
+    private func invalidateAutoReadDisplayLink() {
+        autoReadDisplayLink?.invalidate()
+        autoReadDisplayLink = nil
+        lastAutoReadTimestamp = nil
+    }
+
+    @objc private func autoReadDisplayLinkDidTick(_ displayLink: CADisplayLink) {
+        guard isAutoReading else {
+            invalidateAutoReadDisplayLink()
+            return
+        }
+        let previous = lastAutoReadTimestamp ?? displayLink.timestamp
+        let interval = max(0, min(1.0 / 15.0, displayLink.timestamp - previous))
+        lastAutoReadTimestamp = displayLink.timestamp
+        advanceAutoRead(by: interval)
+    }
+
+    private func advanceAutoRead(by interval: TimeInterval) {
+        guard isAutoReading,
+              !collectionView.isDragging,
+              !collectionView.isDecelerating,
+              !collectionView.isTracking else {
+            return
+        }
+        let speed = min(
+            max(readerSettings.normalized.autoReadSpeed, ReaderSettings.minimumAutoReadSpeed),
+            ReaderSettings.maximumAutoReadSpeed
+        )
+        let distance = CGFloat(speed * interval)
+        guard distance > 0 else {
+            return
+        }
+        let maxOffsetY = max(
+            -collectionView.contentInset.top,
+            collectionView.contentSize.height + collectionView.contentInset.bottom - collectionView.bounds.height
+        )
+        let nextOffsetY = min(maxOffsetY, collectionView.contentOffset.y + distance)
+        collectionView.setContentOffset(
+            CGPoint(x: collectionView.contentOffset.x, y: nextOffsetY),
+            animated: false
+        )
+        updateCurrentPageFromVisiblePage()
+        if displayNeedsProgressSave() {
+            scheduleProgressSave()
+        }
+        if nextOffsetY >= max(-collectionView.contentInset.top, maxOffsetY - autoReadPageHeight() * 1.6) {
+            loadNextPageIfNeeded()
+        }
+        if nextOffsetY >= maxOffsetY,
+           (didReachEndOfBook || (pages.last?.endAbsoluteOffset ?? 0) >= (chapters.last?.endOffset ?? 0)) {
+            stopAutoReading(restoreLayout: true, animated: true)
+        }
+    }
+
+    private func displayNeedsProgressSave() -> Bool {
+        let now = CACurrentMediaTime()
+        guard now - lastAutoReadProgressUpdateTimestamp >= 0.35 else {
+            return false
+        }
+        lastAutoReadProgressUpdateTimestamp = now
+        return true
+    }
+
+    private func targetChapter(forGlobalProgress progress: Double) -> (index: Int, chapter: Chapter, chapterOffset: Int, chapterProgress: Double)? {
+        guard let lastEnd = chapters.last?.endOffset,
+              lastEnd > 0 else {
+            return nil
+        }
+        let absolute = min(max(Int(Double(lastEnd) * min(max(progress, 0), 1)), 0), lastEnd - 1)
+        guard let index = chapters.firstIndex(where: { absolute >= $0.startOffset && absolute < $0.endOffset }) else {
+            return nil
+        }
+        let chapter = chapters[index]
+        let chapterOffset = max(0, absolute - chapter.startOffset)
+        let chapterProgress = chapter.byteLength > 0
+            ? Double(chapterOffset) / Double(chapter.byteLength)
+            : 0
+        return (index, chapter, chapterOffset, chapterProgress)
+    }
+
+    private func chapter(containingAbsoluteOffset offset: Int) -> Chapter? {
+        if let chapter = chapters.first(where: { offset >= $0.startOffset && offset < $0.endOffset }) {
+            return chapter
+        }
+        return chapters.last
+    }
+
+    private func indexOfChapter(containingAbsoluteOffset offset: Int) -> Int? {
+        chapters.firstIndex { offset >= $0.startOffset && offset < $0.endOffset }
+    }
+
+    private func bookmarkPreview(near absoluteOffset: Int) -> String {
+        guard let page = currentPage else {
+            return NSLocalizedString("reader.bookmark.preview.empty", comment: "")
+        }
+        return String(page.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
+    }
+
+    private func makeMoreMenu() -> UIMenu {
+        UIMenu(
+            children: [
+                UIAction(
+                    title: NSLocalizedString("reader.more.bookDetail", comment: ""),
+                    image: UIImage(systemName: "book")
+                ) { [weak self] _ in
+                    self?.showBookDetail()
+                },
+                UIAction(
+                    title: NSLocalizedString("reader.more.contentSearch", comment: ""),
+                    image: UIImage(systemName: "magnifyingglass")
+                ) { [weak self] _ in
+                    self?.showContentSearch()
+                },
+                UIAction(
+                    title: NSLocalizedString("reader.more.contentFilter", comment: ""),
+                    image: UIImage(systemName: "line.3.horizontal.decrease.circle")
+                ) { [weak self] _ in
+                    self?.showFilterRules()
+                },
+                UIAction(
+                    title: NSLocalizedString("reader.more.pageTouchAreas", comment: ""),
+                    image: UIImage(systemName: "square.grid.3x3")
+                ) { [weak self] _ in
+                    self?.showPageTouchAreas()
+                }
+            ]
+        )
+    }
+
+    private func presentFullScreenNavigation(_ rootViewController: UIViewController) {
+        let navigationController = UINavigationController(rootViewController: rootViewController)
+        navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+        navigationController.modalPresentationStyle = .fullScreen
+        present(navigationController, animated: true)
+    }
+
+    private func showError(_ error: Error) {
+        let alert = UIAlertController(
+            title: NSLocalizedString("reader.error.title", comment: ""),
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
+        present(alert, animated: true)
+    }
+
+    private func jumpTo(_ target: ReaderContentTarget) {
+        stopAutoReading(restoreLayout: true, animated: false)
+        guard let chapter = chapters.first(where: { $0.id == target.chapterID }) else {
+            return
+        }
+        let absolute = chapter.startOffset + min(max(target.offset, 0), max(chapter.byteLength - 1, 0))
+        pagingGeneration += 1
+        openPage(absoluteOffset: absolute, generation: pagingGeneration)
+    }
+
+    @objc private func closeButtonTapped() {
+        stopAutoReading(restoreLayout: false, animated: false)
+        saveProgressImmediately()
+        saveSettingsImmediately()
+        onClose()
+    }
+
+    @objc private func bookmarkButtonTapped() {
+        guard let currentProgress,
+              let chapter = chapter(containingAbsoluteOffset: currentDisplayByteOffset()) else {
+            return
+        }
+
+        if let currentBookmark {
+            bookmarkTask?.cancel()
+            self.currentBookmark = nil
+            bookmarks.removeAll { $0.id == currentBookmark.id }
+            updateBookmarkButton()
+            let repository = repository
+            bookmarkTask = Task {
+                try? await repository.deleteBookmark(id: currentBookmark.id)
+            }
+            return
+        }
+
+        let offset = Int(currentProgress.chapterOffset)
+        let preview = bookmarkPreview(near: currentDisplayByteOffset())
+        let repository = repository
+        let bookID = book.id
+        bookmarkButton.isEnabled = false
+        bookmarkTask?.cancel()
+        bookmarkTask = Task { [weak self] in
+            let bookmark = try? await repository.createBookmark(
+                bookID: bookID,
+                chapterID: chapter.id,
+                offset: offset,
+                preview: preview
+            )
+            await MainActor.run {
+                guard let self else {
+                    return
+                }
+                self.bookmarkButton.isEnabled = true
+                self.currentBookmark = bookmark
+                if let bookmark {
+                    self.bookmarks.removeAll { $0.id == bookmark.id }
+                    self.bookmarks.insert(bookmark, at: 0)
+                }
+                self.updateBookmarkButton()
+            }
+        }
+    }
+
+    @objc private func catalogButtonTapped() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        saveProgressImmediately()
+        let listViewController = ReaderContentsViewController(
+            bookID: book.id,
+            repository: repository,
+            chapters: chapters,
+            selectedChapterIndex: indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()) ?? 0,
+            onBookmarksChanged: { [weak self] bookmarks in
+                self?.bookmarks = bookmarks
+                self?.refreshBookmarkState()
+            }
+        ) { [weak self] target in
+            guard let self else {
+                return
+            }
+            self.jumpTo(target)
+            self.dismiss(animated: true)
+        }
+        presentFullScreenNavigation(listViewController)
+    }
+
+    @objc private func settingsButtonTapped() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        setMenuVisible(false, animated: true)
+        setSettingsPanelVisible(true, animated: true)
+    }
+
+    @objc private func previousChapterButtonTapped() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        guard let index = indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()),
+              chapters.indices.contains(index - 1) else {
+            return
+        }
+        pagingGeneration += 1
+        openPage(absoluteOffset: chapters[index - 1].startOffset, generation: pagingGeneration)
+    }
+
+    @objc private func nextChapterButtonTapped() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        guard let index = indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()),
+              chapters.indices.contains(index + 1) else {
+            return
+        }
+        pagingGeneration += 1
+        openPage(absoluteOffset: chapters[index + 1].startOffset, generation: pagingGeneration)
+    }
+
+    @objc private func autoReadButtonTapped() {
+        if isAutoReading {
+            setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
+        } else {
+            startAutoReading()
+        }
+    }
+
+    @objc private func darkModeButtonTapped() {
+        var settings = readerSettings
+        settings.theme = settings.theme == .dark ? .white : .dark
+        applyReaderSettings(settings)
+    }
+
+    @objc private func autoReadSpeedChanged() {
+        var settings = readerSettings
+        settings.autoReadSpeed = Double(autoReadSpeedSlider.value)
+        readerSettings = settings.normalized
+        scheduleSettingsSave()
+    }
+
+    @objc private func autoReadExitTapped() {
+        stopAutoReading(restoreLayout: true, animated: true)
+    }
+
+    @objc private func progressSliderTouchBegan() {
+        stopAutoReading(restoreLayout: true, animated: true)
+        isTrackingProgressSlider = true
+    }
+
+    @objc private func progressSliderChanged() {
+        guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
+            return
+        }
+        progressLabel.text = progressText(
+            chapter: target.chapter,
+            chapterProgress: target.chapterProgress,
+            globalProgress: Double(progressSlider.value)
+        )
+    }
+
+    @objc private func progressSliderTouchFinished() {
+        isTrackingProgressSlider = false
+        guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
+            return
+        }
+        pagingGeneration += 1
+        openPage(
+            absoluteOffset: target.chapter.startOffset + target.chapterOffset,
+            generation: pagingGeneration
+        )
+    }
+
+    @objc private func settingsQuickModeChanged() {
+        settingsQuickMode = SettingsQuickMode(rawValue: settingsQuickControl.selectedSegmentIndex) ?? .page
+    }
+
+    @objc private func settingsPageModeChanged() {
+        guard let pageMode = ReaderSettings.PageMode(settingsPageTurnIndex: settingsPageModeControl.selectedSegmentIndex) else {
+            return
+        }
+        var settings = readerSettings
+        settings.pageMode = pageMode
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsThemeChanged() {
+        let index = settingsThemeControl.selectedSegmentIndex
+        guard ReaderSettings.Theme.allCases.indices.contains(index) else {
+            return
+        }
+        var settings = readerSettings
+        settings.theme = ReaderSettings.Theme.allCases[index]
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsLayoutPresetChanged() {
+        let index = settingsLayoutPresetControl.selectedSegmentIndex
+        guard ReaderSettings.LayoutPreset.allCases.indices.contains(index) else {
+            return
+        }
+        var settings = readerSettings
+        settings.layoutPreset = ReaderSettings.LayoutPreset.allCases[index]
+        applyReaderSettings(settings)
+    }
+
+    @objc private func keepScreenAwakeChanged() {
+        var settings = readerSettings
+        settings.keepScreenAwake = keepScreenAwakeSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func autoHideHomeIndicatorChanged() {
+        var settings = readerSettings
+        settings.autoHideHomeIndicator = autoHideHomeIndicatorSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func autoHideStatusBarChanged() {
+        var settings = readerSettings
+        settings.autoHideStatusBar = autoHideStatusBarSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func edgeSwipeBackChanged() {
+        var settings = readerSettings
+        settings.edgeSwipeBackEnabled = edgeSwipeBackSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsFontDecreaseTapped() {
+        var settings = readerSettings
+        settings.fontSize -= 1
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsFontIncreaseTapped() {
+        var settings = readerSettings
+        settings.fontSize += 1
+        applyReaderSettings(settings)
+    }
+
+    @objc private func settingsFontResetTapped() {
+        var settings = readerSettings
+        settings.fontSize = ReaderSettings.default.fontSize
+        applyReaderSettings(settings)
+    }
+
+    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended else {
+            return
+        }
+        let location = gesture.location(in: view)
+        if isAutoReading {
+            guard !autoReadPanel.frame.contains(location) else {
+                return
+            }
+            let centralHorizontalRange = collectionView.bounds.width * 0.25...collectionView.bounds.width * 0.75
+            let centralVerticalRange = collectionView.bounds.height * 0.20...collectionView.bounds.height * 0.80
+            let local = gesture.location(in: collectionView)
+            guard centralHorizontalRange.contains(local.x),
+                  centralVerticalRange.contains(local.y) else {
+                return
+            }
+            setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
+            return
+        }
+        if isSettingsPanelVisible {
+            guard !settingsPanel.frame.contains(location) else {
+                return
+            }
+            setSettingsPanelVisible(false, animated: true)
+            return
+        }
+        let local = gesture.location(in: collectionView)
+        switch tapAction(at: local) {
+        case .menu:
+            setMenuVisible(!isMenuVisible, animated: true)
+        case .previousPage:
+            guard !isMenuVisible else {
+                return
+            }
+            moveToPreviousPage()
+        case .nextPage:
+            guard !isMenuVisible else {
+                return
+            }
+            moveToNextPage()
+        case .none:
+            break
+        }
+    }
+
+    private func tapAction(at location: CGPoint) -> ReaderSettings.TouchAreaAction {
+        let width = max(collectionView.bounds.width, 1)
+        let height = max(collectionView.bounds.height, 1)
+        let column = min(2, max(0, Int((location.x / width) * 3)))
+        let row = min(2, max(0, Int((location.y / height) * 3)))
+        let index = row * 3 + column
+        let map = readerSettings.normalized.touchAreaMap
+        guard map.indices.contains(index) else {
+            return .menu
+        }
+        return map[index]
+    }
+
+    @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
+        guard readerSettings.edgeSwipeBackEnabled,
+              gesture.state == .ended else {
+            return
+        }
+        let translation = gesture.translation(in: view)
+        let velocity = gesture.velocity(in: view)
+        guard translation.x > view.bounds.width * 0.18 || velocity.x > 520 else {
+            return
+        }
+        closeButtonTapped()
+    }
+
+    @objc private func appDidEnterBackground() {
+        saveProgressImmediately()
+        stopAutoReading(restoreLayout: true, animated: false)
+    }
+
+    @objc private func showBookDetail() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        saveProgressImmediately()
+        let detailViewController = ReaderBookDetailViewController(
+            book: book,
+            repository: repository,
+            fileStore: fileStore,
+            chapters: chapters,
+            selectedChapterIndex: indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()) ?? 0,
+            onBookUpdated: { [weak self] updatedBook in
+                guard let self else {
+                    return
+                }
+                self.book = updatedBook
+                self.titleLabel.text = updatedBook.title
+            },
+            onBookmarksChanged: { [weak self] bookmarks in
+                self?.bookmarks = bookmarks
+                self?.refreshBookmarkState()
+            },
+            onSelectCatalogTarget: { [weak self] target in
+                guard let self else {
+                    return
+                }
+                self.jumpTo(target)
+                self.presentedViewController?.dismiss(animated: true)
+            }
+        )
+        presentFullScreenNavigation(detailViewController)
+    }
+
+    @objc private func showContentSearch() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        let searchViewController = ReaderContentSearchViewController(
+            book: book,
+            fileStore: fileStore,
+            chapters: chapters,
+            filterRules: filterRules
+        ) { [weak self] target in
+            guard let self else {
+                return
+            }
+            self.jumpTo(target)
+            self.presentedViewController?.dismiss(animated: true)
+        }
+        presentFullScreenNavigation(searchViewController)
+    }
+
+    @objc private func showFilterRules() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        let filterViewController = ReaderFilterRulesViewController(
+            bookID: book.id,
+            repository: repository,
+            rules: filterRules
+        ) { [weak self] rules in
+            guard let self else {
+                return
+            }
+            self.filterRules = rules
+            self.collectionView.reloadData()
+            self.reopen(atAbsoluteOffset: self.currentDisplayByteOffset(), enforceChapterBoundary: true)
+        }
+        presentFullScreenNavigation(filterViewController)
+    }
+
+    @objc private func showPageTouchAreas() {
+        stopAutoReading(restoreLayout: true, animated: false)
+        let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
+            self?.applyReaderSettings(settings)
+        }
+        viewController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+        viewController.modalPresentationStyle = .fullScreen
+        present(viewController, animated: true)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        pages.count
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        cellForItemAt indexPath: IndexPath
+    ) -> UICollectionViewCell {
+        guard pages.indices.contains(indexPath.item),
+              let cell = collectionView.dequeueReusableCell(
+                withReuseIdentifier: CollectionReaderPageCell.reuseIdentifier,
+                for: indexPath
+              ) as? CollectionReaderPageCell else {
+            return UICollectionViewCell()
+        }
+        cell.configure(
+            page: pages[indexPath.item],
+            settings: readerSettings.normalized,
+            layout: effectiveReaderLayout(),
+            isAutoReading: isAutoReading
+        )
+        return cell
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        willDisplay cell: UICollectionViewCell,
+        forItemAt indexPath: IndexPath
+    ) {
+        guard collectionView.isDragging || collectionView.isDecelerating || isAutoReading else {
+            return
+        }
+        if indexPath.item <= 1 {
+            loadPreviousPageIfNeeded()
+        }
+        if indexPath.item >= pages.count - 2 {
+            loadNextPageIfNeeded()
+        }
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === collectionView,
+              !isApplyingProgrammaticScroll else {
+            return
+        }
+        updateCurrentPageFromVisiblePage()
+        if !isAutoReading {
+            prefetchPagesNearCurrent()
+        }
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+        finishPageTurn()
+        if isAutoReading {
+            lastAutoReadTimestamp = nil
+        }
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        finishPageTurn()
+        if isAutoReading {
+            lastAutoReadTimestamp = nil
+        }
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard !decelerate else {
+            return
+        }
+        finishPageTurn()
+        if isAutoReading {
+            lastAutoReadTimestamp = nil
+        }
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        pendingTapTargetPageIndex = nil
+        updateCurrentPageFromVisiblePage()
+        if isAutoReading {
+            lastAutoReadTimestamp = nil
+        }
+    }
+
+    func collectionView(
+        _ collectionView: UICollectionView,
+        layout collectionViewLayout: UICollectionViewLayout,
+        sizeForItemAt indexPath: IndexPath
+    ) -> CGSize {
+        if isAutoReading {
+            return CGSize(width: collectionView.bounds.width, height: autoReadPageHeight())
+        }
+        return collectionView.bounds.size
+    }
+
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
+            return readerSettings.edgeSwipeBackEnabled
+        }
+        return true
+    }
+
+    private static func selectedChapter(
+        from chapters: [Chapter],
+        progress: ReadingProgress?
+    ) -> (index: Int, chapter: Chapter, offset: Int)? {
+        guard !chapters.isEmpty else {
+            return nil
+        }
+        if let progress,
+           let chapterID = progress.chapterID,
+           let index = chapters.firstIndex(where: { $0.id == chapterID }) {
+            let chapter = chapters[index]
+            return (
+                index,
+                chapter,
+                min(max(Int(progress.chapterOffset), 0), max(chapter.byteLength - 1, 0))
+            )
+        }
+        let chapter = chapters[0]
+        return (0, chapter, 0)
+    }
+}
+
+struct CollectionReaderHostView: UIViewControllerRepresentable {
+    @Environment(\.dismiss) private var dismiss
+
+    var book: Book
+    let fileStore: AppFileStore
+    let repository: any LibraryRepository
+
+    init(
+        book: Book,
+        fileStore: AppFileStore,
+        repository: any LibraryRepository
+    ) {
+        self.book = book
+        self.fileStore = fileStore
+        self.repository = repository
+    }
+
+    func makeUIViewController(context: Context) -> CollectionReaderViewController {
+        CollectionReaderViewController(
+            book: book,
+            fileStore: fileStore,
+            repository: repository,
+            onClose: {
+                dismiss()
+            }
+        )
+    }
+
+    func updateUIViewController(
+        _ uiViewController: CollectionReaderViewController,
         context: Context
     ) {
         uiViewController.update(book: book)
@@ -4594,7 +6835,7 @@ private final class ReaderSettingsViewController: UIViewController {
 private extension ReaderSettings.PageMode {
     init?(settingsPageTurnIndex: Int) {
         switch settingsPageTurnIndex {
-        case 0:
+        case 0, 1:
             self = .paged
         case 2:
             self = .scroll
@@ -4813,5 +7054,316 @@ private final class ChapterPaginator: @unchecked Sendable {
             pageCharacterRanges = [NSRange(location: 0, length: textLength)]
             pageStartDisplayUTF16Indexes = [0]
         }
+    }
+}
+
+private struct CollectionReaderPage: Equatable, @unchecked Sendable {
+    let id: String
+    let bookID: UUID
+    let chapterID: UUID
+    let chapterTitle: String
+    let chapterIndex: Int
+    let pageIndex: Int
+    let startAbsoluteOffset: Int
+    let endAbsoluteOffset: Int
+    let startChapterOffset: Int
+    let attributedText: NSAttributedString
+    let text: String
+
+    static func == (lhs: CollectionReaderPage, rhs: CollectionReaderPage) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+private enum CollectionReaderError: LocalizedError {
+    case bookNotFound
+    case emptyPage
+    case invalidTextCache
+
+    var errorDescription: String? {
+        switch self {
+        case .bookNotFound:
+            return NSLocalizedString("library.error.bookNotFound", comment: "")
+        case .emptyPage:
+            return NSLocalizedString("reader.emptyChapter", comment: "")
+        case .invalidTextCache:
+            return NSLocalizedString("reader.error.invalidUTF8Cache", comment: "")
+        }
+    }
+}
+
+private enum CollectionReaderPaginator {
+    static func makePage(
+        book: Book,
+        chapters: [Chapter],
+        absoluteOffset: Int,
+        forcedPageIndex: Int? = nil,
+        settings: ReaderSettings,
+        filterRules: [TextFilterRule],
+        viewportSize: CGSize,
+        safeAreaInsets: UIEdgeInsets,
+        fileStore: AppFileStore
+    ) async throws -> CollectionReaderPage {
+        try await Task.detached(priority: .userInitiated) {
+            guard !chapters.isEmpty else {
+                throw CollectionReaderError.bookNotFound
+            }
+
+            let chapterIndex = Self.chapterIndex(
+                containing: absoluteOffset,
+                in: chapters
+            ) ?? 0
+            let chapter = chapters[chapterIndex]
+            let chapterOffset = min(
+                max(absoluteOffset - chapter.startOffset, 0),
+                max(chapter.byteLength - 1, 0)
+            )
+            let text = try Self.readChapterText(
+                book: book,
+                chapter: chapter,
+                fileStore: fileStore
+            )
+            try Task.checkCancellation()
+
+            let filtered = filterRules.isEmpty
+                ? ReaderTextFilter.identityFilteredText(for: text)
+                : ReaderTextFilter.apply(rules: filterRules, to: text)
+            let isPlaceholderPage = filtered.displayText.isEmpty
+            let displayText = isPlaceholderPage
+                ? NSLocalizedString("reader.emptyChapter", comment: "")
+                : filtered.displayText
+            let normalizedSettings = settings.normalized
+            let layout = Self.effectiveLayout(
+                settings: normalizedSettings,
+                viewportSize: viewportSize,
+                safeAreaInsets: safeAreaInsets
+            )
+            let fittingSize = layout.contentRect(in: CGRect(origin: .zero, size: viewportSize)).size
+            let typography = ReaderTypography(
+                settings: normalizedSettings,
+                chapterTitle: chapter.title
+            )
+            let paginator = ChapterPaginator(
+                text: displayText,
+                typography: typography,
+                fittingSize: fittingSize
+            )
+            try Task.checkCancellation()
+
+            let displayIndex = isPlaceholderPage
+                ? 0
+                : filtered.displayUTF16Index(containingOriginalByteOffset: chapterOffset)
+            let localPageIndex = paginator.pageIndex(
+                containingDisplayUTF16Index: displayIndex
+            )
+            let page = paginator.page(at: localPageIndex)
+            let pageEndDisplayIndex = page.startDisplayUTF16Index + page.displayUTF16Length
+            let pageStartOffset: Int
+            let pageEndOffset: Int
+            if isPlaceholderPage {
+                pageStartOffset = chapterOffset
+                pageEndOffset = chapter.byteLength
+            } else {
+                pageStartOffset = filtered.originalByteOffset(
+                    atDisplayUTF16Index: page.startDisplayUTF16Index
+                )
+                pageEndOffset = max(
+                    filtered.originalByteOffset(atDisplayUTF16Index: pageEndDisplayIndex),
+                    pageStartOffset + 1
+                )
+            }
+            let startAbsoluteOffset = chapter.startOffset + pageStartOffset
+            let endAbsoluteOffset = min(
+                chapter.startOffset + pageEndOffset,
+                chapter.endOffset
+            )
+            let pageIndex = forcedPageIndex ?? localPageIndex
+            let pageText = page.attributedText.string
+
+            guard endAbsoluteOffset > startAbsoluteOffset else {
+                throw CollectionReaderError.emptyPage
+            }
+
+            return CollectionReaderPage(
+                id: "\(chapter.id.uuidString)-\(pageIndex)-\(startAbsoluteOffset)",
+                bookID: book.id,
+                chapterID: chapter.id,
+                chapterTitle: chapter.title,
+                chapterIndex: chapterIndex,
+                pageIndex: pageIndex,
+                startAbsoluteOffset: startAbsoluteOffset,
+                endAbsoluteOffset: endAbsoluteOffset,
+                startChapterOffset: pageStartOffset,
+                attributedText: page.attributedText,
+                text: pageText
+            )
+        }.value
+    }
+
+    private static func chapterIndex(
+        containing absoluteOffset: Int,
+        in chapters: [Chapter]
+    ) -> Int? {
+        if let index = chapters.firstIndex(where: { absoluteOffset >= $0.startOffset && absoluteOffset < $0.endOffset }) {
+            return index
+        }
+        if absoluteOffset >= (chapters.last?.endOffset ?? 0) {
+            return chapters.indices.last
+        }
+        return chapters.indices.first
+    }
+
+    private static func readChapterText(
+        book: Book,
+        chapter: Chapter,
+        fileStore: AppFileStore
+    ) throws -> String {
+        let relativePath = book.normalizedPath ?? book.sourcePath
+        let url = try fileStore.url(forRelativePath: relativePath)
+        let handle = try FileHandle(forReadingFrom: url)
+        defer {
+            try? handle.close()
+        }
+        try handle.seek(toOffset: UInt64(chapter.startOffset))
+        let data = handle.readData(ofLength: chapter.byteLength)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw CollectionReaderError.invalidTextCache
+        }
+        return text
+    }
+
+    private static func effectiveLayout(
+        settings: ReaderSettings,
+        viewportSize: CGSize,
+        safeAreaInsets: UIEdgeInsets
+    ) -> ReaderLayoutConfiguration {
+        var layout = settings.layoutPreset.layoutConfiguration
+        if safeAreaInsets.top > 0 {
+            layout.topMargin = max(layout.topMargin, safeAreaInsets.top + 12)
+        }
+        if safeAreaInsets.bottom > 0 {
+            layout.bottomMargin = max(layout.bottomMargin, safeAreaInsets.bottom + 2)
+        }
+        if safeAreaInsets.left > 0 {
+            layout.leftMargin = max(layout.leftMargin, safeAreaInsets.left + 12)
+        }
+        if safeAreaInsets.right > 0 {
+            layout.rightMargin = max(layout.rightMargin, safeAreaInsets.right + 12)
+        }
+        return layout
+    }
+}
+
+private final class CollectionReaderPageCell: UICollectionViewCell {
+    static let reuseIdentifier = "CollectionReaderPageCell"
+
+    private let pageView = CollectionCoreTextPageView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.backgroundColor = .systemBackground
+        pageView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(pageView)
+        NSLayoutConstraint.activate([
+            pageView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            pageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            pageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            pageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        pageView.configure(
+            attributedText: NSAttributedString(string: ""),
+            layout: ReaderSettings.default.layoutPreset.layoutConfiguration,
+            backgroundColor: ReaderSettings.default.theme.backgroundColor
+        )
+    }
+
+    func configure(
+        page: CollectionReaderPage,
+        settings: ReaderSettings,
+        layout: ReaderLayoutConfiguration,
+        isAutoReading _: Bool
+    ) {
+        let backgroundColor = settings.theme.backgroundColor
+        contentView.backgroundColor = backgroundColor
+        pageView.configure(
+            attributedText: page.attributedText,
+            layout: layout,
+            backgroundColor: backgroundColor
+        )
+    }
+}
+
+private final class CollectionCoreTextPageView: UIView {
+    private var attributedText = NSAttributedString(string: "")
+    private var layout = ReaderSettings.default.layoutPreset.layoutConfiguration
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = true
+        contentMode = .redraw
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(
+        attributedText: NSAttributedString,
+        layout: ReaderLayoutConfiguration,
+        backgroundColor: UIColor
+    ) {
+        self.attributedText = attributedText
+        self.layout = layout
+        self.backgroundColor = backgroundColor
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard attributedText.length > 0,
+              let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+
+        context.saveGState()
+        context.textMatrix = .identity
+        context.translateBy(x: 0, y: bounds.height)
+        context.scaleBy(x: 1, y: -1)
+
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        let path = CGMutablePath()
+        path.addRect(layout.contentRect(in: bounds))
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            CFRange(location: 0, length: 0),
+            path,
+            nil
+        )
+        CTFrameDraw(frame, context)
+        context.restoreGState()
+    }
+}
+
+private extension ReaderLayoutConfiguration {
+    func contentRect(in bounds: CGRect) -> CGRect {
+        let minX = ceil(leftMargin)
+        let minY = ceil(bottomMargin)
+        let maxX = floor(bounds.width - rightMargin)
+        let maxY = floor(bounds.height - topMargin)
+        return CGRect(
+            x: minX,
+            y: minY,
+            width: max(1, maxX - minX),
+            height: max(1, maxY - minY)
+        )
     }
 }
