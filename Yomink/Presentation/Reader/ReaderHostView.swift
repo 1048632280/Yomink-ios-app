@@ -90,28 +90,30 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let topBarButtonBottomInset: CGFloat = 5
         static let bottomBarTopInset: CGFloat = 0
         static let bottomBarSafeAreaInset: CGFloat = 2
-        static let progressRowHeight: CGFloat = 38
+        static let progressRowHeight: CGFloat = 40
         static let bottomActionRowHeight: CGFloat = 48
         static let chapterButtonWidth: CGFloat = 74
         static let progressSliderHorizontalInset: CGFloat = 18
-        static let floatingButtonSize: CGFloat = 46
-        static let floatingButtonSpacing: CGFloat = 12
+        static let floatingButtonSize: CGFloat = 42
+        static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
-        static let settingsPanelHeightRatio: CGFloat = 0.46
-        static let settingsPanelMinimumHeight: CGFloat = 330
-        static let settingsPanelMaximumHeight: CGFloat = 420
+        static let settingsPanelHeightRatio: CGFloat = 0.40
+        static let settingsPanelMinimumHeight: CGFloat = 315
+        static let settingsPanelMaximumHeight: CGFloat = 360
         static let settingsPanelHorizontalInset: CGFloat = 20
         static let settingsPanelTopInset: CGFloat = 22
         static let settingsPanelBottomInset: CGFloat = 20
         static let settingsControlHeight: CGFloat = 34
         static let settingsFontButtonHeight: CGFloat = 32
+        static let menuSeparatorThickness: CGFloat = 2
     }
 
     private enum MenuStyle {
         static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let progressRowBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
-        static let separatorColor = UIColor(red: 0.255, green: 0.255, blue: 0.255, alpha: 1)
+        static let separatorColor = UIColor(red: 0.125, green: 0.125, blue: 0.125, alpha: 1)
+        static let separatorEdgeColor = UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
         static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
@@ -446,8 +448,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
         progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
         progressSlider.thumbTintColor = MenuStyle.progressThumbColor
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 13), for: .normal)
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .highlighted)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 15), for: .normal)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 17), for: .highlighted)
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchDown), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
@@ -553,7 +555,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             actionRowTopSeparator.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
             actionRowTopSeparator.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
             actionRowTopSeparator.topAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
-            actionRowTopSeparator.heightAnchor.constraint(equalToConstant: 1),
+            actionRowTopSeparator.heightAnchor.constraint(equalToConstant: Layout.menuSeparatorThickness),
 
             actionRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
             actionRow.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
@@ -572,12 +574,13 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func configureFloatingActionButtons() {
         configureFloatingButton(
             autoReadPlaceholderButton,
-            imageName: "play.fill",
+            imageName: "circle",
             accessibilityKey: "reader.autoRead.placeholder"
         )
         configureFloatingButton(
             darkModePlaceholderButton,
-            imageName: "moon",
+            imageName: "moon.stars",
+            fallbackImageName: "moon",
             accessibilityKey: "reader.darkMode.placeholder"
         )
 
@@ -631,6 +634,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let separator = UIView()
         separator.backgroundColor = MenuStyle.separatorColor
         separator.translatesAutoresizingMaskIntoConstraints = false
+        let edgeView = UIView()
+        edgeView.backgroundColor = MenuStyle.separatorEdgeColor
+        edgeView.translatesAutoresizingMaskIntoConstraints = false
+        separator.addSubview(edgeView)
+        NSLayoutConstraint.activate([
+            edgeView.leadingAnchor.constraint(equalTo: separator.leadingAnchor),
+            edgeView.trailingAnchor.constraint(equalTo: separator.trailingAnchor),
+            edgeView.bottomAnchor.constraint(equalTo: separator.bottomAnchor),
+            edgeView.heightAnchor.constraint(equalToConstant: 1)
+        ])
         return separator
     }
 
@@ -638,21 +651,32 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         button.tintColor = MenuStyle.secondaryTextColor
         button.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
         button.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
+        button.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 16, weight: .regular),
+            forImageIn: .normal
+        )
         button.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
         button.titleLabel?.adjustsFontForContentSizeCategory = true
         button.titleLabel?.textAlignment = .center
         button.contentHorizontalAlignment = .center
         button.contentVerticalAlignment = .center
         button.alignImageAboveTitle(spacing: 4)
-        button.contentEdgeInsets = UIEdgeInsets(top: 8, left: 0, bottom: 2, right: 0)
+        button.contentEdgeInsets = UIEdgeInsets(top: 12, left: 0, bottom: 0, right: 0)
     }
 
     private func configureFloatingButton(
         _ button: UIButton,
         imageName: String,
+        fallbackImageName: String? = nil,
         accessibilityKey: String
     ) {
-        button.setImage(UIImage(systemName: imageName), for: .normal)
+        let image = UIImage(systemName: imageName)
+            ?? fallbackImageName.flatMap { UIImage(systemName: $0) }
+        button.setImage(image, for: .normal)
+        button.setPreferredSymbolConfiguration(
+            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
+            forImageIn: .normal
+        )
         button.tintColor = MenuStyle.floatingButtonIconColor
         button.backgroundColor = MenuStyle.floatingButtonColor
         button.layer.cornerRadius = Layout.floatingButtonSize / 2
@@ -666,8 +690,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let size = CGSize(width: diameter, height: diameter)
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
+            let bounds = CGRect(origin: .zero, size: size)
+            UIColor(red: 0.22, green: 0.22, blue: 0.22, alpha: 1).setFill()
+            context.cgContext.fillEllipse(in: bounds)
+
             MenuStyle.progressThumbColor.setFill()
-            context.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
+            context.cgContext.fillEllipse(in: bounds.insetBy(dx: 1.5, dy: 1.5))
+
+            UIColor(red: 0.39, green: 0.39, blue: 0.39, alpha: 1).setStroke()
+            context.cgContext.setLineWidth(1)
+            context.cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
         }
     }
 
