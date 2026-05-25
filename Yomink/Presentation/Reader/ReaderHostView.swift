@@ -68,6 +68,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private let settingsFontDecreaseButton = UIButton(type: .system)
     private let settingsFontValueButton = UIButton(type: .system)
     private let settingsFontIncreaseButton = UIButton(type: .system)
+    private let keepScreenAwakeSwitch = UISwitch()
+    private let autoHideHomeIndicatorSwitch = UISwitch()
+    private let autoHideStatusBarSwitch = UISwitch()
+    private let edgeSwipeBackSwitch = UISwitch()
     private lazy var settingsPageModeControl = UISegmentedControl(
         items: [
             NSLocalizedString("reader.settings.pageTurn.slide", comment: ""),
@@ -102,9 +106,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
-        static let settingsPanelHeightRatio: CGFloat = 0.40
-        static let settingsPanelMinimumHeight: CGFloat = 315
-        static let settingsPanelMaximumHeight: CGFloat = 360
+        static let settingsPanelHeightRatio: CGFloat = 0.52
+        static let settingsPanelMinimumHeight: CGFloat = 390
+        static let settingsPanelMaximumHeight: CGFloat = 460
         static let settingsPanelHorizontalInset: CGFloat = 20
         static let settingsPanelTopInset: CGFloat = 22
         static let settingsPanelBottomInset: CGFloat = 20
@@ -183,6 +187,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private var isApplyingProgrammaticScroll = false
     private var settingsQuickMode: SettingsQuickMode = .page
     private weak var settingsPageModeSection: UIView?
+    private weak var settingsMoreSection: UIView?
     private var lastPaginationSize = CGSize.zero
     private var autoReadDisplayLink: CADisplayLink?
     private var lastAutoReadTimestamp: CFTimeInterval?
@@ -207,6 +212,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     deinit {
+        Task { @MainActor in
+            UIApplication.shared.isIdleTimerDisabled = false
+        }
         NotificationCenter.default.removeObserver(self)
         loadTask?.cancel()
         paginateTask?.cancel()
@@ -230,7 +238,21 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     override var prefersStatusBarHidden: Bool {
-        true
+        readerSettings.autoHideStatusBar
+            && (!isMenuVisible || isSettingsPanelVisible || isAutoReading)
+    }
+
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        readerSettings.theme == .dark ? .lightContent : .darkContent
+    }
+
+    override var prefersHomeIndicatorAutoHidden: Bool {
+        readerSettings.autoHideHomeIndicator
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        updateReaderChromePreferences()
     }
 
     override func viewDidLayoutSubviews() {
@@ -270,6 +292,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        UIApplication.shared.isIdleTimerDisabled = false
         saveProgressImmediately()
         saveSettingsImmediately()
     }
@@ -610,6 +633,11 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             fallbackImageName: "moon",
             accessibilityKey: "reader.darkMode.placeholder"
         )
+        darkModePlaceholderButton.addTarget(
+            self,
+            action: #selector(darkModeButtonTapped),
+            for: .touchUpInside
+        )
 
         floatingActionStack.axis = .vertical
         floatingActionStack.alignment = .center
@@ -916,6 +944,22 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             action: #selector(settingsQuickModeChanged),
             for: .valueChanged
         )
+        configureSettingsSwitch(
+            keepScreenAwakeSwitch,
+            action: #selector(keepScreenAwakeChanged)
+        )
+        configureSettingsSwitch(
+            autoHideHomeIndicatorSwitch,
+            action: #selector(autoHideHomeIndicatorChanged)
+        )
+        configureSettingsSwitch(
+            autoHideStatusBarSwitch,
+            action: #selector(autoHideStatusBarChanged)
+        )
+        configureSettingsSwitch(
+            edgeSwipeBackSwitch,
+            action: #selector(edgeSwipeBackChanged)
+        )
         styleSettingsControl(settingsPageModeControl)
         styleSettingsControl(settingsThemeControl)
         styleSettingsControl(settingsQuickControl)
@@ -960,6 +1004,9 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         )
         settingsPageModeSection = pageModeSection
         settingsPanelStack.addArrangedSubview(pageModeSection)
+        let moreSection = settingsMoreControls()
+        settingsMoreSection = moreSection
+        settingsPanelStack.addArrangedSubview(moreSection)
 
         let heightRatioConstraint = settingsPanel.heightAnchor.constraint(
             equalTo: view.heightAnchor,
@@ -1048,6 +1095,62 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         return titleLabel
     }
 
+    private func configureSettingsSwitch(_ control: UISwitch, action: Selector) {
+        control.onTintColor = MenuStyle.progressTintColor
+        control.addTarget(self, action: action, for: .valueChanged)
+        control.setContentHuggingPriority(.required, for: .horizontal)
+        control.setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+
+    private func settingsMoreControls() -> UIView {
+        let stackView = UIStackView(arrangedSubviews: [
+            settingsSwitchRow(
+                title: NSLocalizedString("reader.settings.keepScreenAwake", comment: ""),
+                control: keepScreenAwakeSwitch
+            ),
+            settingsSwitchRow(
+                title: NSLocalizedString("reader.settings.autoHideHomeIndicator", comment: ""),
+                control: autoHideHomeIndicatorSwitch
+            ),
+            settingsSwitchRow(
+                title: NSLocalizedString("reader.settings.autoHideStatusBar", comment: ""),
+                control: autoHideStatusBarSwitch
+            ),
+            settingsSwitchRow(
+                title: NSLocalizedString("reader.settings.edgeSwipeBack", comment: ""),
+                control: edgeSwipeBackSwitch
+            )
+        ])
+        stackView.axis = .vertical
+        stackView.spacing = 10
+        return stackView
+    }
+
+    private func settingsSwitchRow(title: String, control: UISwitch) -> UIView {
+        let titleLabel = UILabel()
+        titleLabel.text = title
+        titleLabel.font = .preferredFont(forTextStyle: .body)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = MenuStyle.primaryTextColor
+
+        let row = UIStackView(arrangedSubviews: [
+            titleLabel,
+            control
+        ])
+        row.axis = .horizontal
+        row.alignment = .center
+        row.distribution = .fill
+        row.spacing = 16
+        row.isLayoutMarginsRelativeArrangement = true
+        row.directionalLayoutMargins = NSDirectionalEdgeInsets(
+            top: 8,
+            leading: 0,
+            bottom: 8,
+            trailing: 0
+        )
+        return row
+    }
+
     private func configureFontSizeButton(_ button: UIButton, title: String, action: Selector) {
         button.setTitle(title, for: .normal)
         button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
@@ -1100,6 +1203,10 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases
             .firstIndex(of: normalizedSettings.theme) ?? 0
         settingsQuickControl.selectedSegmentIndex = settingsQuickMode.rawValue
+        keepScreenAwakeSwitch.isOn = normalizedSettings.keepScreenAwake
+        autoHideHomeIndicatorSwitch.isOn = normalizedSettings.autoHideHomeIndicator
+        autoHideStatusBarSwitch.isOn = normalizedSettings.autoHideStatusBar
+        edgeSwipeBackSwitch.isOn = normalizedSettings.edgeSwipeBackEnabled
         updateSettingsQuickSection()
         updateSettingsFontValueLabel()
         syncAutoReadPanelControls()
@@ -1115,6 +1222,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     private func updateSettingsQuickSection() {
         settingsPageModeSection?.isHidden = settingsQuickMode != .page
+        settingsMoreSection?.isHidden = settingsQuickMode != .more
     }
 
     private func configureLoadingIndicator() {
@@ -1352,6 +1460,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         if let settings = settings {
             readerSettings = settings.normalized
         }
+        updateReaderChromePreferences()
         currentChapterIndex = chapterIndex
         originalChapterText = text
         applyCurrentFilters()
@@ -2003,11 +2112,20 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         let requiresImmediateRerender = oldSettings.pageMode != normalizedSettings.pageMode
             || oldSettings.theme != normalizedSettings.theme
         let requiresDeferredRerender = oldSettings.fontSize != normalizedSettings.fontSize
+        let onlyChromePreferencesChanged = oldSettings.pageMode == normalizedSettings.pageMode
+            && oldSettings.theme == normalizedSettings.theme
+            && oldSettings.fontSize == normalizedSettings.fontSize
+            && oldSettings.autoReadSpeed == normalizedSettings.autoReadSpeed
+            && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
         readerSettings = normalizedSettings
         let onlyAutoReadSpeedChanged = oldSettings.pageMode == normalizedSettings.pageMode
             && oldSettings.theme == normalizedSettings.theme
             && oldSettings.fontSize == normalizedSettings.fontSize
             && oldSettings.touchAreaMap == normalizedSettings.touchAreaMap
+            && oldSettings.keepScreenAwake == normalizedSettings.keepScreenAwake
+            && oldSettings.autoHideHomeIndicator == normalizedSettings.autoHideHomeIndicator
+            && oldSettings.autoHideStatusBar == normalizedSettings.autoHideStatusBar
+            && oldSettings.edgeSwipeBackEnabled == normalizedSettings.edgeSwipeBackEnabled
             && oldSettings.autoReadSpeed != normalizedSettings.autoReadSpeed
         if onlyAutoReadSpeedChanged {
             scheduleSettingsSave()
@@ -2015,8 +2133,16 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             return
         }
 
+        if onlyChromePreferencesChanged {
+            updateReaderChromePreferences()
+            scheduleSettingsSave()
+            syncSettingsPanelControls()
+            return
+        }
+
         invalidatePrefetch()
         applyTheme()
+        updateReaderChromePreferences()
         if requiresImmediateRerender {
             cancelSettingsRender()
             renderContent(anchorByteOffset: anchorByteOffset, savingProgress: false)
@@ -2025,6 +2151,14 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         }
         scheduleSettingsSave()
         syncSettingsPanelControls()
+    }
+
+    private func updateReaderChromePreferences() {
+        UIApplication.shared.isIdleTimerDisabled = readerSettings.keepScreenAwake
+            && view.window != nil
+            && UIApplication.shared.applicationState != .background
+        setNeedsStatusBarAppearanceUpdate()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
     }
 
     private func invalidatePrefetch() {
@@ -2162,6 +2296,17 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         statusLabel.textColor = readerSettings.theme.secondaryTextColor
         progressLabel.textColor = readerSettings.theme.secondaryTextColor
         loadingIndicator.color = readerSettings.theme.secondaryTextColor
+        updateDarkModeButton()
+        setNeedsStatusBarAppearanceUpdate()
+    }
+
+    private func updateDarkModeButton() {
+        let imageName = readerSettings.theme == .dark ? "sun.max.fill" : "moon.stars"
+        let fallbackName = readerSettings.theme == .dark ? "sun.max" : "moon"
+        darkModePlaceholderButton.setImage(
+            UIImage(systemName: imageName) ?? UIImage(systemName: fallbackName),
+            for: .normal
+        )
     }
 
     private func setMenuVisible(_ visible: Bool, animated: Bool) {
@@ -2169,6 +2314,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         topBar.isUserInteractionEnabled = visible
         bottomBar.isUserInteractionEnabled = visible
         floatingActionStack.isUserInteractionEnabled = visible
+        setNeedsStatusBarAppearanceUpdate()
         view.layoutIfNeeded()
 
         if animated {
@@ -2207,6 +2353,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
         isSettingsPanelVisible = visible
         settingsPanel.isUserInteractionEnabled = visible
+        setNeedsStatusBarAppearanceUpdate()
         view.layoutIfNeeded()
 
         if animated {
@@ -2233,6 +2380,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     private func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
         isAutoReadPanelVisible = visible
         autoReadPanel.isUserInteractionEnabled = visible
+        setNeedsStatusBarAppearanceUpdate()
         view.layoutIfNeeded()
 
         if animated {
@@ -2531,7 +2679,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard !isSettingsPanelVisible,
+        guard readerSettings.edgeSwipeBackEnabled,
+              !isSettingsPanelVisible,
               !isAutoReadPanelVisible || isAutoReading
         else {
             return
@@ -2905,6 +3054,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         startAutoReading()
     }
 
+    @objc private func darkModeButtonTapped() {
+        var settings = readerSettings
+        settings.theme = readerSettings.theme == .dark ? .white : .dark
+        applyReaderSettings(settings)
+    }
+
     @objc private func autoReadSpeedSliderChanged() {
         var settings = readerSettings
         settings.autoReadSpeed = Double(autoReadSpeedSlider.value)
@@ -2925,10 +3080,12 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
         } else {
             saveProgressImmediately()
         }
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 
     @objc private func applicationDidBecomeActive() {
         resumeAutoReadAfterBackground()
+        updateReaderChromePreferences()
     }
 
     @objc private func settingsPageModeChanged() {
@@ -2952,6 +3109,30 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     @objc private func settingsQuickModeChanged() {
         settingsQuickMode = SettingsQuickMode(rawValue: settingsQuickControl.selectedSegmentIndex) ?? .page
         updateSettingsQuickSection()
+    }
+
+    @objc private func keepScreenAwakeChanged() {
+        var settings = readerSettings
+        settings.keepScreenAwake = keepScreenAwakeSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func autoHideHomeIndicatorChanged() {
+        var settings = readerSettings
+        settings.autoHideHomeIndicator = autoHideHomeIndicatorSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func autoHideStatusBarChanged() {
+        var settings = readerSettings
+        settings.autoHideStatusBar = autoHideStatusBarSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func edgeSwipeBackChanged() {
+        var settings = readerSettings
+        settings.edgeSwipeBackEnabled = edgeSwipeBackSwitch.isOn
+        applyReaderSettings(settings)
     }
 
     @objc private func settingsFontDecreaseTapped() {
@@ -3056,7 +3237,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
         if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
-            return !isSettingsPanelVisible || isAutoReading
+            return readerSettings.edgeSwipeBackEnabled
+                && (!isSettingsPanelVisible || isAutoReading)
         }
 
         if isSettingsPanelVisible {

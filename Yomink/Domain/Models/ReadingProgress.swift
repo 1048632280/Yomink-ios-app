@@ -68,6 +68,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     var fontSize: Double
     var autoReadSpeed: Double
     var touchAreaMap: [TouchAreaAction]
+    var keepScreenAwake: Bool
+    var autoHideHomeIndicator: Bool
+    var autoHideStatusBar: Bool
+    var edgeSwipeBackEnabled: Bool
 
     static let storageKey = "reader.settings"
     static let minimumFontSize = 14.0
@@ -87,6 +91,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case fontSize
         case autoReadSpeed
         case touchAreaMap
+        case keepScreenAwake
+        case autoHideHomeIndicator
+        case autoHideStatusBar
+        case edgeSwipeBackEnabled
     }
 
     static var `default`: ReaderSettings {
@@ -95,7 +103,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             theme: .white,
             fontSize: 18,
             autoReadSpeed: 80,
-            touchAreaMap: Self.defaultTouchAreaMap
+            touchAreaMap: Self.defaultTouchAreaMap,
+            keepScreenAwake: false,
+            autoHideHomeIndicator: false,
+            autoHideStatusBar: true,
+            edgeSwipeBackEnabled: true
         )
     }
 
@@ -104,13 +116,21 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         theme: Theme = .white,
         fontSize: Double = 18,
         autoReadSpeed: Double = 80,
-        touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap
+        touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap,
+        keepScreenAwake: Bool = false,
+        autoHideHomeIndicator: Bool = false,
+        autoHideStatusBar: Bool = true,
+        edgeSwipeBackEnabled: Bool = true
     ) {
         self.pageMode = pageMode
         self.theme = theme
         self.fontSize = fontSize
         self.autoReadSpeed = autoReadSpeed
         self.touchAreaMap = touchAreaMap
+        self.keepScreenAwake = keepScreenAwake
+        self.autoHideHomeIndicator = autoHideHomeIndicator
+        self.autoHideStatusBar = autoHideStatusBar
+        self.edgeSwipeBackEnabled = edgeSwipeBackEnabled
     }
 
     init(from decoder: Decoder) throws {
@@ -121,6 +141,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         autoReadSpeed = (try? container.decodeIfPresent(Double.self, forKey: .autoReadSpeed)) ?? 80
         touchAreaMap = (try? container.decodeIfPresent([TouchAreaAction].self, forKey: .touchAreaMap))
             ?? Self.defaultTouchAreaMap
+        keepScreenAwake = (try? container.decodeIfPresent(Bool.self, forKey: .keepScreenAwake)) ?? false
+        autoHideHomeIndicator = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideHomeIndicator)) ?? false
+        autoHideStatusBar = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideStatusBar)) ?? true
+        edgeSwipeBackEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .edgeSwipeBackEnabled)) ?? true
     }
 
     var normalized: ReaderSettings {
