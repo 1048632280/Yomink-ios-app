@@ -352,9 +352,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var lastAutoReadTimestamp: CFTimeInterval?
     private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
     private var autoReadVelocity: CGFloat = 0
+    private var shouldSuppressNextAutoReadTap = false
     private weak var autoReadTouchResetGesture: UIGestureRecognizer?
     private static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
-    private static let autoReadReverseInertiaDecayConstant: CGFloat = 7.5
+    private static let autoReadReverseInertiaDecayConstant: CGFloat = 2.5
     private var lastViewportSize = CGSize.zero
     private weak var settingsPageModeSection: UIView?
     private weak var settingsLayoutSection: UIView?
@@ -2540,6 +2541,15 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return CGFloat(value)
     }
 
+    private func isAutoReadVelocityAtBaseSpeed() -> Bool {
+        guard isAutoReading else {
+            return false
+        }
+        let baseSpeed = currentAutoReadBaseSpeed()
+        let tolerance = max(baseSpeed * 0.02, 1)
+        return abs(autoReadVelocity - baseSpeed) <= tolerance
+    }
+
     private func resetAutoReadVelocityToBaseSpeed() {
         guard isAutoReading else {
             return
@@ -3162,6 +3172,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
               isAutoReading else {
             return
         }
+        shouldSuppressNextAutoReadTap = !isAutoReadVelocityAtBaseSpeed()
         resetAutoReadVelocityToBaseSpeed()
     }
 
@@ -3171,6 +3182,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         let location = gesture.location(in: view)
         if isAutoReading {
+            if shouldSuppressNextAutoReadTap {
+                shouldSuppressNextAutoReadTap = false
+                return
+            }
             guard !autoReadPanel.frame.contains(location) else {
                 return
             }
