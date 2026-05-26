@@ -3484,7 +3484,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             || otherGestureRecognizer === autoReadTouchResetGesture {
             return true
         }
-        settingsControlPanRecognizers.contains { $0 === gestureRecognizer || $0 === otherGestureRecognizer }
+        return settingsControlPanRecognizers.contains { $0 === gestureRecognizer || $0 === otherGestureRecognizer }
     }
 
     private static func selectedChapter(
