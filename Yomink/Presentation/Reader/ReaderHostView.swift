@@ -387,6 +387,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var autoReadDisplayLink: CADisplayLink?
     private var lastAutoReadTimestamp: CFTimeInterval?
     private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
+    private var autoReadVelocity: CGFloat = 0
+    private static let autoReadInertiaDecayConstant: CGFloat = 2.5
     private var lastViewportSize = CGSize.zero
     private weak var settingsPageModeSection: UIView?
     private weak var settingsLayoutSection: UIView?
@@ -2478,6 +2480,88 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         scheduleProgressSave()
     }
 
+    /// 计算当前 viewport 顶部第一个字符对应的绝对字节偏移。
+    /// - paged / curl 模式:返回当前逻辑页的 `startAbsoluteOffset`(顶部就是该页第一行)。
+    /// - scroll / autoRead 模式:在覆盖 viewport 顶部的那个 page 内按 (y/height) 线性插值。
+    private func topAnchorAbsoluteOffset() -> Int? {
+        guard !pages.isEmpty else {
+            return nil
+        }
+        if usesVerticalScrolling {
+            let targetY = collectionView.contentOffset.y + collectionView.contentInset.top
+            var accumulatedHeight: CGFloat = 0
+            for index in pages.indices {
+                let pageHeight = verticalExtentForPage(at: index)
+                if targetY < accumulatedHeight + pageHeight {
+                    let page = pages[index]
+                    let localFrac: CGFloat
+                    if pageHeight > 0 {
+                        localFrac = max(0, min(1, (targetY - accumulatedHeight) / pageHeight))
+                    } else {
+                        localFrac = 0
+                    }
+                    let byteSpan = max(0, page.endAbsoluteOffset - page.startAbsoluteOffset)
+                    let delta = Int((CGFloat(byteSpan) * localFrac).rounded(.down))
+                    return page.startAbsoluteOffset + delta
+                }
+                accumulatedHeight += pageHeight
+            }
+            return pages.last?.startAbsoluteOffset
+        } else {
+            if let visibleIndex = visiblePageIndex(),
+               pages.indices.contains(visibleIndex) {
+                return pages[visibleIndex].startAbsoluteOffset
+            }
+            return pages.first?.startAbsoluteOffset
+        }
+    }
+
+    /// 把指定的字节偏移对齐到 viewport 顶部。
+    /// - paged / curl 模式:落到包含该 offset 的逻辑页(snap 到页边界)。
+    /// - scroll / autoRead 模式:在该 page 内按线性比例精确定位。
+    private func alignViewport(toAbsoluteOffset offset: Int) {
+        guard !pages.isEmpty else {
+            return
+        }
+        collectionView.layoutIfNeeded()
+        let resolvedIndex = pages.firstIndex(where: { offset >= $0.startAbsoluteOffset && offset < $0.endAbsoluteOffset })
+            ?? pages.firstIndex(where: { $0.startAbsoluteOffset >= offset })
+            ?? (pages.count - 1)
+        let page = pages[resolvedIndex]
+
+        if usesVerticalScrolling {
+            let pageStartY = verticalOffset(forPageAt: resolvedIndex)
+            let pageHeight = verticalExtent(for: page)
+            let byteSpan = max(0, page.endAbsoluteOffset - page.startAbsoluteOffset)
+            let localFrac: CGFloat
+            if byteSpan > 0 {
+                localFrac = max(0, min(1, CGFloat(offset - page.startAbsoluteOffset) / CGFloat(byteSpan)))
+            } else {
+                localFrac = 0
+            }
+            let rawY = pageStartY + localFrac * pageHeight - collectionView.contentInset.top
+            let maxY = max(
+                -collectionView.contentInset.top,
+                collectionView.contentSize.height + collectionView.contentInset.bottom - collectionView.bounds.height
+            )
+            let clampedY = max(-collectionView.contentInset.top, min(rawY, maxY))
+            collectionView.setContentOffset(CGPoint(x: 0, y: clampedY), animated: false)
+        } else {
+            collectionView.setContentOffset(contentOffset(forPageAt: resolvedIndex), animated: false)
+        }
+        currentPage = page
+        updateCurrentProgress()
+        prefetchPagesNearCurrent()
+    }
+
+    private func currentAutoReadBaseSpeed() -> CGFloat {
+        let value = min(
+            max(readerSettings.normalized.autoReadSpeed, ReaderSettings.minimumAutoReadSpeed),
+            ReaderSettings.maximumAutoReadSpeed
+        )
+        return CGFloat(value)
+    }
+
     private func finishPageTurn() {
         updateCurrentPageFromVisiblePage()
         prefetchPagesNearCurrent()
@@ -2541,16 +2625,17 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             setAutoReadPanelVisible(true, animated: true)
             return
         }
-        updateCurrentPageFromVisiblePage()
-        guard currentPage != nil,
-              !pages.isEmpty else {
+        guard !pages.isEmpty else {
             return
         }
+        // 进入前在当前(paged / curl / scroll)布局下抓取顶部字节锚点;
+        // 切到自动阅读垂直布局后用同一个锚点精确还原顶部第一行。
+        let anchor = topAnchorAbsoluteOffset() ?? currentPage?.startAbsoluteOffset ?? 0
         setMenuVisible(false, animated: true)
         isAutoReading = true
         configureCollectionViewForAutoReading()
         collectionView.reloadData()
-        alignContentOffsetToCurrentPage()
+        alignViewport(toAbsoluteOffset: anchor)
         setAutoReadPanelVisible(false, animated: false)
         updateAutoReadButton()
         startAutoReadDisplayLink()
@@ -2560,9 +2645,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         guard isAutoReading || autoReadDisplayLink != nil else {
             return
         }
+        // 先在自动阅读垂直布局下记录顶部锚点,然后再切回原模式;
+        // 这样无论原模式是 paged / curl / scroll,都能落到锚点所在的位置。
+        let anchor = topAnchorAbsoluteOffset()
         invalidateAutoReadDisplayLink()
         collectionView.layer.removeAllAnimations()
-        updateCurrentPageFromVisiblePage()
         isAutoReadingPausedForBackground = false
         isAutoReading = false
         setAutoReadPanelVisible(false, animated: animated)
@@ -2570,7 +2657,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if restoreLayout {
             configureCollectionViewForActiveSettings()
             collectionView.reloadData()
-            alignContentOffsetToCurrentPage()
+            if let anchor {
+                alignViewport(toAbsoluteOffset: anchor)
+            }
         } else {
             updateFixedWidgetOverlay()
         }
@@ -2616,6 +2705,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         invalidateAutoReadDisplayLink()
         lastAutoReadTimestamp = nil
         lastAutoReadProgressUpdateTimestamp = 0
+        autoReadVelocity = currentAutoReadBaseSpeed()
         let displayLink = CADisplayLink(target: self, selector: #selector(autoReadDisplayLinkDidTick(_:)))
         if #available(iOS 15.0, *) {
             displayLink.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
@@ -2646,15 +2736,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func advanceAutoRead(by interval: TimeInterval) {
         guard isAutoReading,
               !collectionView.isDragging,
-              !collectionView.isDecelerating,
               !collectionView.isTracking else {
             return
         }
-        let speed = min(
-            max(readerSettings.normalized.autoReadSpeed, ReaderSettings.minimumAutoReadSpeed),
-            ReaderSettings.maximumAutoReadSpeed
-        )
-        let distance = CGFloat(speed * interval)
+        let baseSpeed = currentAutoReadBaseSpeed()
+        // 指数衰减,把当前速度朝基线匀速收敛(约 1 秒到达基线)。
+        // 用户松手后注入的 autoReadVelocity > baseSpeed 时形成"快速 → 减速 → 匀速"惯性;
+        // 平稳期 autoReadVelocity == baseSpeed,decay 为恒等,等同于匀速。
+        let decay = CGFloat(exp(-Double(Self.autoReadInertiaDecayConstant) * interval))
+        autoReadVelocity = baseSpeed + (autoReadVelocity - baseSpeed) * decay
+        if abs(autoReadVelocity - baseSpeed) < 0.5 {
+            autoReadVelocity = baseSpeed
+        }
+        let distance = autoReadVelocity * CGFloat(interval)
         guard distance > 0 else {
             return
         }
@@ -3314,6 +3408,26 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
+    }
+
+    func scrollViewWillEndDragging(
+        _ scrollView: UIScrollView,
+        withVelocity velocity: CGPoint,
+        targetContentOffset: UnsafeMutablePointer<CGPoint>
+    ) {
+        guard scrollView === collectionView, isAutoReading else {
+            return
+        }
+        // 接管松手后的减速:禁用 UIScrollView 自带 deceleration(衰减到 0),
+        // 改由 DisplayLink 用 autoReadVelocity 走指数衰减,最终收敛到基线速度。
+        targetContentOffset.pointee = scrollView.contentOffset
+        // UIScrollView 给的 velocity 单位是 points / millisecond,
+        // 方向上 +y 对应 contentOffset.y 增大(向下翻),与自动阅读方向一致。
+        let releaseSpeed = velocity.y * 1000
+        let baseSpeed = currentAutoReadBaseSpeed()
+        // 向上拖或小于基线的低速松手统一按基线处理:立即恢复匀速,不做反向/拖沓减速。
+        autoReadVelocity = max(releaseSpeed, baseSpeed)
+        lastAutoReadTimestamp = nil
     }
 
     func collectionView(
