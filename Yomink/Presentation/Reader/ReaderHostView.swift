@@ -84,6 +84,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let settingsFontValueButton = UIButton(type: .system)
     private let settingsFontIncreaseButton = UIButton(type: .system)
     private var layoutValueLabels: [LayoutAdjustment: UILabel] = [:]
+    private let fixedWidgetOverlay = ReaderPageWidgetOverlayView()
+    private let widgetChapterTitleSwitch = UISwitch()
+    private let widgetBatteryPercentageSwitch = UISwitch()
+    private let widgetBatteryIconSwitch = UISwitch()
+    private let widgetTimeSwitch = UISwitch()
+    private let widgetChapterPageProgressSwitch = UISwitch()
+    private let widgetGlobalProgressSwitch = UISwitch()
     private var settingsControlPanRecognizers: [UIPanGestureRecognizer] = []
     private var settingsControlDragLastY: CGFloat = 0
     private let keepScreenAwakeSwitch = UISwitch()
@@ -140,6 +147,17 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let maximumResidentPages = 14
     }
 
+    private static let widgetTimeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = .current
+        formatter.dateFormat = DateFormatter.dateFormat(
+            fromTemplate: "Hm",
+            options: 0,
+            locale: .current
+        )
+        return formatter
+    }()
+
     private enum MenuStyle {
         static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let progressRowBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
@@ -177,6 +195,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         case titleParagraphSpacing
         case titleFontWeight
         case titleFontSizeDelta
+        case widgetHorizontalMargin
+        case widgetBottomMargin
+        case widgetTitleTopMargin
+        case widgetTitleLeftMargin
 
         var titleKey: String {
             switch self {
@@ -208,6 +230,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return "reader.settings.layout.titleFontWeight"
             case .titleFontSizeDelta:
                 return "reader.settings.layout.titleFontSizeDelta"
+            case .widgetHorizontalMargin:
+                return "reader.settings.layout.widgetHorizontalMargin"
+            case .widgetBottomMargin:
+                return "reader.settings.layout.widgetBottomMargin"
+            case .widgetTitleTopMargin:
+                return "reader.settings.layout.widgetTitleTopMargin"
+            case .widgetTitleLeftMargin:
+                return "reader.settings.layout.widgetTitleLeftMargin"
             }
         }
 
@@ -254,6 +284,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return values.titleFontWeightValue
             case .titleFontSizeDelta:
                 return values.titleFontSizeDelta
+            case .widgetHorizontalMargin:
+                return values.widgetHorizontalMargin
+            case .widgetBottomMargin:
+                return values.widgetBottomMargin
+            case .widgetTitleTopMargin:
+                return values.widgetTitleTopMargin
+            case .widgetTitleLeftMargin:
+                return values.widgetTitleLeftMargin
             }
         }
 
@@ -287,6 +325,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 values.titleFontWeightValue += delta
             case .titleFontSizeDelta:
                 values.titleFontSizeDelta += delta
+            case .widgetHorizontalMargin:
+                values.widgetHorizontalMargin += delta
+            case .widgetBottomMargin:
+                values.widgetBottomMargin += delta
+            case .widgetTitleTopMargin:
+                values.widgetTitleTopMargin += delta
+            case .widgetTitleLeftMargin:
+                values.widgetTitleLeftMargin += delta
             }
             values = values.normalized
         }
@@ -336,6 +382,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var didReachEndOfBook = false
     private var isLoadingNextPage = false
     private var pendingTapTargetPageIndex: Int?
+    private var previousBatteryMonitoringEnabled = false
     private var autoReadDisplayLink: CADisplayLink?
     private var lastAutoReadTimestamp: CFTimeInterval?
     private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
@@ -384,6 +431,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         bookmarkTask?.cancel()
         autoReadDisplayLink?.invalidate()
         autoReadDisplayLink = nil
+        UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoringEnabled
     }
 
     override var prefersStatusBarHidden: Bool {
@@ -409,7 +457,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        previousBatteryMonitoringEnabled = UIDevice.current.isBatteryMonitoringEnabled
+        UIDevice.current.isBatteryMonitoringEnabled = true
         configureCollectionView()
+        configureFixedWidgetOverlay()
         configureMenus()
         configureLoadingIndicator()
         configureGestures()
@@ -480,6 +531,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func configureFixedWidgetOverlay() {
+        fixedWidgetOverlay.translatesAutoresizingMaskIntoConstraints = false
+        fixedWidgetOverlay.isUserInteractionEnabled = false
+        fixedWidgetOverlay.isHidden = true
+        view.addSubview(fixedWidgetOverlay)
+        NSLayoutConstraint.activate([
+            fixedWidgetOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            fixedWidgetOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            fixedWidgetOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            fixedWidgetOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
     }
 
@@ -1098,6 +1162,15 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     .titleFontWeight,
                     .titleFontSizeDelta
                 ]
+            ),
+            layoutAdjustmentGroup(
+                titleKey: "reader.settings.layout.widgetGroup",
+                adjustments: [
+                    .widgetHorizontalMargin,
+                    .widgetBottomMargin,
+                    .widgetTitleTopMargin,
+                    .widgetTitleLeftMargin
+                ]
             )
         ])
         stack.axis = .vertical
@@ -1201,6 +1274,42 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func settingsMoreControls() -> UIView {
+        let widgetStack = UIStackView(arrangedSubviews: [
+            settingsGroupTitle("reader.settings.widgets.group"),
+            switchRow(
+                title: NSLocalizedString("reader.settings.widgets.chapterTitle", comment: ""),
+                toggle: widgetChapterTitleSwitch,
+                action: #selector(widgetChapterTitleChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.widgets.batteryPercentage", comment: ""),
+                toggle: widgetBatteryPercentageSwitch,
+                action: #selector(widgetBatteryPercentageChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.widgets.batteryIcon", comment: ""),
+                toggle: widgetBatteryIconSwitch,
+                action: #selector(widgetBatteryIconChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.widgets.time", comment: ""),
+                toggle: widgetTimeSwitch,
+                action: #selector(widgetTimeChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.widgets.chapterPageProgress", comment: ""),
+                toggle: widgetChapterPageProgressSwitch,
+                action: #selector(widgetChapterPageProgressChanged)
+            ),
+            switchRow(
+                title: NSLocalizedString("reader.settings.widgets.globalProgress", comment: ""),
+                toggle: widgetGlobalProgressSwitch,
+                action: #selector(widgetGlobalProgressChanged)
+            )
+        ])
+        widgetStack.axis = .vertical
+        widgetStack.spacing = 2
+
         let stack = UIStackView(arrangedSubviews: [
             switchRow(
                 title: NSLocalizedString("reader.settings.keepScreenAwake", comment: ""),
@@ -1221,11 +1330,21 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 title: NSLocalizedString("reader.settings.edgeSwipeBack", comment: ""),
                 toggle: edgeSwipeBackSwitch,
                 action: #selector(edgeSwipeBackChanged)
-            )
+            ),
+            widgetStack
         ])
         stack.axis = .vertical
-        stack.spacing = 10
+        stack.spacing = 16
         return stack
+    }
+
+    private func settingsGroupTitle(_ key: String) -> UILabel {
+        let label = UILabel()
+        label.text = NSLocalizedString(key, comment: "")
+        label.font = .preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = MenuStyle.secondaryTextColor
+        return label
     }
 
     private func switchRow(title: String, toggle: UISwitch, action: Selector) -> UIView {
@@ -1772,6 +1891,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         if isAutoReading {
             configureCollectionViewForAutoReading()
+            updateFixedWidgetOverlay()
             return
         }
         let contentInsets: UIEdgeInsets
@@ -1801,6 +1921,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.showsHorizontalScrollIndicator = false
         layout.invalidateLayout()
         collectionView.layoutIfNeeded()
+        updateFixedWidgetOverlay()
     }
 
     private func configureCollectionViewForAutoReading() {
@@ -1817,11 +1938,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.showsVerticalScrollIndicator = false
         layout.invalidateLayout()
         collectionView.layoutIfNeeded()
+        updateFixedWidgetOverlay()
     }
 
     private func effectiveReaderLayout() -> ReaderLayoutConfiguration {
         var layout = readerSettings.normalized.effectiveLayoutConfiguration
         let safeAreaInsets = view.safeAreaInsets
+        let widgetInsets = widgetContentInsets()
         if safeAreaInsets.top > 0 {
             layout.topMargin = max(layout.topMargin, safeAreaInsets.top + 12)
         }
@@ -1834,6 +1957,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if safeAreaInsets.right > 0 {
             layout.rightMargin = max(layout.rightMargin, safeAreaInsets.right + 12)
         }
+        layout.topMargin = max(layout.topMargin, widgetInsets.top)
+        layout.bottomMargin = max(layout.bottomMargin, widgetInsets.bottom)
         return layout
     }
 
@@ -1848,7 +1973,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func verticalContinuousInsets() -> UIEdgeInsets {
         let layout = effectiveReaderLayout()
-        return UIEdgeInsets(top: layout.topMargin, left: 0, bottom: layout.bottomMargin, right: 0)
+        return UIEdgeInsets(
+            top: layout.topMargin,
+            left: 0,
+            bottom: layout.bottomMargin,
+            right: 0
+        )
     }
 
     private func verticalContinuousPageHeight() -> CGFloat {
@@ -1856,14 +1986,33 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return max(1, collectionView.bounds.height - insets.top - insets.bottom)
     }
 
+    private func widgetContentInsets() -> UIEdgeInsets {
+        let values = readerSettings.normalized.effectiveLayoutValues
+        let visibility = readerSettings.normalized.widgetVisibility
+        let hasTopWidget = visibility.chapterTitle
+        let hasBottomWidget = visibility.batteryPercentage
+            || visibility.batteryIcon
+            || visibility.time
+            || visibility.chapterPageProgress
+            || visibility.globalProgress
+        return UIEdgeInsets(
+            top: hasTopWidget ? CGFloat(values.widgetTitleTopMargin + 26) : 0,
+            left: 0,
+            bottom: hasBottomWidget ? CGFloat(values.widgetBottomMargin + 26) : 0,
+            right: 0
+        )
+    }
+
     private func applyTheme() {
         overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         view.backgroundColor = readerSettings.theme.backgroundColor
         collectionView.backgroundColor = readerSettings.theme.backgroundColor
+        fixedWidgetOverlay.backgroundColor = .clear
         loadingIndicator.color = readerSettings.theme.secondaryTextColor
         progressLabel.textColor = readerSettings.theme.secondaryTextColor
         updateDarkModeButton()
         updateAutoReadButton()
+        updateFixedWidgetOverlay()
         setNeedsStatusBarAppearanceUpdate()
     }
 
@@ -1890,9 +2039,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         autoHideHomeIndicatorSwitch.isOn = normalized.autoHideHomeIndicator
         autoHideStatusBarSwitch.isOn = normalized.autoHideStatusBar
         edgeSwipeBackSwitch.isOn = normalized.edgeSwipeBackEnabled
+        widgetChapterTitleSwitch.isOn = normalized.widgetVisibility.chapterTitle
+        widgetBatteryPercentageSwitch.isOn = normalized.widgetVisibility.batteryPercentage
+        widgetBatteryIconSwitch.isOn = normalized.widgetVisibility.batteryIcon
+        widgetTimeSwitch.isOn = normalized.widgetVisibility.time
+        widgetChapterPageProgressSwitch.isOn = normalized.widgetVisibility.chapterPageProgress
+        widgetGlobalProgressSwitch.isOn = normalized.widgetVisibility.globalProgress
         autoReadSpeedSlider.value = Float(normalized.autoReadSpeed)
         updateLayoutValueLabels()
         updateSettingsQuickSection()
+        updateFixedWidgetOverlay()
     }
 
     private func updateSettingsQuickSection() {
@@ -2037,6 +2193,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if !isTrackingProgressSlider {
             progressSlider.value = Float(globalProgress)
         }
+        updateFixedWidgetOverlay()
     }
 
     private func progressText(
@@ -2049,6 +2206,44 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             chapter.title,
             NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(chapterProgress, 0), 1))) ?? "0%",
             NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(globalProgress, 0), 1))) ?? "0%"
+        )
+    }
+
+    private func pageWidgetSnapshot(for page: CollectionReaderPage) -> ReaderPageWidgetSnapshot {
+        ReaderPageWidgetSnapshot(
+            chapterTitle: page.containsChapterTitle ? book.title : page.chapterTitle,
+            batteryLevel: UIDevice.current.batteryLevel,
+            batteryState: UIDevice.current.batteryState,
+            timeText: Self.widgetTimeFormatter.string(from: Date()),
+            pageProgressText: "\(page.localPageIndex + 1)/\(max(page.chapterPageCount, 1))",
+            globalProgressText: NumberFormatter.readerPercent.string(
+                from: NSNumber(value: page.globalProgress)
+            ) ?? "0%"
+        )
+    }
+
+    private func widgetLayoutConfiguration() -> ReaderWidgetLayoutConfiguration {
+        let values = readerSettings.normalized.effectiveLayoutValues
+        return ReaderWidgetLayoutConfiguration(
+            horizontalMargin: CGFloat(values.widgetHorizontalMargin),
+            bottomMargin: CGFloat(values.widgetBottomMargin),
+            titleTopMargin: CGFloat(values.widgetTitleTopMargin),
+            titleLeftMargin: CGFloat(values.widgetTitleLeftMargin)
+        )
+    }
+
+    private func updateFixedWidgetOverlay() {
+        guard usesVerticalScrolling,
+              let currentPage else {
+            fixedWidgetOverlay.isHidden = true
+            return
+        }
+
+        fixedWidgetOverlay.isHidden = false
+        fixedWidgetOverlay.configure(
+            snapshot: pageWidgetSnapshot(for: currentPage),
+            settings: readerSettings.normalized,
+            layout: widgetLayoutConfiguration()
         )
     }
 
@@ -2148,7 +2343,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             || oldSettings.fontSize != nextSettings.fontSize
             || oldSettings.layoutPreset != nextSettings.layoutPreset
             || oldSettings.customLayoutValues != nextSettings.customLayoutValues
-            || oldSettings.theme != nextSettings.theme else {
+            || oldSettings.theme != nextSettings.theme
+            || oldSettings.widgetVisibility != nextSettings.widgetVisibility else {
             return
         }
         pagingGeneration += 1
@@ -2325,6 +2521,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             configureCollectionViewForActiveSettings()
             collectionView.reloadData()
             alignContentOffsetToCurrentPage()
+        } else {
+            updateFixedWidgetOverlay()
         }
         saveProgressImmediately()
     }
@@ -2733,6 +2931,42 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         applyReaderSettings(settings)
     }
 
+    @objc private func widgetChapterTitleChanged() {
+        var settings = readerSettings
+        settings.widgetVisibility.chapterTitle = widgetChapterTitleSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func widgetBatteryPercentageChanged() {
+        var settings = readerSettings
+        settings.widgetVisibility.batteryPercentage = widgetBatteryPercentageSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func widgetBatteryIconChanged() {
+        var settings = readerSettings
+        settings.widgetVisibility.batteryIcon = widgetBatteryIconSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func widgetTimeChanged() {
+        var settings = readerSettings
+        settings.widgetVisibility.time = widgetTimeSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func widgetChapterPageProgressChanged() {
+        var settings = readerSettings
+        settings.widgetVisibility.chapterPageProgress = widgetChapterPageProgressSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
+    @objc private func widgetGlobalProgressChanged() {
+        var settings = readerSettings
+        settings.widgetVisibility.globalProgress = widgetGlobalProgressSwitch.isOn
+        applyReaderSettings(settings)
+    }
+
     @objc private func settingsFontDecreaseTapped() {
         var settings = readerSettings
         settings.fontSize -= 1
@@ -2939,7 +3173,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             page: pages[indexPath.item],
             settings: readerSettings.normalized,
             layout: displayLayoutForCurrentMode(),
-            isAutoReading: isAutoReading
+            widgetSnapshot: pageWidgetSnapshot(for: pages[indexPath.item]),
+            widgetLayout: widgetLayoutConfiguration(),
+            showsWidgets: !usesVerticalScrolling
         )
         return cell
     }
@@ -6556,6 +6792,10 @@ private struct ReaderLayoutConfiguration {
     var titleParagraphSpacing: CGFloat
     var titleFontSizeDelta: CGFloat
     var titleFontWeight: UIFont.Weight
+    var widgetHorizontalMargin: CGFloat
+    var widgetBottomMargin: CGFloat
+    var widgetTitleTopMargin: CGFloat
+    var widgetTitleLeftMargin: CGFloat
 }
 
 private struct ReaderTypography: @unchecked Sendable {
@@ -6788,6 +7028,229 @@ private func readerFontWeight(for value: Double) -> UIFont.Weight {
     }
 }
 
+private struct ReaderWidgetLayoutConfiguration {
+    var horizontalMargin: CGFloat
+    var bottomMargin: CGFloat
+    var titleTopMargin: CGFloat
+    var titleLeftMargin: CGFloat
+}
+
+private struct ReaderPageWidgetSnapshot {
+    var chapterTitle: String
+    var batteryLevel: Float
+    var batteryState: UIDevice.BatteryState
+    var timeText: String
+    var pageProgressText: String
+    var globalProgressText: String
+}
+
+private final class ReaderPageWidgetOverlayView: UIView {
+    private let titleLabel = UILabel()
+    private let bottomLeftStack = UIStackView()
+    private let batteryPercentageLabel = UILabel()
+    private let batteryIconView = ReaderBatteryIconView()
+    private let timeLabel = UILabel()
+    private let bottomRightStack = UIStackView()
+    private let pageProgressLabel = UILabel()
+    private let globalProgressLabel = UILabel()
+
+    private var titleTopConstraint: NSLayoutConstraint?
+    private var titleLeadingConstraint: NSLayoutConstraint?
+    private var bottomLeftLeadingConstraint: NSLayoutConstraint?
+    private var bottomLeftBottomConstraint: NSLayoutConstraint?
+    private var bottomRightTrailingConstraint: NSLayoutConstraint?
+    private var bottomRightBottomConstraint: NSLayoutConstraint?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        configureViews()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(
+        snapshot: ReaderPageWidgetSnapshot,
+        settings: ReaderSettings,
+        layout: ReaderWidgetLayoutConfiguration
+    ) {
+        let visibility = settings.widgetVisibility
+        let textColor = settings.theme.secondaryTextColor
+        let secondaryColor = textColor.withAlphaComponent(0.78)
+        titleLabel.text = snapshot.chapterTitle
+        titleLabel.textColor = secondaryColor
+        batteryPercentageLabel.text = batteryText(for: snapshot.batteryLevel)
+        batteryPercentageLabel.textColor = textColor
+        timeLabel.text = snapshot.timeText
+        timeLabel.textColor = textColor
+        pageProgressLabel.text = snapshot.pageProgressText
+        pageProgressLabel.textColor = textColor
+        globalProgressLabel.text = snapshot.globalProgressText
+        globalProgressLabel.textColor = textColor
+        batteryIconView.configure(
+            level: snapshot.batteryLevel,
+            state: snapshot.batteryState,
+            strokeColor: textColor
+        )
+
+        titleLabel.isHidden = !visibility.chapterTitle
+        batteryPercentageLabel.isHidden = !visibility.batteryPercentage
+        batteryIconView.isHidden = !visibility.batteryIcon
+        timeLabel.isHidden = !visibility.time
+        pageProgressLabel.isHidden = !visibility.chapterPageProgress
+        globalProgressLabel.isHidden = !visibility.globalProgress
+        bottomLeftStack.isHidden = !visibility.batteryPercentage
+            && !visibility.batteryIcon
+            && !visibility.time
+        bottomRightStack.isHidden = !visibility.chapterPageProgress
+            && !visibility.globalProgress
+
+        titleTopConstraint?.constant = layout.titleTopMargin
+        titleLeadingConstraint?.constant = layout.titleLeftMargin
+        bottomLeftLeadingConstraint?.constant = layout.horizontalMargin
+        bottomLeftBottomConstraint?.constant = -layout.bottomMargin
+        bottomRightTrailingConstraint?.constant = -layout.horizontalMargin
+        bottomRightBottomConstraint?.constant = -layout.bottomMargin
+    }
+
+    private func configureViews() {
+        backgroundColor = .clear
+
+        titleLabel.font = .preferredFont(forTextStyle: .caption1)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.numberOfLines = 1
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(titleLabel)
+
+        [batteryPercentageLabel, timeLabel, pageProgressLabel, globalProgressLabel].forEach { label in
+            label.font = .preferredFont(forTextStyle: .caption1)
+            label.adjustsFontForContentSizeCategory = true
+            label.numberOfLines = 1
+            label.setContentHuggingPriority(.required, for: .horizontal)
+        }
+
+        bottomLeftStack.axis = .horizontal
+        bottomLeftStack.alignment = .center
+        bottomLeftStack.spacing = 6
+        bottomLeftStack.translatesAutoresizingMaskIntoConstraints = false
+        bottomLeftStack.addArrangedSubview(batteryPercentageLabel)
+        bottomLeftStack.addArrangedSubview(batteryIconView)
+        bottomLeftStack.addArrangedSubview(timeLabel)
+        addSubview(bottomLeftStack)
+
+        bottomRightStack.axis = .horizontal
+        bottomRightStack.alignment = .center
+        bottomRightStack.spacing = 8
+        bottomRightStack.translatesAutoresizingMaskIntoConstraints = false
+        bottomRightStack.addArrangedSubview(pageProgressLabel)
+        bottomRightStack.addArrangedSubview(globalProgressLabel)
+        addSubview(bottomRightStack)
+
+        titleTopConstraint = titleLabel.topAnchor.constraint(equalTo: topAnchor)
+        titleLeadingConstraint = titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor)
+        bottomLeftLeadingConstraint = bottomLeftStack.leadingAnchor.constraint(equalTo: leadingAnchor)
+        bottomLeftBottomConstraint = bottomLeftStack.bottomAnchor.constraint(equalTo: bottomAnchor)
+        bottomRightTrailingConstraint = bottomRightStack.trailingAnchor.constraint(equalTo: trailingAnchor)
+        bottomRightBottomConstraint = bottomRightStack.bottomAnchor.constraint(equalTo: bottomAnchor)
+
+        NSLayoutConstraint.activate([
+            titleTopConstraint,
+            titleLeadingConstraint,
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
+
+            bottomLeftLeadingConstraint,
+            bottomLeftBottomConstraint,
+            bottomLeftStack.trailingAnchor.constraint(lessThanOrEqualTo: bottomRightStack.leadingAnchor, constant: -12),
+
+            bottomRightTrailingConstraint,
+            bottomRightBottomConstraint,
+            batteryIconView.widthAnchor.constraint(equalToConstant: 24),
+            batteryIconView.heightAnchor.constraint(equalToConstant: 12)
+        ].compactMap { $0 })
+    }
+
+    private func batteryText(for level: Float) -> String {
+        guard level >= 0 else {
+            return "--%"
+        }
+        return "\(Int((level * 100).rounded()))%"
+    }
+}
+
+private final class ReaderBatteryIconView: UIView {
+    private var level: Float = -1
+    private var batteryState: UIDevice.BatteryState = .unknown
+    private var strokeColor: UIColor = .secondaryLabel
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(
+        level: Float,
+        state: UIDevice.BatteryState,
+        strokeColor: UIColor
+    ) {
+        self.level = level
+        self.batteryState = state
+        self.strokeColor = strokeColor
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+
+        let capWidth: CGFloat = 2.2
+        let bodyRect = CGRect(
+            x: 0.75,
+            y: 1.5,
+            width: bounds.width - capWidth - 2.25,
+            height: bounds.height - 3
+        )
+        let capRect = CGRect(
+            x: bodyRect.maxX + 1,
+            y: bounds.midY - 2,
+            width: capWidth,
+            height: 4
+        )
+
+        context.setStrokeColor(strokeColor.cgColor)
+        context.setLineWidth(1)
+        UIBezierPath(roundedRect: bodyRect, cornerRadius: 2).stroke()
+        context.setFillColor(strokeColor.cgColor)
+        UIBezierPath(roundedRect: capRect, cornerRadius: 1).fill()
+
+        let clampedLevel = level < 0 ? 1 : CGFloat(max(min(level, 1), 0))
+        let fillInset: CGFloat = 2
+        let fillWidth = max(0, (bodyRect.width - fillInset * 2) * clampedLevel)
+        let fillRect = CGRect(
+            x: bodyRect.minX + fillInset,
+            y: bodyRect.minY + fillInset,
+            width: fillWidth,
+            height: max(0, bodyRect.height - fillInset * 2)
+        )
+        guard fillRect.width > 0 else {
+            return
+        }
+        let fillColor: UIColor = batteryState == .charging || batteryState == .full
+            ? .systemGreen
+            : .black
+        context.setFillColor(fillColor.cgColor)
+        UIBezierPath(roundedRect: fillRect, cornerRadius: 1).fill()
+    }
+}
+
 private extension ReaderSettings.LayoutPreset {
     var layoutConfiguration: ReaderLayoutConfiguration {
         layoutConfiguration(customValues: nil)
@@ -6811,7 +7274,11 @@ private extension ReaderSettings.LayoutPreset {
                 titleLineSpacing: CGFloat(values.titleLineSpacing),
                 titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
                 titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
-                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue)
+                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue),
+                widgetHorizontalMargin: CGFloat(values.widgetHorizontalMargin),
+                widgetBottomMargin: CGFloat(values.widgetBottomMargin),
+                widgetTitleTopMargin: CGFloat(values.widgetTitleTopMargin),
+                widgetTitleLeftMargin: CGFloat(values.widgetTitleLeftMargin)
             )
         case .standard, .custom:
             return ReaderLayoutConfiguration(
@@ -6828,7 +7295,11 @@ private extension ReaderSettings.LayoutPreset {
                 titleLineSpacing: CGFloat(values.titleLineSpacing),
                 titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
                 titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
-                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue)
+                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue),
+                widgetHorizontalMargin: CGFloat(values.widgetHorizontalMargin),
+                widgetBottomMargin: CGFloat(values.widgetBottomMargin),
+                widgetTitleTopMargin: CGFloat(values.widgetTitleTopMargin),
+                widgetTitleLeftMargin: CGFloat(values.widgetTitleLeftMargin)
             )
         case .relaxed:
             return ReaderLayoutConfiguration(
@@ -6845,7 +7316,11 @@ private extension ReaderSettings.LayoutPreset {
                 titleLineSpacing: CGFloat(values.titleLineSpacing),
                 titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
                 titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
-                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue)
+                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue),
+                widgetHorizontalMargin: CGFloat(values.widgetHorizontalMargin),
+                widgetBottomMargin: CGFloat(values.widgetBottomMargin),
+                widgetTitleTopMargin: CGFloat(values.widgetTitleTopMargin),
+                widgetTitleLeftMargin: CGFloat(values.widgetTitleLeftMargin)
             )
         }
     }
@@ -7974,9 +8449,13 @@ private struct CollectionReaderPage: Equatable, @unchecked Sendable {
     let chapterTitle: String
     let chapterIndex: Int
     let pageIndex: Int
+    let localPageIndex: Int
+    let chapterPageCount: Int
     let startAbsoluteOffset: Int
     let endAbsoluteOffset: Int
     let startChapterOffset: Int
+    let globalProgress: Double
+    let containsChapterTitle: Bool
     let attributedText: NSAttributedString
     let text: String
 
@@ -8047,7 +8526,8 @@ private enum CollectionReaderPaginator {
             let layout = Self.effectiveLayout(
                 settings: normalizedSettings,
                 viewportSize: viewportSize,
-                safeAreaInsets: safeAreaInsets
+                safeAreaInsets: safeAreaInsets,
+                widgetInsets: Self.widgetContentInsets(settings: normalizedSettings)
             )
             let fittingSize = layout.contentRect(in: CGRect(origin: .zero, size: viewportSize)).size
             let typography = ReaderTypography(
@@ -8090,6 +8570,10 @@ private enum CollectionReaderPaginator {
             )
             let pageIndex = forcedPageIndex ?? localPageIndex
             let pageText = page.attributedText.string
+            let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
+            let globalProgress = min(max(Double(startAbsoluteOffset) / Double(totalByteLength), 0), 1)
+            let containsChapterTitle = localPageIndex == 0
+                && Self.pageContainsChapterTitle(pageText, chapterTitle: chapter.title)
 
             guard endAbsoluteOffset > startAbsoluteOffset else {
                 throw CollectionReaderError.emptyPage
@@ -8102,9 +8586,13 @@ private enum CollectionReaderPaginator {
                 chapterTitle: chapter.title,
                 chapterIndex: chapterIndex,
                 pageIndex: pageIndex,
+                localPageIndex: localPageIndex,
+                chapterPageCount: paginator.pageCount,
                 startAbsoluteOffset: startAbsoluteOffset,
                 endAbsoluteOffset: endAbsoluteOffset,
                 startChapterOffset: pageStartOffset,
+                globalProgress: globalProgress,
+                containsChapterTitle: containsChapterTitle,
                 attributedText: page.attributedText,
                 text: pageText
             )
@@ -8146,7 +8634,8 @@ private enum CollectionReaderPaginator {
     private static func effectiveLayout(
         settings: ReaderSettings,
         viewportSize: CGSize,
-        safeAreaInsets: UIEdgeInsets
+        safeAreaInsets: UIEdgeInsets,
+        widgetInsets: UIEdgeInsets
     ) -> ReaderLayoutConfiguration {
         var layout = settings.effectiveLayoutConfiguration
         if safeAreaInsets.top > 0 {
@@ -8161,7 +8650,47 @@ private enum CollectionReaderPaginator {
         if safeAreaInsets.right > 0 {
             layout.rightMargin = max(layout.rightMargin, safeAreaInsets.right + 12)
         }
+        layout.topMargin = max(layout.topMargin, widgetInsets.top)
+        layout.bottomMargin = max(layout.bottomMargin, widgetInsets.bottom)
         return layout
+    }
+
+    static func widgetContentInsets(settings: ReaderSettings) -> UIEdgeInsets {
+        let values = settings.effectiveLayoutValues
+        let visibility = settings.widgetVisibility
+        let hasTopWidget = visibility.chapterTitle
+        let hasBottomWidget = visibility.batteryPercentage
+            || visibility.batteryIcon
+            || visibility.time
+            || visibility.chapterPageProgress
+            || visibility.globalProgress
+        return UIEdgeInsets(
+            top: hasTopWidget ? CGFloat(values.widgetTitleTopMargin + 26) : 0,
+            left: 0,
+            bottom: hasBottomWidget ? CGFloat(values.widgetBottomMargin + 26) : 0,
+            right: 0
+        )
+    }
+
+    static func withDisabledWidgets(_ settings: ReaderSettings) -> ReaderSettings {
+        var settings = settings
+        settings.widgetVisibility = .hidden
+        return settings
+    }
+
+    private static func pageContainsChapterTitle(_ text: String, chapterTitle: String) -> Bool {
+        let expectedTitle = chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !expectedTitle.isEmpty else {
+            return false
+        }
+
+        let lines = text.components(separatedBy: .newlines)
+        guard let firstContentLine = lines.first(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else {
+            return false
+        }
+        return firstContentLine.trimmingCharacters(in: .whitespacesAndNewlines) == expectedTitle
     }
 }
 
@@ -8169,17 +8698,26 @@ private final class CollectionReaderPageCell: UICollectionViewCell {
     static let reuseIdentifier = "CollectionReaderPageCell"
 
     private let pageView = CollectionCoreTextPageView()
+    private let widgetOverlay = ReaderPageWidgetOverlayView()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
         contentView.backgroundColor = .systemBackground
         pageView.translatesAutoresizingMaskIntoConstraints = false
+        widgetOverlay.translatesAutoresizingMaskIntoConstraints = false
+        widgetOverlay.isUserInteractionEnabled = false
         contentView.addSubview(pageView)
+        contentView.addSubview(widgetOverlay)
         NSLayoutConstraint.activate([
             pageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             pageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             pageView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            pageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
+            pageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
+            widgetOverlay.topAnchor.constraint(equalTo: contentView.topAnchor),
+            widgetOverlay.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            widgetOverlay.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            widgetOverlay.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
     }
 
@@ -8192,16 +8730,20 @@ private final class CollectionReaderPageCell: UICollectionViewCell {
         super.prepareForReuse()
         pageView.configure(
             attributedText: NSAttributedString(string: ""),
-            layout: ReaderSettings.default.layoutPreset.layoutConfiguration,
+            layout: CollectionReaderPaginator.withDisabledWidgets(ReaderSettings.default)
+                .effectiveLayoutConfiguration,
             backgroundColor: ReaderSettings.default.theme.backgroundColor
         )
+        widgetOverlay.isHidden = true
     }
 
     func configure(
         page: CollectionReaderPage,
         settings: ReaderSettings,
         layout: ReaderLayoutConfiguration,
-        isAutoReading _: Bool
+        widgetSnapshot: ReaderPageWidgetSnapshot,
+        widgetLayout: ReaderWidgetLayoutConfiguration,
+        showsWidgets: Bool
     ) {
         let backgroundColor = settings.theme.backgroundColor
         contentView.backgroundColor = backgroundColor
@@ -8210,6 +8752,14 @@ private final class CollectionReaderPageCell: UICollectionViewCell {
             layout: layout,
             backgroundColor: backgroundColor
         )
+        widgetOverlay.isHidden = !showsWidgets
+        if showsWidgets {
+            widgetOverlay.configure(
+                snapshot: widgetSnapshot,
+                settings: settings,
+                layout: widgetLayout
+            )
+        }
     }
 }
 

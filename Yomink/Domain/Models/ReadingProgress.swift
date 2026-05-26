@@ -79,6 +79,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         var titleParagraphSpacing: Double
         var titleFontWeightValue: Double
         var titleFontSizeDelta: Double
+        var widgetHorizontalMargin: Double
+        var widgetBottomMargin: Double
+        var widgetTitleTopMargin: Double
+        var widgetTitleLeftMargin: Double
 
         private enum CodingKeys: String, CodingKey {
             case bodyKern
@@ -95,6 +99,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             case titleParagraphSpacing
             case titleFontWeightValue
             case titleFontSizeDelta
+            case widgetHorizontalMargin
+            case widgetBottomMargin
+            case widgetTitleTopMargin
+            case widgetTitleLeftMargin
         }
 
         init(
@@ -111,7 +119,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             titleLineSpacing: Double,
             titleParagraphSpacing: Double,
             titleFontWeightValue: Double,
-            titleFontSizeDelta: Double
+            titleFontSizeDelta: Double,
+            widgetHorizontalMargin: Double,
+            widgetBottomMargin: Double,
+            widgetTitleTopMargin: Double,
+            widgetTitleLeftMargin: Double
         ) {
             self.bodyKern = bodyKern
             self.bodyLineSpacing = bodyLineSpacing
@@ -127,6 +139,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             self.titleParagraphSpacing = titleParagraphSpacing
             self.titleFontWeightValue = titleFontWeightValue
             self.titleFontSizeDelta = titleFontSizeDelta
+            self.widgetHorizontalMargin = widgetHorizontalMargin
+            self.widgetBottomMargin = widgetBottomMargin
+            self.widgetTitleTopMargin = widgetTitleTopMargin
+            self.widgetTitleLeftMargin = widgetTitleLeftMargin
         }
 
         init(from decoder: Decoder) throws {
@@ -146,6 +162,10 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             titleParagraphSpacing = (try? container.decodeIfPresent(Double.self, forKey: .titleParagraphSpacing)) ?? defaults.titleParagraphSpacing
             titleFontWeightValue = (try? container.decodeIfPresent(Double.self, forKey: .titleFontWeightValue)) ?? defaults.titleFontWeightValue
             titleFontSizeDelta = (try? container.decodeIfPresent(Double.self, forKey: .titleFontSizeDelta)) ?? defaults.titleFontSizeDelta
+            widgetHorizontalMargin = (try? container.decodeIfPresent(Double.self, forKey: .widgetHorizontalMargin)) ?? defaults.widgetHorizontalMargin
+            widgetBottomMargin = (try? container.decodeIfPresent(Double.self, forKey: .widgetBottomMargin)) ?? defaults.widgetBottomMargin
+            widgetTitleTopMargin = (try? container.decodeIfPresent(Double.self, forKey: .widgetTitleTopMargin)) ?? defaults.widgetTitleTopMargin
+            widgetTitleLeftMargin = (try? container.decodeIfPresent(Double.self, forKey: .widgetTitleLeftMargin)) ?? defaults.widgetTitleLeftMargin
         }
 
         static let compact = LayoutValues(
@@ -162,7 +182,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             titleLineSpacing: 6,
             titleParagraphSpacing: 10,
             titleFontWeightValue: 3,
-            titleFontSizeDelta: 1
+            titleFontSizeDelta: 1,
+            widgetHorizontalMargin: 16,
+            widgetBottomMargin: 24,
+            widgetTitleTopMargin: 39,
+            widgetTitleLeftMargin: 16
         )
 
         static let standard = LayoutValues(
@@ -179,7 +203,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             titleLineSpacing: 10,
             titleParagraphSpacing: 14,
             titleFontWeightValue: 3,
-            titleFontSizeDelta: 1
+            titleFontSizeDelta: 1,
+            widgetHorizontalMargin: 20,
+            widgetBottomMargin: 27,
+            widgetTitleTopMargin: 43,
+            widgetTitleLeftMargin: 20
         )
 
         static let relaxed = LayoutValues(
@@ -196,7 +224,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             titleLineSpacing: 14,
             titleParagraphSpacing: 20,
             titleFontWeightValue: 3,
-            titleFontSizeDelta: 1
+            titleFontSizeDelta: 1,
+            widgetHorizontalMargin: 24,
+            widgetBottomMargin: 31,
+            widgetTitleTopMargin: 47,
+            widgetTitleLeftMargin: 24
         )
 
         var normalized: LayoutValues {
@@ -215,7 +247,42 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             values.titleParagraphSpacing = min(max(values.titleParagraphSpacing, 0), 40)
             values.titleFontWeightValue = min(max(values.titleFontWeightValue.rounded(), 0), 5)
             values.titleFontSizeDelta = min(max(values.titleFontSizeDelta, 0), 8)
+            values.widgetHorizontalMargin = min(max(values.widgetHorizontalMargin, 0), 80)
+            values.widgetBottomMargin = min(max(values.widgetBottomMargin, 0), 90)
+            values.widgetTitleTopMargin = min(max(values.widgetTitleTopMargin, 0), 120)
+            values.widgetTitleLeftMargin = min(max(values.widgetTitleLeftMargin, 0), 80)
             return values
+        }
+    }
+
+    struct WidgetVisibility: Codable, Equatable, Sendable {
+        var chapterTitle: Bool
+        var batteryPercentage: Bool
+        var batteryIcon: Bool
+        var time: Bool
+        var chapterPageProgress: Bool
+        var globalProgress: Bool
+
+        static var `default`: WidgetVisibility {
+            WidgetVisibility(
+                chapterTitle: true,
+                batteryPercentage: true,
+                batteryIcon: true,
+                time: true,
+                chapterPageProgress: true,
+                globalProgress: false
+            )
+        }
+
+        static var hidden: WidgetVisibility {
+            WidgetVisibility(
+                chapterTitle: false,
+                batteryPercentage: false,
+                batteryIcon: false,
+                time: false,
+                chapterPageProgress: false,
+                globalProgress: false
+            )
         }
     }
 
@@ -237,6 +304,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     var autoHideHomeIndicator: Bool
     var autoHideStatusBar: Bool
     var edgeSwipeBackEnabled: Bool
+    var widgetVisibility: WidgetVisibility
 
     static let storageKey = "reader.settings"
     static let minimumFontSize = 14.0
@@ -262,6 +330,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case autoHideHomeIndicator
         case autoHideStatusBar
         case edgeSwipeBackEnabled
+        case widgetVisibility
     }
 
     static var `default`: ReaderSettings {
@@ -276,7 +345,8 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             keepScreenAwake: false,
             autoHideHomeIndicator: true,
             autoHideStatusBar: true,
-            edgeSwipeBackEnabled: true
+            edgeSwipeBackEnabled: true,
+            widgetVisibility: .default
         )
     }
 
@@ -291,7 +361,8 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         keepScreenAwake: Bool = false,
         autoHideHomeIndicator: Bool = true,
         autoHideStatusBar: Bool = true,
-        edgeSwipeBackEnabled: Bool = true
+        edgeSwipeBackEnabled: Bool = true,
+        widgetVisibility: WidgetVisibility = .default
     ) {
         self.pageMode = pageMode
         self.theme = theme
@@ -304,6 +375,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         self.autoHideHomeIndicator = autoHideHomeIndicator
         self.autoHideStatusBar = autoHideStatusBar
         self.edgeSwipeBackEnabled = edgeSwipeBackEnabled
+        self.widgetVisibility = widgetVisibility
     }
 
     init(from decoder: Decoder) throws {
@@ -321,6 +393,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         autoHideHomeIndicator = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideHomeIndicator)) ?? true
         autoHideStatusBar = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideStatusBar)) ?? true
         edgeSwipeBackEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .edgeSwipeBackEnabled)) ?? true
+        widgetVisibility = (try? container.decodeIfPresent(WidgetVisibility.self, forKey: .widgetVisibility)) ?? .default
     }
 
     var normalized: ReaderSettings {
