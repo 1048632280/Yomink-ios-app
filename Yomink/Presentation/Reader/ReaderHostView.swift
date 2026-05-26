@@ -375,6 +375,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var isMenuVisible = false
     private var isSettingsPanelVisible = false
     private var isAutoReading = false
+    private var isAutoReadingPausedForBackground = false
     private var isAutoReadPanelVisible = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
@@ -494,8 +495,18 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        UIApplication.shared.isIdleTimerDisabled = false
-        stopAutoReading(restoreLayout: false, animated: false)
+        switch UIApplication.shared.applicationState {
+        case .active:
+            UIApplication.shared.isIdleTimerDisabled = false
+            stopAutoReading(restoreLayout: false, animated: false)
+        case .background:
+            UIApplication.shared.isIdleTimerDisabled = false
+            pauseAutoReadingForBackground()
+        case .inactive:
+            break
+        @unknown default:
+            break
+        }
         saveProgressImmediately()
         saveSettingsImmediately()
     }
@@ -1539,6 +1550,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
     }
 
     private func startInitialLoad() {
@@ -1790,9 +1807,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         pages.append(page)
-        let removedPrefix = trimResidentPagesIfNeeded()
+        let removedDistance = trimResidentPagesIfNeeded()
         collectionView.reloadData()
-        adjustContentOffsetAfterRemovingPrefix(removedPrefix)
+        adjustContentOffsetAfterRemovingPrefix(distance: removedDistance)
         updateSessionState(isLoadingNextPage: false)
         if pendingTapTargetPageIndex == page.pageIndex,
            let index = pages.firstIndex(of: page) {
@@ -1806,7 +1823,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             updateSessionState(isLoadingNextPage: false)
             return
         }
-        let extent = pageExtentForCurrentMode()
+        let extent = usesVerticalScrolling
+            ? verticalExtent(for: page)
+            : pageExtentForCurrentMode()
         pages.insert(page, at: 0)
         trimResidentPagesAfterPrepending()
         collectionView.reloadData()
@@ -1828,7 +1847,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         max(0, absoluteOffset - 1)
     }
 
-    private func trimResidentPagesIfNeeded() -> Int {
+    private func trimResidentPagesIfNeeded() -> CGFloat {
         guard pages.count > Layout.maximumResidentPages,
               let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage),
@@ -1841,8 +1860,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         guard removeCount > 0 else {
             return 0
         }
+        let removedDistance = usesVerticalScrolling
+            ? pages.prefix(removeCount).reduce(CGFloat(0)) { result, page in
+                result + verticalExtent(for: page)
+            }
+            : CGFloat(removeCount) * pageExtentForCurrentMode()
         pages.removeFirst(removeCount)
-        return removeCount
+        return removedDistance
     }
 
     private func trimResidentPagesAfterPrepending() {
@@ -1860,11 +1884,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pages.removeLast(removeCount)
     }
 
-    private func adjustContentOffsetAfterRemovingPrefix(_ removePrefixCount: Int) {
-        guard removePrefixCount > 0 else {
+    private func adjustContentOffsetAfterRemovingPrefix(distance: CGFloat) {
+        guard distance > 0 else {
             return
         }
-        let distance = CGFloat(removePrefixCount) * pageExtentForCurrentMode()
         let minimumY = -collectionView.contentInset.top
         let adjusted = usesVerticalScrolling
             ? CGPoint(x: collectionView.contentOffset.x, y: max(minimumY, collectionView.contentOffset.y - distance))
@@ -2373,25 +2396,33 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         guard !pages.isEmpty else {
             return nil
         }
+        if usesVerticalScrolling {
+            return visibleVerticalPageIndex()
+        }
         let extent = pageExtentForCurrentMode()
         guard extent > 1 else {
             return nil
         }
-        let rawIndex: CGFloat
-        if isAutoReading {
-            let centeredOffset = collectionView.contentOffset.y
-                + collectionView.contentInset.top
-                + autoReadPageHeight() * 0.5
-            rawIndex = centeredOffset / extent
-        } else if usesVerticalScrolling {
-            rawIndex = (collectionView.contentOffset.y + collectionView.contentInset.top) / extent
-        } else {
-            rawIndex = collectionView.contentOffset.x / extent
-        }
-        let visibleIndex = isAutoReading
-            ? Int(rawIndex.rounded(.down))
-            : Int(round(rawIndex))
+        let rawIndex = collectionView.contentOffset.x / extent
+        let visibleIndex = Int(round(rawIndex))
         return min(max(visibleIndex, 0), pages.count - 1)
+    }
+
+    private func visibleVerticalPageIndex() -> Int? {
+        let y = collectionView.contentOffset.y
+            + collectionView.contentInset.top
+            + (isAutoReading ? autoReadPageHeight() * 0.5 : 0)
+        var accumulatedHeight: CGFloat = 0
+
+        for index in pages.indices {
+            let pageHeight = verticalExtentForPage(at: index)
+            if y < accumulatedHeight + pageHeight {
+                return index
+            }
+            accumulatedHeight += pageHeight
+        }
+
+        return pages.indices.last
     }
 
     private func pageExtentForCurrentMode() -> CGFloat {
@@ -2411,10 +2442,28 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if usesVerticalScrolling {
             return CGPoint(
                 x: 0,
-                y: CGFloat(index) * pageExtentForCurrentMode() - collectionView.contentInset.top
+                y: verticalOffset(forPageAt: index) - collectionView.contentInset.top
             )
         }
         return CGPoint(x: CGFloat(index) * pageExtentForCurrentMode(), y: 0)
+    }
+
+    private func verticalOffset(forPageAt index: Int) -> CGFloat {
+        let safeIndex = min(max(index, 0), pages.count)
+        return pages.prefix(safeIndex).reduce(CGFloat(0)) { result, page in
+            result + verticalExtent(for: page)
+        }
+    }
+
+    private func verticalExtentForPage(at index: Int) -> CGFloat {
+        guard pages.indices.contains(index) else {
+            return verticalContinuousPageHeight()
+        }
+        return verticalExtent(for: pages[index])
+    }
+
+    private func verticalExtent(for page: CollectionReaderPage) -> CGFloat {
+        max(1, page.verticalExtent)
     }
 
     private func scrollToPage(at index: Int, animated _: Bool) {
@@ -2502,7 +2551,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         configureCollectionViewForAutoReading()
         collectionView.reloadData()
         alignContentOffsetToCurrentPage()
-        setAutoReadPanelVisible(true, animated: true)
+        setAutoReadPanelVisible(false, animated: false)
         updateAutoReadButton()
         startAutoReadDisplayLink()
     }
@@ -2514,6 +2563,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         invalidateAutoReadDisplayLink()
         collectionView.layer.removeAllAnimations()
         updateCurrentPageFromVisiblePage()
+        isAutoReadingPausedForBackground = false
         isAutoReading = false
         setAutoReadPanelVisible(false, animated: animated)
         updateAutoReadButton()
@@ -2525,6 +2575,32 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             updateFixedWidgetOverlay()
         }
         saveProgressImmediately()
+    }
+
+    private func pauseAutoReadingForBackground() {
+        guard isAutoReading else {
+            return
+        }
+        invalidateAutoReadDisplayLink()
+        collectionView.layer.removeAllAnimations()
+        updateCurrentPageFromVisiblePage()
+        setAutoReadPanelVisible(false, animated: false)
+        isAutoReadingPausedForBackground = true
+        saveProgressImmediately()
+    }
+
+    private func resumeAutoReadingAfterBackgroundIfNeeded() {
+        guard isAutoReading,
+              isAutoReadingPausedForBackground else {
+            return
+        }
+        isAutoReadingPausedForBackground = false
+        updateReaderChromePreferences()
+        configureCollectionViewForAutoReading()
+        collectionView.reloadData()
+        alignContentOffsetToCurrentPage()
+        updateAutoReadButton()
+        startAutoReadDisplayLink()
     }
 
     private func alignContentOffsetToCurrentPage() {
@@ -2994,10 +3070,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             guard !autoReadPanel.frame.contains(location) else {
                 return
             }
-            let centralHorizontalRange = view.bounds.width * 0.25...view.bounds.width * 0.75
-            let centralVerticalRange = view.bounds.height * 0.20...view.bounds.height * 0.80
-            guard centralHorizontalRange.contains(location.x),
-                  centralVerticalRange.contains(location.y) else {
+            guard tapAction(at: location) == .menu else {
                 return
             }
             setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
@@ -3075,8 +3148,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     @objc private func appDidEnterBackground() {
+        pauseAutoReadingForBackground()
         saveProgressImmediately()
-        stopAutoReading(restoreLayout: true, animated: false)
+    }
+
+    @objc private func appDidBecomeActive() {
+        resumeAutoReadingAfterBackgroundIfNeeded()
     }
 
     @objc private func showBookDetail() {
@@ -3245,7 +3322,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         sizeForItemAt indexPath: IndexPath
     ) -> CGSize {
         if usesVerticalScrolling {
-            return CGSize(width: collectionView.bounds.width, height: verticalContinuousPageHeight())
+            return CGSize(
+                width: collectionView.bounds.width,
+                height: verticalExtentForPage(at: indexPath.item)
+            )
         }
         return collectionView.bounds.size
     }
@@ -8322,11 +8402,13 @@ private final class ChapterPaginator: @unchecked Sendable {
         let attributedText: NSAttributedString
         let startDisplayUTF16Index: Int
         let displayUTF16Length: Int
+        let usedHeight: CGFloat
     }
 
     private let attributedText: NSAttributedString
     private(set) var pageCharacterRanges: [NSRange] = []
     private(set) var pageStartDisplayUTF16Indexes: [Int] = []
+    private(set) var pageUsedHeights: [CGFloat] = []
 
     var pageCount: Int {
         pageCharacterRanges.count
@@ -8346,18 +8428,23 @@ private final class ChapterPaginator: @unchecked Sendable {
             return Page(
                 attributedText: NSAttributedString(string: ""),
                 startDisplayUTF16Index: 0,
-                displayUTF16Length: 0
+                displayUTF16Length: 0,
+                usedHeight: 1
             )
         }
 
         let safeIndex = min(max(index, 0), pageCharacterRanges.count - 1)
         let range = pageCharacterRanges[safeIndex]
         let pageText = attributedText.attributedSubstring(from: range)
+        let usedHeight = pageUsedHeights.indices.contains(safeIndex)
+            ? pageUsedHeights[safeIndex]
+            : 1
 
         return Page(
             attributedText: pageText,
             startDisplayUTF16Index: range.location,
-            displayUTF16Length: range.length
+            displayUTF16Length: range.length,
+            usedHeight: usedHeight
         )
     }
 
@@ -8430,6 +8517,12 @@ private final class ChapterPaginator: @unchecked Sendable {
             if pageString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
                 pageCharacterRanges.append(characterRange)
                 pageStartDisplayUTF16Indexes.append(characterRange.location)
+                pageUsedHeights.append(
+                    Self.usedHeight(
+                        for: frame,
+                        fallback: 1
+                    )
+                )
             }
 
             startIndex = characterRange.location + characterRange.length
@@ -8438,7 +8531,51 @@ private final class ChapterPaginator: @unchecked Sendable {
         if pageCharacterRanges.isEmpty {
             pageCharacterRanges = [NSRange(location: 0, length: textLength)]
             pageStartDisplayUTF16Indexes = [0]
+            pageUsedHeights = [max(1, fittingSize.height)]
         }
+    }
+
+    private static func usedHeight(for frame: CTFrame, fallback: CGFloat) -> CGFloat {
+        let lines = CTFrameGetLines(frame)
+        let lineCount = CFArrayGetCount(lines)
+        guard lineCount > 0 else {
+            return max(1, fallback)
+        }
+
+        var origins = Array(repeating: CGPoint.zero, count: lineCount)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        let firstLine = unsafeBitCast(
+            CFArrayGetValueAtIndex(lines, 0),
+            to: CTLine.self
+        )
+        let lastLine = unsafeBitCast(
+            CFArrayGetValueAtIndex(lines, lineCount - 1),
+            to: CTLine.self
+        )
+
+        var firstAscent: CGFloat = 0
+        var firstDescent: CGFloat = 0
+        var firstLeading: CGFloat = 0
+        CTLineGetTypographicBounds(
+            firstLine,
+            &firstAscent,
+            &firstDescent,
+            &firstLeading
+        )
+
+        var lastAscent: CGFloat = 0
+        var lastDescent: CGFloat = 0
+        var lastLeading: CGFloat = 0
+        CTLineGetTypographicBounds(
+            lastLine,
+            &lastAscent,
+            &lastDescent,
+            &lastLeading
+        )
+
+        let top = origins[0].y + firstAscent
+        let bottom = origins[lineCount - 1].y - lastDescent
+        return max(1, ceil(top - bottom))
     }
 }
 
@@ -8456,6 +8593,7 @@ private struct CollectionReaderPage: Equatable, @unchecked Sendable {
     let startChapterOffset: Int
     let globalProgress: Double
     let containsChapterTitle: Bool
+    let verticalExtent: CGFloat
     let attributedText: NSAttributedString
     let text: String
 
@@ -8574,6 +8712,12 @@ private enum CollectionReaderPaginator {
             let globalProgress = min(max(Double(startAbsoluteOffset) / Double(totalByteLength), 0), 1)
             let containsChapterTitle = localPageIndex == 0
                 && Self.pageContainsChapterTitle(pageText, chapterTitle: chapter.title)
+            let pageGap = Self.pageGap(
+                displayText: displayText,
+                pageEndDisplayIndex: pageEndDisplayIndex,
+                layout: layout
+            )
+            let verticalExtent = ceil(page.usedHeight + pageGap)
 
             guard endAbsoluteOffset > startAbsoluteOffset else {
                 throw CollectionReaderError.emptyPage
@@ -8593,6 +8737,7 @@ private enum CollectionReaderPaginator {
                 startChapterOffset: pageStartOffset,
                 globalProgress: globalProgress,
                 containsChapterTitle: containsChapterTitle,
+                verticalExtent: verticalExtent,
                 attributedText: page.attributedText,
                 text: pageText
             )
@@ -8676,6 +8821,61 @@ private enum CollectionReaderPaginator {
         var settings = settings
         settings.widgetVisibility = .hidden
         return settings
+    }
+
+    private static func pageGap(
+        displayText: String,
+        pageEndDisplayIndex: Int,
+        layout: ReaderLayoutConfiguration
+    ) -> CGFloat {
+        guard pageEndDisplayIndex < displayText.utf16.count else {
+            return 0
+        }
+        return isParagraphBoundary(in: displayText, atUTF16Index: pageEndDisplayIndex)
+            ? layout.bodyParagraphSpacing
+            : layout.bodyLineSpacing
+    }
+
+    private static func isParagraphBoundary(
+        in text: String,
+        atUTF16Index index: Int
+    ) -> Bool {
+        let clampedIndex = min(max(index, 0), text.utf16.count)
+        let currentIndex = stringIndex(in: text, atUTF16Offset: clampedIndex)
+        let previousIndex = previousCharacterIndex(in: text, before: currentIndex)
+
+        let previousIsNewline = previousIndex.map { isNewline(text[$0]) } ?? false
+        let currentIsNewline = currentIndex < text.endIndex && isNewline(text[currentIndex])
+        return previousIsNewline || currentIsNewline
+    }
+
+    private static func isNewline(_ character: Character) -> Bool {
+        character == "\n" || character == "\r"
+    }
+
+    private static func stringIndex(
+        in text: String,
+        atUTF16Offset offset: Int
+    ) -> String.Index {
+        var candidate = min(max(offset, 0), text.utf16.count)
+        while candidate <= text.utf16.count {
+            let utf16Index = text.utf16.index(text.utf16.startIndex, offsetBy: candidate)
+            if let index = String.Index(utf16Index, within: text) {
+                return index
+            }
+            candidate += 1
+        }
+        return text.endIndex
+    }
+
+    private static func previousCharacterIndex(
+        in text: String,
+        before index: String.Index
+    ) -> String.Index? {
+        guard index > text.startIndex else {
+            return nil
+        }
+        return text.index(before: index)
     }
 
     private static func pageContainsChapterTitle(_ text: String, chapterTitle: String) -> Bool {
