@@ -2740,23 +2740,29 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         let baseSpeed = currentAutoReadBaseSpeed()
-        // 指数衰减,把当前速度朝基线匀速收敛(约 1 秒到达基线)。
-        // 用户松手后注入的 autoReadVelocity > baseSpeed 时形成"快速 → 减速 → 匀速"惯性;
-        // 平稳期 autoReadVelocity == baseSpeed,decay 为恒等,等同于匀速。
+        // 指数衰减,把当前速度朝目标收敛(约 1 秒到达目标):
+        //   向下(velocity >= 0):目标 = baseSpeed,形成"快速 → 减速 → 匀速"。
+        //   向上(velocity < 0):目标 = 0,反向惯性自然衰减到停止,下一帧切回向下匀速。
+        let target: CGFloat = autoReadVelocity >= 0 ? baseSpeed : 0
         let decay = CGFloat(exp(-Double(Self.autoReadInertiaDecayConstant) * interval))
-        autoReadVelocity = baseSpeed + (autoReadVelocity - baseSpeed) * decay
-        if abs(autoReadVelocity - baseSpeed) < 0.5 {
+        autoReadVelocity = target + (autoReadVelocity - target) * decay
+        if autoReadVelocity < 0, autoReadVelocity > -0.5 {
+            // 反向惯性收敛到 0,接力到向下匀速。
+            autoReadVelocity = baseSpeed
+        } else if autoReadVelocity > 0, abs(autoReadVelocity - baseSpeed) < 0.5 {
             autoReadVelocity = baseSpeed
         }
         let distance = autoReadVelocity * CGFloat(interval)
-        guard distance > 0 else {
+        if distance == 0 {
             return
         }
+        let minOffsetY = -collectionView.contentInset.top
         let maxOffsetY = max(
-            -collectionView.contentInset.top,
+            minOffsetY,
             collectionView.contentSize.height + collectionView.contentInset.bottom - collectionView.bounds.height
         )
-        let nextOffsetY = min(maxOffsetY, collectionView.contentOffset.y + distance)
+        let proposedY = collectionView.contentOffset.y + distance
+        let nextOffsetY = max(minOffsetY, min(maxOffsetY, proposedY))
         collectionView.setContentOffset(
             CGPoint(x: collectionView.contentOffset.x, y: nextOffsetY),
             animated: false
@@ -2765,10 +2771,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if displayNeedsProgressSave() {
             scheduleProgressSave()
         }
-        if nextOffsetY >= max(-collectionView.contentInset.top, maxOffsetY - autoReadPageHeight() * 1.6) {
+        if distance > 0,
+           nextOffsetY >= max(minOffsetY, maxOffsetY - autoReadPageHeight() * 1.6) {
             loadNextPageIfNeeded()
         }
+        if distance < 0,
+           nextOffsetY <= minOffsetY + autoReadPageHeight() * 1.6 {
+            loadPreviousPageIfNeeded()
+        }
         if nextOffsetY >= maxOffsetY,
+           distance > 0,
            (didReachEndOfBook || (pages.last?.endAbsoluteOffset ?? 0) >= (chapters.last?.endOffset ?? 0)) {
             stopAutoReading(restoreLayout: true, animated: true)
         }
@@ -3425,8 +3437,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         // 方向上 +y 对应 contentOffset.y 增大(向下翻),与自动阅读方向一致。
         let releaseSpeed = velocity.y * 1000
         let baseSpeed = currentAutoReadBaseSpeed()
-        // 向上拖或小于基线的低速松手统一按基线处理:立即恢复匀速,不做反向/拖沓减速。
-        autoReadVelocity = max(releaseSpeed, baseSpeed)
+        // 向下松手:小于基线的低速直接回到匀速;高于基线则保留向下惯性,衰减到 baseSpeed。
+        // 向上松手:保留向上惯性,衰减到 0,然后由 advanceAutoRead 接力切回向下匀速。
+        if releaseSpeed < 0 {
+            autoReadVelocity = releaseSpeed
+        } else {
+            autoReadVelocity = max(releaseSpeed, baseSpeed)
+        }
         lastAutoReadTimestamp = nil
     }
 
