@@ -135,10 +135,16 @@
 "reader.settings.layout.bodyKern" = "字间距";
 "reader.settings.layout.bodyLineSpacing" = "行距";
 "reader.settings.layout.bodyParagraphSpacing" = "段距";
+"reader.settings.layout.bodyTopMargin" = "上边距";
+"reader.settings.layout.bodyBottomMargin" = "下边距";
+"reader.settings.layout.bodyLeftMargin" = "左边距";
+"reader.settings.layout.bodyRightMargin" = "右边距";
+"reader.settings.layout.bodyFontWeight" = "字体粗细";
 "reader.settings.layout.firstLineIndent" = "首行缩进";
 "reader.settings.layout.titleKern" = "字间距";
 "reader.settings.layout.titleLineSpacing" = "行距";
 "reader.settings.layout.titleParagraphSpacing" = "段后距";
+"reader.settings.layout.titleFontWeight" = "字体粗细";
 "reader.settings.layout.titleFontSizeDelta" = "标题字号";
 "reader.autoRead.placeholder" = "自动阅读";
 "reader.autoRead.speed" = "自动阅读速度";

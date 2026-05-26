@@ -71,6 +71,16 @@ enum ReaderTextFilter {
         )
     }
 
+    static func readingFilteredText(
+        rules: [TextFilterRule],
+        to originalText: String
+    ) -> FilteredReaderText {
+        let filtered = rules.isEmpty
+            ? identityFilteredText(for: originalText)
+            : apply(rules: rules, to: originalText)
+        return removingBlankLines(from: filtered)
+    }
+
     static func apply(
         rules: [TextFilterRule],
         to originalText: String
@@ -98,6 +108,57 @@ enum ReaderTextFilter {
         }
 
         return filteredText(from: characters, fallbackEndOffset: offset)
+    }
+
+    private static func removingBlankLines(from filtered: FilteredReaderText) -> FilteredReaderText {
+        guard filtered.displayText.isEmpty == false else {
+            return filtered
+        }
+
+        let nsText = filtered.displayText as NSString
+        let fullRange = NSRange(location: 0, length: nsText.length)
+        var textParts: [String] = []
+        var offsets: [Int] = []
+        var lastOriginalOffset = filtered.originalByteOffset(atDisplayUTF16Index: 0)
+
+        nsText.enumerateSubstrings(
+            in: fullRange,
+            options: [.byLines, .substringNotRequired]
+        ) { _, lineRange, enclosingRange, _ in
+            let line = nsText.substring(with: lineRange)
+            guard line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+                lastOriginalOffset = filtered.originalByteOffset(
+                    atDisplayUTF16Index: enclosingRange.location + enclosingRange.length
+                )
+                return
+            }
+
+            if textParts.isEmpty == false {
+                textParts.append("\n")
+                offsets.append(lastOriginalOffset)
+            }
+
+            textParts.append(line)
+            for index in lineRange.location..<(lineRange.location + lineRange.length) {
+                offsets.append(filtered.originalByteOffset(atDisplayUTF16Index: index))
+            }
+            lastOriginalOffset = filtered.originalByteOffset(
+                atDisplayUTF16Index: enclosingRange.location + enclosingRange.length
+            )
+        }
+
+        guard textParts.isEmpty == false else {
+            return FilteredReaderText(
+                displayText: "",
+                originalByteOffsetsByUTF16Index: [lastOriginalOffset]
+            )
+        }
+
+        offsets.append(lastOriginalOffset)
+        return FilteredReaderText(
+            displayText: textParts.joined(),
+            originalByteOffsetsByUTF16Index: offsets
+        )
     }
 
     private static func apply(

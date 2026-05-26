@@ -68,20 +68,100 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         var bodyKern: Double
         var bodyLineSpacing: Double
         var bodyParagraphSpacing: Double
+        var bodyTopMargin: Double
+        var bodyBottomMargin: Double
+        var bodyLeftMargin: Double
+        var bodyRightMargin: Double
+        var bodyFontWeightValue: Double
         var firstLineIndentEms: Double
         var titleKern: Double
         var titleLineSpacing: Double
         var titleParagraphSpacing: Double
+        var titleFontWeightValue: Double
         var titleFontSizeDelta: Double
+
+        private enum CodingKeys: String, CodingKey {
+            case bodyKern
+            case bodyLineSpacing
+            case bodyParagraphSpacing
+            case bodyTopMargin
+            case bodyBottomMargin
+            case bodyLeftMargin
+            case bodyRightMargin
+            case bodyFontWeightValue
+            case firstLineIndentEms
+            case titleKern
+            case titleLineSpacing
+            case titleParagraphSpacing
+            case titleFontWeightValue
+            case titleFontSizeDelta
+        }
+
+        init(
+            bodyKern: Double,
+            bodyLineSpacing: Double,
+            bodyParagraphSpacing: Double,
+            bodyTopMargin: Double,
+            bodyBottomMargin: Double,
+            bodyLeftMargin: Double,
+            bodyRightMargin: Double,
+            bodyFontWeightValue: Double,
+            firstLineIndentEms: Double,
+            titleKern: Double,
+            titleLineSpacing: Double,
+            titleParagraphSpacing: Double,
+            titleFontWeightValue: Double,
+            titleFontSizeDelta: Double
+        ) {
+            self.bodyKern = bodyKern
+            self.bodyLineSpacing = bodyLineSpacing
+            self.bodyParagraphSpacing = bodyParagraphSpacing
+            self.bodyTopMargin = bodyTopMargin
+            self.bodyBottomMargin = bodyBottomMargin
+            self.bodyLeftMargin = bodyLeftMargin
+            self.bodyRightMargin = bodyRightMargin
+            self.bodyFontWeightValue = bodyFontWeightValue
+            self.firstLineIndentEms = firstLineIndentEms
+            self.titleKern = titleKern
+            self.titleLineSpacing = titleLineSpacing
+            self.titleParagraphSpacing = titleParagraphSpacing
+            self.titleFontWeightValue = titleFontWeightValue
+            self.titleFontSizeDelta = titleFontSizeDelta
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let defaults = Self.standard
+            bodyKern = (try? container.decodeIfPresent(Double.self, forKey: .bodyKern)) ?? defaults.bodyKern
+            bodyLineSpacing = (try? container.decodeIfPresent(Double.self, forKey: .bodyLineSpacing)) ?? defaults.bodyLineSpacing
+            bodyParagraphSpacing = (try? container.decodeIfPresent(Double.self, forKey: .bodyParagraphSpacing)) ?? defaults.bodyParagraphSpacing
+            bodyTopMargin = (try? container.decodeIfPresent(Double.self, forKey: .bodyTopMargin)) ?? defaults.bodyTopMargin
+            bodyBottomMargin = (try? container.decodeIfPresent(Double.self, forKey: .bodyBottomMargin)) ?? defaults.bodyBottomMargin
+            bodyLeftMargin = (try? container.decodeIfPresent(Double.self, forKey: .bodyLeftMargin)) ?? defaults.bodyLeftMargin
+            bodyRightMargin = (try? container.decodeIfPresent(Double.self, forKey: .bodyRightMargin)) ?? defaults.bodyRightMargin
+            bodyFontWeightValue = (try? container.decodeIfPresent(Double.self, forKey: .bodyFontWeightValue)) ?? defaults.bodyFontWeightValue
+            firstLineIndentEms = (try? container.decodeIfPresent(Double.self, forKey: .firstLineIndentEms)) ?? defaults.firstLineIndentEms
+            titleKern = (try? container.decodeIfPresent(Double.self, forKey: .titleKern)) ?? defaults.titleKern
+            titleLineSpacing = (try? container.decodeIfPresent(Double.self, forKey: .titleLineSpacing)) ?? defaults.titleLineSpacing
+            titleParagraphSpacing = (try? container.decodeIfPresent(Double.self, forKey: .titleParagraphSpacing)) ?? defaults.titleParagraphSpacing
+            titleFontWeightValue = (try? container.decodeIfPresent(Double.self, forKey: .titleFontWeightValue)) ?? defaults.titleFontWeightValue
+            titleFontSizeDelta = (try? container.decodeIfPresent(Double.self, forKey: .titleFontSizeDelta)) ?? defaults.titleFontSizeDelta
+        }
 
         static let compact = LayoutValues(
             bodyKern: 0,
             bodyLineSpacing: 6,
             bodyParagraphSpacing: 8,
+            bodyTopMargin: 56,
+            bodyBottomMargin: 36,
+            bodyLeftMargin: 16,
+            bodyRightMargin: 16,
+            bodyFontWeightValue: 0,
             firstLineIndentEms: 2,
             titleKern: 0,
             titleLineSpacing: 6,
             titleParagraphSpacing: 10,
+            titleFontWeightValue: 3,
             titleFontSizeDelta: 1
         )
 
@@ -89,10 +169,16 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             bodyKern: 0,
             bodyLineSpacing: 10,
             bodyParagraphSpacing: 14,
+            bodyTopMargin: 72,
+            bodyBottomMargin: 46,
+            bodyLeftMargin: 20,
+            bodyRightMargin: 20,
+            bodyFontWeightValue: 0,
             firstLineIndentEms: 2,
             titleKern: 0,
             titleLineSpacing: 10,
             titleParagraphSpacing: 14,
+            titleFontWeightValue: 3,
             titleFontSizeDelta: 1
         )
 
@@ -100,10 +186,16 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             bodyKern: 0,
             bodyLineSpacing: 14,
             bodyParagraphSpacing: 20,
+            bodyTopMargin: 88,
+            bodyBottomMargin: 58,
+            bodyLeftMargin: 24,
+            bodyRightMargin: 24,
+            bodyFontWeightValue: 0,
             firstLineIndentEms: 2,
             titleKern: 0,
             titleLineSpacing: 14,
             titleParagraphSpacing: 20,
+            titleFontWeightValue: 3,
             titleFontSizeDelta: 1
         )
 
@@ -112,10 +204,16 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             values.bodyKern = min(max(values.bodyKern, -1), 3)
             values.bodyLineSpacing = min(max(values.bodyLineSpacing, 0), 28)
             values.bodyParagraphSpacing = min(max(values.bodyParagraphSpacing, 0), 36)
+            values.bodyTopMargin = min(max(values.bodyTopMargin, 0), 160)
+            values.bodyBottomMargin = min(max(values.bodyBottomMargin, 0), 140)
+            values.bodyLeftMargin = min(max(values.bodyLeftMargin, 0), 80)
+            values.bodyRightMargin = min(max(values.bodyRightMargin, 0), 80)
+            values.bodyFontWeightValue = min(max(values.bodyFontWeightValue.rounded(), 0), 5)
             values.firstLineIndentEms = min(max(values.firstLineIndentEms, 0), 4)
             values.titleKern = min(max(values.titleKern, -1), 3)
             values.titleLineSpacing = min(max(values.titleLineSpacing, 0), 28)
             values.titleParagraphSpacing = min(max(values.titleParagraphSpacing, 0), 40)
+            values.titleFontWeightValue = min(max(values.titleFontWeightValue.rounded(), 0), 5)
             values.titleFontSizeDelta = min(max(values.titleFontSizeDelta, 0), 8)
             return values
         }

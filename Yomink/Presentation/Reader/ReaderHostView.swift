@@ -166,10 +166,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         case bodyKern
         case bodyLineSpacing
         case bodyParagraphSpacing
+        case bodyTopMargin
+        case bodyBottomMargin
+        case bodyLeftMargin
+        case bodyRightMargin
+        case bodyFontWeight
         case firstLineIndent
         case titleKern
         case titleLineSpacing
         case titleParagraphSpacing
+        case titleFontWeight
         case titleFontSizeDelta
 
         var titleKey: String {
@@ -180,6 +186,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return "reader.settings.layout.bodyLineSpacing"
             case .bodyParagraphSpacing:
                 return "reader.settings.layout.bodyParagraphSpacing"
+            case .bodyTopMargin:
+                return "reader.settings.layout.bodyTopMargin"
+            case .bodyBottomMargin:
+                return "reader.settings.layout.bodyBottomMargin"
+            case .bodyLeftMargin:
+                return "reader.settings.layout.bodyLeftMargin"
+            case .bodyRightMargin:
+                return "reader.settings.layout.bodyRightMargin"
+            case .bodyFontWeight:
+                return "reader.settings.layout.bodyFontWeight"
             case .firstLineIndent:
                 return "reader.settings.layout.firstLineIndent"
             case .titleKern:
@@ -188,6 +204,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return "reader.settings.layout.titleLineSpacing"
             case .titleParagraphSpacing:
                 return "reader.settings.layout.titleParagraphSpacing"
+            case .titleFontWeight:
+                return "reader.settings.layout.titleFontWeight"
             case .titleFontSizeDelta:
                 return "reader.settings.layout.titleFontSizeDelta"
             }
@@ -199,6 +217,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return 0.5
             case .firstLineIndent:
                 return 0.5
+            case .bodyFontWeight, .titleFontWeight:
+                return 1
             default:
                 return 1
             }
@@ -212,6 +232,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return values.bodyLineSpacing
             case .bodyParagraphSpacing:
                 return values.bodyParagraphSpacing
+            case .bodyTopMargin:
+                return values.bodyTopMargin
+            case .bodyBottomMargin:
+                return values.bodyBottomMargin
+            case .bodyLeftMargin:
+                return values.bodyLeftMargin
+            case .bodyRightMargin:
+                return values.bodyRightMargin
+            case .bodyFontWeight:
+                return values.bodyFontWeightValue
             case .firstLineIndent:
                 return values.firstLineIndentEms
             case .titleKern:
@@ -220,6 +250,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return values.titleLineSpacing
             case .titleParagraphSpacing:
                 return values.titleParagraphSpacing
+            case .titleFontWeight:
+                return values.titleFontWeightValue
             case .titleFontSizeDelta:
                 return values.titleFontSizeDelta
             }
@@ -233,6 +265,16 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 values.bodyLineSpacing += delta
             case .bodyParagraphSpacing:
                 values.bodyParagraphSpacing += delta
+            case .bodyTopMargin:
+                values.bodyTopMargin += delta
+            case .bodyBottomMargin:
+                values.bodyBottomMargin += delta
+            case .bodyLeftMargin:
+                values.bodyLeftMargin += delta
+            case .bodyRightMargin:
+                values.bodyRightMargin += delta
+            case .bodyFontWeight:
+                values.bodyFontWeightValue += delta
             case .firstLineIndent:
                 values.firstLineIndentEms += delta
             case .titleKern:
@@ -241,6 +283,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 values.titleLineSpacing += delta
             case .titleParagraphSpacing:
                 values.titleParagraphSpacing += delta
+            case .titleFontWeight:
+                values.titleFontWeightValue += delta
             case .titleFontSizeDelta:
                 values.titleFontSizeDelta += delta
             }
@@ -251,6 +295,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             switch self {
             case .bodyKern, .firstLineIndent, .titleKern:
                 return String(format: "%.1f", value)
+            case .bodyFontWeight, .titleFontWeight:
+                return String(format: "%.0f", value)
             default:
                 return String(format: "%.0f", value)
             }
@@ -1031,11 +1077,27 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             settingsLayoutPresetControl,
             layoutAdjustmentGroup(
                 titleKey: "reader.settings.layout.bodyGroup",
-                adjustments: [.bodyKern, .bodyLineSpacing, .bodyParagraphSpacing, .firstLineIndent]
+                adjustments: [
+                    .bodyKern,
+                    .bodyLineSpacing,
+                    .bodyParagraphSpacing,
+                    .bodyTopMargin,
+                    .bodyBottomMargin,
+                    .bodyLeftMargin,
+                    .bodyRightMargin,
+                    .bodyFontWeight,
+                    .firstLineIndent
+                ]
             ),
             layoutAdjustmentGroup(
                 titleKey: "reader.settings.layout.titleGroup",
-                adjustments: [.titleKern, .titleLineSpacing, .titleParagraphSpacing, .titleFontSizeDelta]
+                adjustments: [
+                    .titleKern,
+                    .titleLineSpacing,
+                    .titleParagraphSpacing,
+                    .titleFontWeight,
+                    .titleFontSizeDelta
+                ]
             )
         ])
         stack.axis = .vertical
@@ -2706,6 +2768,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                   !floatingActionStack.frame.contains(location) else {
                 return
             }
+            setMenuVisible(false, animated: true)
+            return
         }
 
         switch tapAction(at: location) {
@@ -4516,7 +4580,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
     }
 
     private func applyCurrentFilters() {
-        currentFilteredText = ReaderTextFilter.apply(
+        currentFilteredText = ReaderTextFilter.readingFilteredText(
             rules: filterRules,
             to: originalChapterText
         )
@@ -4693,7 +4757,7 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
                     paginator = try await Task.detached(priority: .utility) {
                         try Task.checkCancellation()
                         let filteredText = ReaderTextFilter
-                            .apply(rules: filterRules, to: text)
+                            .readingFilteredText(rules: filterRules, to: text)
                             .displayText
                         let paginator = ChapterPaginator(
                             text: filteredText,
@@ -5652,6 +5716,8 @@ final class ReaderViewController: UIViewController, UITextViewDelegate, UIGestur
             else {
                 return
             }
+            setMenuVisible(false, animated: true)
+            return
         }
 
         switch touchAreaAction(at: location) {
@@ -6468,6 +6534,7 @@ private struct ReaderLayoutConfiguration {
     var bottomMargin: CGFloat
     var leftMargin: CGFloat
     var rightMargin: CGFloat
+    var bodyFontWeight: UIFont.Weight
     var firstLineIndentEms: CGFloat
     var titleKern: CGFloat
     var titleLineSpacing: CGFloat
@@ -6500,7 +6567,7 @@ private struct ReaderTypography: @unchecked Sendable {
 
         let bodyFont = scaledFont(
             size: CGFloat(fontSize),
-            weight: .regular
+            weight: layout.bodyFontWeight
         )
         let titleFont = scaledFont(
             size: CGFloat(fontSize) + layout.titleFontSizeDelta,
@@ -6680,7 +6747,29 @@ private struct ReaderTypography: @unchecked Sendable {
             return false
         }
 
-        return nsText.substring(with: paragraphRange).hasPrefix("　　")
+        let paragraph = nsText.substring(with: paragraphRange)
+        guard let firstCharacter = paragraph.first else {
+            return false
+        }
+
+        return firstCharacter.isWhitespace
+    }
+}
+
+private func readerFontWeight(for value: Double) -> UIFont.Weight {
+    switch Int(value.rounded()) {
+    case 0:
+        return .regular
+    case 1:
+        return .medium
+    case 2:
+        return .semibold
+    case 3:
+        return .bold
+    case 4:
+        return .heavy
+    default:
+        return .black
     }
 }
 
@@ -6697,48 +6786,51 @@ private extension ReaderSettings.LayoutPreset {
                 bodyKern: CGFloat(values.bodyKern),
                 bodyLineSpacing: CGFloat(values.bodyLineSpacing),
                 bodyParagraphSpacing: CGFloat(values.bodyParagraphSpacing),
-                topMargin: 56,
-                bottomMargin: 36,
-                leftMargin: 16,
-                rightMargin: 16,
+                topMargin: CGFloat(values.bodyTopMargin),
+                bottomMargin: CGFloat(values.bodyBottomMargin),
+                leftMargin: CGFloat(values.bodyLeftMargin),
+                rightMargin: CGFloat(values.bodyRightMargin),
+                bodyFontWeight: readerFontWeight(for: values.bodyFontWeightValue),
                 firstLineIndentEms: CGFloat(values.firstLineIndentEms),
                 titleKern: CGFloat(values.titleKern),
                 titleLineSpacing: CGFloat(values.titleLineSpacing),
                 titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
                 titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
-                titleFontWeight: .bold
+                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue)
             )
         case .standard, .custom:
             return ReaderLayoutConfiguration(
                 bodyKern: CGFloat(values.bodyKern),
                 bodyLineSpacing: CGFloat(values.bodyLineSpacing),
                 bodyParagraphSpacing: CGFloat(values.bodyParagraphSpacing),
-                topMargin: 72,
-                bottomMargin: 46,
-                leftMargin: 20,
-                rightMargin: 20,
+                topMargin: CGFloat(values.bodyTopMargin),
+                bottomMargin: CGFloat(values.bodyBottomMargin),
+                leftMargin: CGFloat(values.bodyLeftMargin),
+                rightMargin: CGFloat(values.bodyRightMargin),
+                bodyFontWeight: readerFontWeight(for: values.bodyFontWeightValue),
                 firstLineIndentEms: CGFloat(values.firstLineIndentEms),
                 titleKern: CGFloat(values.titleKern),
                 titleLineSpacing: CGFloat(values.titleLineSpacing),
                 titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
                 titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
-                titleFontWeight: .bold
+                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue)
             )
         case .relaxed:
             return ReaderLayoutConfiguration(
                 bodyKern: CGFloat(values.bodyKern),
                 bodyLineSpacing: CGFloat(values.bodyLineSpacing),
                 bodyParagraphSpacing: CGFloat(values.bodyParagraphSpacing),
-                topMargin: 88,
-                bottomMargin: 58,
-                leftMargin: 24,
-                rightMargin: 24,
+                topMargin: CGFloat(values.bodyTopMargin),
+                bottomMargin: CGFloat(values.bodyBottomMargin),
+                leftMargin: CGFloat(values.bodyLeftMargin),
+                rightMargin: CGFloat(values.bodyRightMargin),
+                bodyFontWeight: readerFontWeight(for: values.bodyFontWeightValue),
                 firstLineIndentEms: CGFloat(values.firstLineIndentEms),
                 titleKern: CGFloat(values.titleKern),
                 titleLineSpacing: CGFloat(values.titleLineSpacing),
                 titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
                 titleFontSizeDelta: CGFloat(values.titleFontSizeDelta),
-                titleFontWeight: .bold
+                titleFontWeight: readerFontWeight(for: values.titleFontWeightValue)
             )
         }
     }
@@ -7844,8 +7936,11 @@ private final class ChapterPaginator: @unchecked Sendable {
                 break
             }
 
-            pageCharacterRanges.append(characterRange)
-            pageStartDisplayUTF16Indexes.append(characterRange.location)
+            let pageString = attributedText.attributedSubstring(from: characterRange).string
+            if pageString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                pageCharacterRanges.append(characterRange)
+                pageStartDisplayUTF16Indexes.append(characterRange.location)
+            }
 
             startIndex = characterRange.location + characterRange.length
         }
@@ -7925,9 +8020,10 @@ private enum CollectionReaderPaginator {
             )
             try Task.checkCancellation()
 
-            let filtered = filterRules.isEmpty
-                ? ReaderTextFilter.identityFilteredText(for: text)
-                : ReaderTextFilter.apply(rules: filterRules, to: text)
+            let filtered = ReaderTextFilter.readingFilteredText(
+                rules: filterRules,
+                to: text
+            )
             let isPlaceholderPage = filtered.displayText.isEmpty
             let displayText = isPlaceholderPage
                 ? NSLocalizedString("reader.emptyChapter", comment: "")
