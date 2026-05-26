@@ -119,42 +119,44 @@ enum ReaderTextFilter {
         let fullRange = NSRange(location: 0, length: nsText.length)
         var textParts: [String] = []
         var offsets: [Int] = []
-        var lastOriginalOffset = filtered.originalByteOffset(atDisplayUTF16Index: 0)
+        var lastKeptLineEndOffset = filtered.originalByteOffset(atDisplayUTF16Index: 0)
+        var lastScannedOffset = lastKeptLineEndOffset
 
         nsText.enumerateSubstrings(
             in: fullRange,
             options: [.byLines, .substringNotRequired]
         ) { _, lineRange, enclosingRange, _ in
+            let lineEndIndex = lineRange.location + lineRange.length
+            let enclosingEndIndex = enclosingRange.location + enclosingRange.length
+            let lineEndOffset = filtered.originalByteOffset(atDisplayUTF16Index: lineEndIndex)
+            let enclosingEndOffset = filtered.originalByteOffset(atDisplayUTF16Index: enclosingEndIndex)
             let line = nsText.substring(with: lineRange)
             guard line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-                lastOriginalOffset = filtered.originalByteOffset(
-                    atDisplayUTF16Index: enclosingRange.location + enclosingRange.length
-                )
+                lastScannedOffset = enclosingEndOffset
                 return
             }
 
             if textParts.isEmpty == false {
                 textParts.append("\n")
-                offsets.append(lastOriginalOffset)
+                offsets.append(lastKeptLineEndOffset)
             }
 
             textParts.append(line)
-            for index in lineRange.location..<(lineRange.location + lineRange.length) {
+            for index in lineRange.location..<lineEndIndex {
                 offsets.append(filtered.originalByteOffset(atDisplayUTF16Index: index))
             }
-            lastOriginalOffset = filtered.originalByteOffset(
-                atDisplayUTF16Index: enclosingRange.location + enclosingRange.length
-            )
+            lastKeptLineEndOffset = lineEndOffset
+            lastScannedOffset = enclosingEndOffset
         }
 
         guard textParts.isEmpty == false else {
             return FilteredReaderText(
                 displayText: "",
-                originalByteOffsetsByUTF16Index: [lastOriginalOffset]
+                originalByteOffsetsByUTF16Index: [lastScannedOffset]
             )
         }
 
-        offsets.append(lastOriginalOffset)
+        offsets.append(lastScannedOffset)
         return FilteredReaderText(
             displayText: textParts.joined(),
             originalByteOffsetsByUTF16Index: offsets

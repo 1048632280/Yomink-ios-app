@@ -1533,11 +1533,26 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     self.updateSessionState(isLoadingNextPage: false)
                     self.prefetchPagesNearCurrent()
                 }
+            } catch is CancellationError {
+                await MainActor.run {
+                    guard let self,
+                          self.pagingGeneration == activeGeneration else {
+                        return
+                    }
+                    self.pageTask = nil
+                    self.showLoading(false)
+                    self.updateSessionState(isLoadingNextPage: false)
+                }
             } catch {
                 await MainActor.run {
-                    self?.pageTask = nil
-                    self?.showLoading(false)
-                    self?.showError(error)
+                    guard let self,
+                          self.pagingGeneration == activeGeneration else {
+                        return
+                    }
+                    self.pageTask = nil
+                    self.showLoading(false)
+                    self.updateSessionState(isLoadingNextPage: false)
+                    self.showError(error)
                 }
             }
         }
