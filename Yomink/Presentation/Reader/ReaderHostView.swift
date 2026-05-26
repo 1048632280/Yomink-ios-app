@@ -352,7 +352,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var lastAutoReadTimestamp: CFTimeInterval?
     private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
     private var autoReadVelocity: CGFloat = 0
-    private static let autoReadInertiaDecayConstant: CGFloat = 2.5
+    private weak var autoReadTouchResetGesture: UIGestureRecognizer?
+    private static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
+    private static let autoReadReverseInertiaDecayConstant: CGFloat = 7.5
     private var lastViewportSize = CGSize.zero
     private weak var settingsPageModeSection: UIView?
     private weak var settingsLayoutSection: UIView?
@@ -1493,6 +1495,18 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         tapGesture.delegate = self
         collectionView.addGestureRecognizer(tapGesture)
 
+        let autoReadTouchResetGesture = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(handleAutoReadTouchReset(_:))
+        )
+        autoReadTouchResetGesture.minimumPressDuration = 0
+        autoReadTouchResetGesture.cancelsTouchesInView = false
+        autoReadTouchResetGesture.delaysTouchesBegan = false
+        autoReadTouchResetGesture.delaysTouchesEnded = false
+        autoReadTouchResetGesture.delegate = self
+        collectionView.addGestureRecognizer(autoReadTouchResetGesture)
+        self.autoReadTouchResetGesture = autoReadTouchResetGesture
+
         let nextSwipe = UISwipeGestureRecognizer(target: self, action: #selector(handlePageSwipe(_:)))
         nextSwipe.direction = .left
         nextSwipe.delegate = self
@@ -2526,6 +2540,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return CGFloat(value)
     }
 
+    private func resetAutoReadVelocityToBaseSpeed() {
+        guard isAutoReading else {
+            return
+        }
+        autoReadVelocity = currentAutoReadBaseSpeed()
+        lastAutoReadTimestamp = nil
+    }
+
     private func finishPageTurn() {
         updateCurrentPageFromVisiblePage()
         prefetchPagesNearCurrent()
@@ -2704,13 +2726,17 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         let baseSpeed = currentAutoReadBaseSpeed()
-        // 指数衰减,把当前速度朝目标收敛(约 1 秒到达目标):
+        // 指数衰减,把当前速度朝目标收敛:
         //   向下(velocity >= 0):目标 = baseSpeed,形成"快速 → 减速 → 匀速"。
-        //   向上(velocity < 0):目标 = 0,反向惯性自然衰减到停止,下一帧切回向下匀速。
+        //   向上(velocity < 0):目标 = 0,反向惯性衰减到接近停止后立即切回向下匀速。
         let target: CGFloat = autoReadVelocity >= 0 ? baseSpeed : 0
-        let decay = CGFloat(exp(-Double(Self.autoReadInertiaDecayConstant) * interval))
+        let decayConstant = autoReadVelocity < 0
+            ? Self.autoReadReverseInertiaDecayConstant
+            : Self.autoReadForwardInertiaDecayConstant
+        let decay = CGFloat(exp(-Double(decayConstant) * interval))
         autoReadVelocity = target + (autoReadVelocity - target) * decay
-        if autoReadVelocity < 0, autoReadVelocity > -0.5 {
+        let reverseResumeThreshold = max(baseSpeed * 0.05, 6)
+        if autoReadVelocity < 0, abs(autoReadVelocity) <= reverseResumeThreshold {
             // 反向惯性收敛到 0,接力到向下匀速。
             autoReadVelocity = baseSpeed
         } else if autoReadVelocity > 0, abs(autoReadVelocity - baseSpeed) < 0.5 {
@@ -3131,6 +3157,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         applyReaderSettings(settings)
     }
 
+    @objc private func handleAutoReadTouchReset(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              isAutoReading else {
+            return
+        }
+        resetAutoReadVelocityToBaseSpeed()
+    }
+
     @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
         guard gesture.state == .ended else {
             return
@@ -3401,6 +3435,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         // 方向上 +y 对应 contentOffset.y 增大(向下翻),与自动阅读方向一致。
         let releaseSpeed = velocity.y * 1000
         let baseSpeed = currentAutoReadBaseSpeed()
+        guard abs(releaseSpeed) >= baseSpeed * 0.25 else {
+            autoReadVelocity = baseSpeed
+            lastAutoReadTimestamp = nil
+            return
+        }
         // 向下松手:小于基线的低速直接回到匀速;高于基线则保留向下惯性,衰减到 baseSpeed。
         // 向上松手:保留向上惯性,衰减到 0,然后由 advanceAutoRead 接力切回向下匀速。
         if releaseSpeed < 0 {
@@ -3441,6 +3480,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         _ gestureRecognizer: UIGestureRecognizer,
         shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
     ) -> Bool {
+        if gestureRecognizer === autoReadTouchResetGesture
+            || otherGestureRecognizer === autoReadTouchResetGesture {
+            return true
+        }
         settingsControlPanRecognizers.contains { $0 === gestureRecognizer || $0 === otherGestureRecognizer }
     }
 
@@ -5400,6 +5443,8 @@ private enum CollectionReaderPaginator {
             let pageGap = Self.pageGap(
                 displayText: displayText,
                 pageEndDisplayIndex: pageEndDisplayIndex,
+                isChapterEnd: endAbsoluteOffset >= chapter.endOffset,
+                fontSize: CGFloat(normalizedSettings.fontSize),
                 layout: layout
             )
             let verticalExtent = ceil(page.usedHeight + pageGap)
@@ -5511,14 +5556,27 @@ private enum CollectionReaderPaginator {
     private static func pageGap(
         displayText: String,
         pageEndDisplayIndex: Int,
+        isChapterEnd: Bool,
+        fontSize: CGFloat,
         layout: ReaderLayoutConfiguration
     ) -> CGFloat {
+        if isChapterEnd {
+            return chapterEndGap(fontSize: fontSize, layout: layout)
+        }
         guard pageEndDisplayIndex < displayText.utf16.count else {
             return 0
         }
         return isParagraphBoundary(in: displayText, atUTF16Index: pageEndDisplayIndex)
             ? layout.bodyParagraphSpacing
             : layout.bodyLineSpacing
+    }
+
+    private static func chapterEndGap(
+        fontSize: CGFloat,
+        layout: ReaderLayoutConfiguration
+    ) -> CGFloat {
+        let lineHeight = fontSize + layout.bodyLineSpacing
+        return max(lineHeight * 3, layout.bodyParagraphSpacing)
     }
 
     private static func isParagraphBoundary(
