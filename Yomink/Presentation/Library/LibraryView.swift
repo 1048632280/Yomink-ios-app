@@ -131,7 +131,7 @@ struct LibraryView: View {
                 onDismiss: reloadBooksIfReady
             ) { book in
                 if case let .ready(services) = environment.bootstrapState {
-                    CollectionReaderHostView(
+                    ReaderHostView(
                         book: book,
                         fileStore: services.fileStore,
                         repository: services.libraryRepository
