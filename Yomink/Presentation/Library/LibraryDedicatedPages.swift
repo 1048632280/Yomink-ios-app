@@ -445,32 +445,11 @@ struct ReadingHistoryPage: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(historyItems) { item in
-                        Button {
-                            onOpenBook(item.book)
-                        } label: {
-                            DedicatedHistoryRow(item: item)
-                        }
-                        .buttonStyle(.plain)
-                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                            Button(role: .destructive) {
-                                deleteHistoryItem(item)
-                            } label: {
-                                Label {
-                                    Text("library.delete")
-                                } icon: {
-                                    Image(systemName: "trash")
-                                }
-                            }
-                        }
-                        .listRowBackground(Color(.systemGray6))
-                        .listRowInsets(
-                            EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-                        )
-                    }
-                }
-                .listStyle(.plain)
+                ReadingHistoryTableView(
+                    items: $historyItems,
+                    onOpenBook: onOpenBook,
+                    onDelete: persistDeletedHistoryItem
+                )
                 .background(Color(.systemGray6))
             }
         }
@@ -534,17 +513,12 @@ struct ReadingHistoryPage: View {
         }
     }
 
-    private func deleteHistoryItem(_ item: ReadingHistoryItem) {
-        guard let index = historyItems.firstIndex(where: { $0.id == item.id }) else {
-            return
-        }
-
-        let removedItem = historyItems.remove(at: index)
+    private func persistDeletedHistoryItem(_ item: ReadingHistoryItem, originalIndex: Int) {
         Task {
             do {
                 try await repository.deleteReadingHistory(bookID: item.book.id)
             } catch {
-                historyItems.insert(removedItem, at: min(index, historyItems.count))
+                historyItems.insert(item, at: min(originalIndex, historyItems.count))
                 errorMessage = error.localizedDescription
             }
         }
@@ -1180,34 +1154,169 @@ private struct ReorderHandle: UIViewRepresentable {
     }
 }
 
-private struct DedicatedHistoryRow: View {
-    let item: ReadingHistoryItem
+private struct ReadingHistoryTableView: UIViewRepresentable {
+    @Binding var items: [ReadingHistoryItem]
+    let onOpenBook: (Book) -> Void
+    let onDelete: (ReadingHistoryItem, Int) -> Void
 
-    var body: some View {
-        HStack(spacing: 12) {
-            Text(verbatim: item.book.title)
-                .font(.body)
-                .foregroundColor(.primary)
-                .lineLimit(1)
-
-            Spacer(minLength: 12)
-
-            Text(historyDateText)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: DedicatedPageStyle.compactRowHeight, alignment: .leading)
-        .background(Color.white)
-        .overlay(alignment: .bottom) {
-            DedicatedPageStyle.separator
-        }
-        .contentShape(Rectangle())
+    func makeCoordinator() -> Coordinator {
+        Coordinator(
+            items: $items,
+            onOpenBook: onOpenBook,
+            onDelete: onDelete
+        )
     }
 
-    private var historyDateText: String {
-        Self.dateFormatter.localizedString(for: item.readAt, relativeTo: Date())
+    func makeUIView(context: Context) -> UITableView {
+        let tableView = UITableView(frame: .zero, style: .plain)
+        tableView.backgroundColor = .systemGray6
+        tableView.separatorStyle = .none
+        tableView.rowHeight = DedicatedPageStyle.compactRowHeight
+        tableView.dataSource = context.coordinator
+        tableView.delegate = context.coordinator
+        tableView.register(
+            ReadingHistoryCell.self,
+            forCellReuseIdentifier: ReadingHistoryCell.reuseIdentifier
+        )
+        return tableView
+    }
+
+    func updateUIView(_ tableView: UITableView, context: Context) {
+        context.coordinator.items = $items
+        context.coordinator.onOpenBook = onOpenBook
+        context.coordinator.onDelete = onDelete
+        tableView.reloadData()
+    }
+
+    final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate {
+        var items: Binding<[ReadingHistoryItem]>
+        var onOpenBook: (Book) -> Void
+        var onDelete: (ReadingHistoryItem, Int) -> Void
+
+        init(
+            items: Binding<[ReadingHistoryItem]>,
+            onOpenBook: @escaping (Book) -> Void,
+            onDelete: @escaping (ReadingHistoryItem, Int) -> Void
+        ) {
+            self.items = items
+            self.onOpenBook = onOpenBook
+            self.onDelete = onDelete
+        }
+
+        func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+            items.wrappedValue.count
+        }
+
+        func tableView(
+            _ tableView: UITableView,
+            cellForRowAt indexPath: IndexPath
+        ) -> UITableViewCell {
+            let cell = tableView.dequeueReusableCell(
+                withIdentifier: ReadingHistoryCell.reuseIdentifier,
+                for: indexPath
+            ) as? ReadingHistoryCell ?? ReadingHistoryCell(
+                style: .default,
+                reuseIdentifier: ReadingHistoryCell.reuseIdentifier
+            )
+            cell.configure(item: items.wrappedValue[indexPath.row])
+            return cell
+        }
+
+        func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+            tableView.deselectRow(at: indexPath, animated: true)
+            guard items.wrappedValue.indices.contains(indexPath.row) else {
+                return
+            }
+            onOpenBook(items.wrappedValue[indexPath.row].book)
+        }
+
+        func tableView(
+            _ tableView: UITableView,
+            trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath
+        ) -> UISwipeActionsConfiguration? {
+            let action = UIContextualAction(
+                style: .destructive,
+                title: NSLocalizedString("library.delete", comment: "")
+            ) { [weak self] _, _, completion in
+                guard let self,
+                      self.items.wrappedValue.indices.contains(indexPath.row)
+                else {
+                    completion(false)
+                    return
+                }
+                let item = self.items.wrappedValue[indexPath.row]
+                self.items.wrappedValue.remove(at: indexPath.row)
+                tableView.deleteRows(at: [indexPath], with: .automatic)
+                self.onDelete(item, indexPath.row)
+                completion(true)
+            }
+            return UISwipeActionsConfiguration(actions: [action])
+        }
+    }
+}
+
+private final class ReadingHistoryCell: UITableViewCell {
+    static let reuseIdentifier = "readingHistory"
+
+    private let titleLabel = UILabel()
+    private let dateLabel = UILabel()
+
+    override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        super.init(style: style, reuseIdentifier: reuseIdentifier)
+        configureViews()
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(item: ReadingHistoryItem) {
+        titleLabel.text = item.book.title
+        dateLabel.text = Self.dateFormatter.localizedString(for: item.readAt, relativeTo: Date())
+    }
+
+    private func configureViews() {
+        selectionStyle = .default
+        backgroundColor = .white
+        contentView.backgroundColor = .white
+
+        titleLabel.font = .preferredFont(forTextStyle: .body)
+        titleLabel.adjustsFontForContentSizeCategory = true
+        titleLabel.textColor = .label
+        titleLabel.numberOfLines = 1
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        dateLabel.font = .preferredFont(forTextStyle: .subheadline)
+        dateLabel.adjustsFontForContentSizeCategory = true
+        dateLabel.textColor = .secondaryLabel
+        dateLabel.numberOfLines = 1
+        dateLabel.textAlignment = .right
+        dateLabel.setContentHuggingPriority(.required, for: .horizontal)
+        dateLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
+        dateLabel.translatesAutoresizingMaskIntoConstraints = false
+
+        let separator = UIView()
+        separator.backgroundColor = .systemGray4
+        separator.translatesAutoresizingMaskIntoConstraints = false
+
+        contentView.addSubview(titleLabel)
+        contentView.addSubview(dateLabel)
+        contentView.addSubview(separator)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            titleLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            dateLabel.leadingAnchor.constraint(greaterThanOrEqualTo: titleLabel.trailingAnchor, constant: 12),
+            dateLabel.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            dateLabel.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+
+            separator.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 0.5)
+        ])
     }
 
     private static let dateFormatter: RelativeDateTimeFormatter = {
