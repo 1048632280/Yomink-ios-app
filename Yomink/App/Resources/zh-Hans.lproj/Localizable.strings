@@ -219,6 +219,15 @@
 
 "book.untitled" = "未命名书籍";
 
+"import.action" = "导入";
+"import.edit.title" = "导入:%@";
+"import.field.title" = "书名";
+"import.field.author" = "作者";
+"import.field.intro" = "简介";
+"import.duplicate.title" = "已存在相同书籍";
+"import.duplicate.message" = "这本 TXT 已经在书架中。";
+"import.duplicate.openExisting" = "打开现有书籍";
+"import.duplicate.cancel" = "取消";
 "import.progress.message" = "正在导入并生成阅读缓存...";
 "import.error.title" = "导入失败";
 "import.error.unsupportedFileType" = "请选择 TXT 文本文件。";

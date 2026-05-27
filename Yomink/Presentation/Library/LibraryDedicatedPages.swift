@@ -631,6 +631,279 @@ struct LibrarySettingsPage: View {
     }
 }
 
+struct ImportBookEditPage: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let preview: ImportBookPreview
+    let importService: ImportService
+    let onImported: () -> Void
+    let onOpenExistingBook: (Book) -> Void
+    let onCancel: () -> Void
+
+    @State private var title: String
+    @State private var author: String
+    @State private var intro: String
+    @State private var isImporting = false
+    @State private var duplicateBook: Book?
+    @State private var errorMessage: String?
+
+    init(
+        preview: ImportBookPreview,
+        importService: ImportService,
+        onImported: @escaping () -> Void,
+        onOpenExistingBook: @escaping (Book) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        self.preview = preview
+        self.importService = importService
+        self.onImported = onImported
+        self.onOpenExistingBook = onOpenExistingBook
+        self.onCancel = onCancel
+        _title = State(initialValue: preview.title)
+        _author = State(initialValue: preview.author ?? "")
+        _intro = State(initialValue: preview.intro ?? "")
+    }
+
+    var body: some View {
+        ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                Spacer()
+                    .frame(height: 86)
+
+                metadataRows
+
+                Spacer(minLength: 0)
+            }
+
+            if isImporting {
+                importingOverlay
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(navigationTitle)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    cancel()
+                }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("import.action") {
+                    startImport()
+                }
+                .disabled(isImporting)
+            }
+        }
+        .alert(item: $duplicateBook) { book in
+            Alert(
+                title: Text("import.duplicate.title"),
+                message: Text("import.duplicate.message"),
+                primaryButton: .default(Text("import.duplicate.openExisting")) {
+                    isImporting = false
+                    onOpenExistingBook(book)
+                },
+                secondaryButton: .cancel(Text("import.duplicate.cancel")) {
+                    isImporting = false
+                    cancel()
+                }
+            )
+        }
+        .alert(
+            "import.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private var navigationTitle: String {
+        String(
+            format: NSLocalizedString("import.edit.title", comment: ""),
+            preview.fileName
+        )
+    }
+
+    private var metadataRows: some View {
+        VStack(spacing: 0) {
+            NavigationLink {
+                ImportMetadataFieldEditor(
+                    title: "import.field.title",
+                    text: $title
+                )
+            } label: {
+                ImportMetadataRow(
+                    title: "import.field.title",
+                    value: title
+                )
+            }
+            .buttonStyle(.plain)
+
+            SettingsPageStyle.separator
+
+            NavigationLink {
+                ImportMetadataFieldEditor(
+                    title: "import.field.author",
+                    text: $author
+                )
+            } label: {
+                ImportMetadataRow(
+                    title: "import.field.author",
+                    value: author
+                )
+            }
+            .buttonStyle(.plain)
+
+            SettingsPageStyle.separator
+
+            NavigationLink {
+                ImportMetadataFieldEditor(
+                    title: "import.field.intro",
+                    text: $intro
+                )
+            } label: {
+                ImportMetadataRow(
+                    title: "import.field.intro",
+                    value: intro
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .background(Color.white)
+    }
+
+    private var importingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.16)
+                .ignoresSafeArea()
+
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("import.progress.message")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            .padding(20)
+            .background(.regularMaterial)
+            .cornerRadius(8)
+        }
+    }
+
+    private func startImport() {
+        guard !isImporting else {
+            return
+        }
+
+        isImporting = true
+        let metadata = ImportBookMetadata(
+            title: title,
+            author: author,
+            intro: intro
+        )
+        Task {
+            do {
+                if let existingBook = try await importService.findExistingBook(for: preview.sourceURL) {
+                    isImporting = false
+                    duplicateBook = existingBook
+                    return
+                }
+
+                _ = try await importService.importBook(
+                    from: preview.sourceURL,
+                    metadata: metadata
+                )
+                isImporting = false
+                onImported()
+            } catch {
+                isImporting = false
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func cancel() {
+        onCancel()
+        dismiss()
+    }
+}
+
+private struct ImportMetadataRow: View {
+    let title: LocalizedStringKey
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(title)
+                .font(.body)
+                .foregroundColor(.primary)
+
+            Spacer(minLength: 16)
+
+            if !trimmedValue.isEmpty {
+                Text(verbatim: trimmedValue)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.body.weight(.semibold))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .background(Color.white)
+        .contentShape(Rectangle())
+    }
+
+    private var trimmedValue: String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct ImportMetadataFieldEditor: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let title: LocalizedStringKey
+    @Binding var text: String
+
+    var body: some View {
+        TextEditor(text: $text)
+            .font(.system(size: 28))
+            .foregroundColor(.primary)
+            .padding(.horizontal, 8)
+            .padding(.top, 20)
+            .background(Color.white)
+            .navigationBarBackButtonHidden(true)
+            .background(InteractivePopGestureRestorer())
+            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle(title)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    BackTextButton {
+                        dismiss()
+                    }
+                }
+            }
+    }
+}
+
 private struct SettingsSortOrderPage: View {
     @Binding var selection: LibrarySettings.SortOrder
 

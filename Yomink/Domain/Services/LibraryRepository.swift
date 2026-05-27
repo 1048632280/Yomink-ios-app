@@ -2,6 +2,7 @@ import Foundation
 
 protocol LibraryRepository: Sendable {
     func fetchBooks(scope: LibraryScope, sortOrder: LibrarySettings.SortOrder) async throws -> [Book]
+    func findBook(contentHash: String) async throws -> Book?
     func searchBooks(keyword: String, sortOrder: LibrarySettings.SortOrder) async throws -> [Book]
     func fetchSearchHistory() async throws -> [SearchHistoryItem]
     func saveSearchKeyword(_ keyword: String) async throws

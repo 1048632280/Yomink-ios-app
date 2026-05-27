@@ -1,4 +1,27 @@
+import CryptoKit
 import Foundation
+
+struct ImportBookMetadata: Equatable, Sendable {
+    var title: String
+    var author: String?
+    var intro: String?
+}
+
+struct ImportBookPreview: Equatable, Sendable {
+    var sourceURL: URL
+    var fileName: String
+    var title: String
+    var author: String?
+    var intro: String?
+
+    var metadata: ImportBookMetadata {
+        ImportBookMetadata(
+            title: title,
+            author: author,
+            intro: intro
+        )
+    }
+}
 
 final class ImportService {
     enum ImportError: LocalizedError {
@@ -36,8 +59,14 @@ final class ImportService {
     }
 
     @discardableResult
-    func importBook(from sourceURL: URL) async throws -> Book {
-        let preparedImport = try await prepareImport(from: sourceURL)
+    func importBook(
+        from sourceURL: URL,
+        metadata: ImportBookMetadata? = nil
+    ) async throws -> Book {
+        let preparedImport = try await prepareImport(
+            from: sourceURL,
+            metadata: metadata
+        )
         do {
             try Task.checkCancellation()
             let book = try await libraryRepository.insertImportedBook(preparedImport.draft)
@@ -49,13 +78,53 @@ final class ImportService {
         }
     }
 
-    private func prepareImport(from sourceURL: URL) async throws -> PreparedImport {
+    func previewImport(from sourceURL: URL) async throws -> ImportBookPreview {
+        try await validateImportSource(sourceURL)
+        return ImportBookPreview(
+            sourceURL: sourceURL,
+            fileName: sourceURL.lastPathComponent,
+            title: Self.title(from: sourceURL),
+            author: nil,
+            intro: nil
+        )
+    }
+
+    func findExistingBook(for sourceURL: URL) async throws -> Book? {
+        let contentHash = try await contentHash(for: sourceURL)
+        if let existingBook = try await libraryRepository.findBook(contentHash: contentHash) {
+            return existingBook
+        }
+
+        let books = try await libraryRepository.fetchBooks(
+            scope: .all,
+            sortOrder: .importedAt
+        )
+        for book in books where book.contentHash == nil {
+            let url = try fileStore.url(forRelativePath: book.sourcePath)
+            guard let hash = try? await contentHashForReadableFile(at: url),
+                  hash == contentHash else {
+                continue
+            }
+            return book
+        }
+        return nil
+    }
+
+    private func prepareImport(
+        from sourceURL: URL,
+        metadata: ImportBookMetadata?
+    ) async throws -> PreparedImport {
         let fileStore = fileStore
         let decoder = decoder
         let chapterIndexer = chapterIndexer
         let sourceDisplayPath = sourceURL.path
         let sourceFileName = sourceURL.lastPathComponent
-        let sourceTitle = Self.title(from: sourceURL)
+        let sourceTitle = Self.normalizedTitle(
+            metadata?.title,
+            fallback: Self.title(from: sourceURL)
+        )
+        let sourceAuthor = Self.normalizedOptionalText(metadata?.author)
+        let sourceIntro = Self.normalizedOptionalText(metadata?.intro)
 
         return try await Task.detached(priority: .userInitiated) {
             let fileManager = FileManager.default
@@ -93,6 +162,7 @@ final class ImportService {
                 let data = try Data(contentsOf: sourceCopyURL, options: .mappedIfSafe)
                 try Task.checkCancellation()
                 let decodedText = try decoder.decode(data)
+                let contentHash = Self.sha256Hex(for: decodedText.text)
                 do {
                     try decodedText.text.write(
                         to: normalizedURL,
@@ -108,10 +178,13 @@ final class ImportService {
                 let draft = ImportedBookDraft(
                     id: bookID,
                     title: sourceTitle,
+                    author: sourceAuthor,
+                    intro: sourceIntro,
                     fileName: sourceFileName,
                     fileSize: Int64(data.count),
                     encoding: decodedText.encodingName,
                     wordCount: Self.visibleCharacterCount(in: decodedText.text),
+                    contentHash: contentHash,
                     chapters: chapterIndexer.indexChapters(for: decodedText.text),
                     importedAt: importedAt,
                     importSourceDisplayPath: sourceDisplayPath,
@@ -129,6 +202,64 @@ final class ImportService {
         }.value
     }
 
+    private func validateImportSource(_ sourceURL: URL) async throws {
+        try await Task.detached(priority: .userInitiated) {
+            let accessGranted = sourceURL.startAccessingSecurityScopedResource()
+            defer {
+                if accessGranted {
+                    sourceURL.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            guard Self.isSupportedTextFile(sourceURL) else {
+                throw ImportError.unsupportedFileType
+            }
+
+            guard FileManager.default.isReadableFile(atPath: sourceURL.path) else {
+                throw ImportError.cannotReadFile
+            }
+        }.value
+    }
+
+    private func contentHash(for sourceURL: URL) async throws -> String {
+        let decoder = decoder
+        try await Task.detached(priority: .userInitiated) {
+            let accessGranted = sourceURL.startAccessingSecurityScopedResource()
+            defer {
+                if accessGranted {
+                    sourceURL.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            guard Self.isSupportedTextFile(sourceURL) else {
+                throw ImportError.unsupportedFileType
+            }
+
+            let data: Data
+            do {
+                data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+            } catch {
+                throw ImportError.cannotReadFile
+            }
+            let decodedText = try decoder.decode(data)
+            return Self.sha256Hex(for: decodedText.text)
+        }.value
+    }
+
+    private func contentHashForReadableFile(at url: URL) async throws -> String {
+        let decoder = decoder
+        try await Task.detached(priority: .utility) {
+            let data: Data
+            do {
+                data = try Data(contentsOf: url, options: .mappedIfSafe)
+            } catch {
+                throw ImportError.cannotReadFile
+            }
+            let decodedText = try decoder.decode(data)
+            return Self.sha256Hex(for: decodedText.text)
+        }.value
+    }
+
     private static func isSupportedTextFile(_ url: URL) -> Bool {
         url.pathExtension.lowercased() == "txt"
     }
@@ -137,6 +268,26 @@ final class ImportService {
         let title = url.deletingPathExtension().lastPathComponent
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? NSLocalizedString("book.untitled", comment: "") : title
+    }
+
+    private static func normalizedTitle(_ title: String?, fallback: String) -> String {
+        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? fallback : trimmed
+    }
+
+    private static func normalizedOptionalText(_ text: String?) -> String? {
+        let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func sha256Hex(for data: Data) -> String {
+        SHA256.hash(data: data)
+            .map { String(format: "%02x", $0) }
+            .joined()
+    }
+
+    private static func sha256Hex(for text: String) -> String {
+        sha256Hex(for: Data(text.utf8))
     }
 
     private func cleanUpFailedImport(

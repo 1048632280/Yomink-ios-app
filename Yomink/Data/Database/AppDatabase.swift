@@ -200,6 +200,18 @@ final class AppDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v3_add_book_content_hash") { db in
+            try db.execute(sql: """
+            ALTER TABLE books
+            ADD COLUMN contentHash TEXT
+            """)
+
+            try db.execute(sql: """
+            CREATE INDEX books_contentHash_index
+            ON books(contentHash)
+            """)
+        }
+
         return migrator
     }
 }

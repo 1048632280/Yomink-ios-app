@@ -22,6 +22,7 @@ struct PreviewLibraryRepository: LibraryRepository {
                 lastReadAt: nil,
                 groupID: nil,
                 progressPercentage: 0,
+                contentHash: nil,
                 sourcePath: "Books/\(Self.sampleBookID.uuidString.lowercased())/source.txt",
                 normalizedPath: "Books/\(Self.sampleBookID.uuidString.lowercased())/normalized.txt"
             )
@@ -41,6 +42,10 @@ struct PreviewLibraryRepository: LibraryRepository {
     ) async throws -> [Book] {
         try await fetchBooks(scope: .all, sortOrder: sortOrder)
             .filter { $0.title.localizedCaseInsensitiveContains(keyword) }
+    }
+
+    func findBook(contentHash: String) async throws -> Book? {
+        nil
     }
 
     func fetchSearchHistory() async throws -> [SearchHistoryItem] {
@@ -87,6 +92,7 @@ struct PreviewLibraryRepository: LibraryRepository {
                 lastReadAt: nil,
                 groupID: nil,
                 progressPercentage: 0,
+                contentHash: nil,
                 sourcePath: "Books/\(id.uuidString.lowercased())/source.txt",
                 normalizedPath: "Books/\(id.uuidString.lowercased())/normalized.txt"
             )
@@ -212,8 +218,8 @@ struct PreviewLibraryRepository: LibraryRepository {
         Book(
             id: draft.id,
             title: draft.title,
-            author: nil,
-            intro: nil,
+            author: draft.author,
+            intro: draft.intro,
             fileName: draft.fileName,
             fileSize: draft.fileSize,
             encoding: draft.encoding,
@@ -222,6 +228,7 @@ struct PreviewLibraryRepository: LibraryRepository {
             lastReadAt: nil,
             groupID: nil,
             progressPercentage: 0,
+            contentHash: draft.contentHash,
             sourcePath: draft.sourcePath,
             normalizedPath: draft.normalizedPath
         )

@@ -151,9 +151,7 @@ struct LibraryView: View {
                     }
                     viewModel.handleImportResult(
                         result,
-                        importService: services.importService,
-                        repository: services.libraryRepository,
-                        scope: selectedScope
+                        importService: services.importService
                     )
                 }
                 .frame(width: 0, height: 0)
@@ -213,6 +211,11 @@ struct LibraryView: View {
                         repository: services.libraryRepository,
                         scope: selectedScope
                     )
+                }
+            }
+            .onChange(of: viewModel.importPreview?.sourceURL.absoluteString) { previewID in
+                if previewID != nil {
+                    activeRoute = .importBook
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -404,6 +407,35 @@ struct LibraryView: View {
                         reloadBooksIfReady()
                     }
                 )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
+
+            NavigationLink(
+                tag: LibraryRoute.importBook,
+                selection: $activeRoute
+            ) {
+                if let preview = viewModel.importPreview {
+                    ImportBookEditPage(
+                        preview: preview,
+                        importService: services.importService,
+                        onImported: {
+                            closeImportRoute()
+                            reloadBooksIfReady()
+                        },
+                        onOpenExistingBook: { book in
+                            viewModel.clearImportPreview()
+                            openBookAfterRouteDismissal(book)
+                        },
+                        onCancel: {
+                            closeImportRoute()
+                        }
+                    )
+                } else {
+                    EmptyView()
+                }
             } label: {
                 EmptyView()
             }
@@ -770,6 +802,11 @@ struct LibraryView: View {
         }
     }
 
+    private func closeImportRoute() {
+        viewModel.clearImportPreview()
+        activeRoute = nil
+    }
+
     private func drawerWidth(for size: CGSize) -> CGFloat {
         let visibleMainWidth: CGFloat = size.width >= 700 ? 96 : 64
         let maximumWidth = max(size.width - visibleMainWidth, 0)
@@ -860,6 +897,7 @@ private enum LibraryRoute: Hashable {
     case history
     case search
     case settings
+    case importBook
 }
 
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {
@@ -986,6 +1024,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var isImporting = false
     @Published var importErrorTitle: LocalizedStringKey = "library.error.title"
     @Published var importErrorMessage: String?
+    @Published var importPreview: ImportBookPreview?
     private var currentImportTask: Task<Void, Never>?
 
     var isSelecting: Bool {
@@ -1055,9 +1094,7 @@ private final class LibraryViewModel: ObservableObject {
 
     func handleImportResult(
         _ result: Result<[URL], Error>,
-        importService: ImportService,
-        repository: any LibraryRepository,
-        scope: LibraryScope
+        importService: ImportService
     ) {
         guard !isImporting else {
             return
@@ -1068,12 +1105,7 @@ private final class LibraryViewModel: ObservableObject {
             guard let url = urls.first else {
                 return
             }
-            importBook(
-                from: url,
-                importService: importService,
-                repository: repository,
-                scope: scope
-            )
+            prepareImportPreview(from: url, importService: importService)
         case let .failure(error):
             showError(error, title: "import.error.title")
         }
@@ -1184,26 +1216,15 @@ private final class LibraryViewModel: ObservableObject {
             }
     }
 
-    private func importBook(
+    private func prepareImportPreview(
         from url: URL,
-        importService: ImportService,
-        repository: any LibraryRepository,
-        scope: LibraryScope
+        importService: ImportService
     ) {
         isImporting = true
         currentImportTask = Task {
             do {
-                _ = try await importService.importBook(from: url)
+                importPreview = try await importService.previewImport(from: url)
                 try Task.checkCancellation()
-                groups = try await repository.fetchGroups()
-                allBooks = try await repository.fetchBooks(
-                    scope: .all,
-                    sortOrder: settings.sortOrder
-                )
-                books = try await repository.fetchBooks(
-                    scope: scope,
-                    sortOrder: settings.sortOrder
-                )
                 currentImportTask = nil
             } catch {
                 if !Task.isCancelled {
@@ -1240,6 +1261,10 @@ private final class LibraryViewModel: ObservableObject {
 
     func clearError() {
         importErrorMessage = nil
+    }
+
+    func clearImportPreview() {
+        importPreview = nil
     }
 
     private func pruneSelection() {

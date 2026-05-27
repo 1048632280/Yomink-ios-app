@@ -13,6 +13,7 @@ struct Book: Identifiable, Equatable, Sendable {
     var lastReadAt: Date?
     var groupID: UUID?
     var progressPercentage: Double
+    var contentHash: String?
     var sourcePath: String
     var normalizedPath: String?
 }

@@ -3,10 +3,13 @@ import Foundation
 struct ImportedBookDraft: Equatable, Sendable {
     let id: UUID
     var title: String
+    var author: String?
+    var intro: String?
     var fileName: String
     var fileSize: Int64
     var encoding: String
     var wordCount: Int
+    var contentHash: String
     var chapters: [ImportedChapterDraft]
     var importedAt: Date
     var importSourceDisplayPath: String?

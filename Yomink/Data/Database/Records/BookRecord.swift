@@ -15,6 +15,7 @@ struct BookRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
     let importedAt: String
     let lastReadAt: String?
     let groupId: String?
+    let contentHash: String?
     let importSourceDisplayPath: String?
     let sourceBookmark: Data?
     let sourcePath: String

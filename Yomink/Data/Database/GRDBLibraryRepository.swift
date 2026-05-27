@@ -9,6 +9,34 @@ struct GRDBLibraryRepository: LibraryRepository {
         self.database = database
     }
 
+    func findBook(contentHash: String) async throws -> Book? {
+        let normalizedHash = contentHash.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedHash.isEmpty else {
+            return nil
+        }
+
+        return try await database.writer.read { db in
+            guard let row = try Row.fetchOne(
+                db,
+                sql: """
+                SELECT
+                    books.*,
+                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
+                FROM books
+                LEFT JOIN reading_progress
+                    ON reading_progress.bookId = books.id
+                WHERE books.contentHash = ?
+                ORDER BY books.importedAt DESC
+                LIMIT 1
+                """,
+                arguments: [normalizedHash]
+            ) else {
+                return nil
+            }
+            return Book(row: row)
+        }
+    }
+
     func fetchBooks(
         scope: LibraryScope = .all,
         sortOrder: LibrarySettings.SortOrder = .lastReadAt
@@ -719,8 +747,8 @@ struct GRDBLibraryRepository: LibraryRepository {
         let record = BookRecord(
             id: draft.id.uuidString,
             title: draft.title,
-            author: nil,
-            intro: nil,
+            author: draft.author,
+            intro: draft.intro,
             fileName: draft.fileName,
             fileSize: draft.fileSize,
             encoding: draft.encoding,
@@ -728,6 +756,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             importedAt: DatabaseDateFormatter.string(from: draft.importedAt),
             lastReadAt: nil,
             groupId: nil,
+            contentHash: draft.contentHash,
             importSourceDisplayPath: draft.importSourceDisplayPath,
             sourceBookmark: nil,
             sourcePath: draft.sourcePath,
@@ -767,8 +796,8 @@ struct GRDBLibraryRepository: LibraryRepository {
             return Book(
                 id: draft.id,
                 title: draft.title,
-                author: nil,
-                intro: nil,
+                author: draft.author,
+                intro: draft.intro,
                 fileName: draft.fileName,
                 fileSize: draft.fileSize,
                 encoding: draft.encoding,
@@ -777,6 +806,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                 lastReadAt: nil,
                 groupID: nil,
                 progressPercentage: 0,
+                contentHash: draft.contentHash,
                 sourcePath: draft.sourcePath,
                 normalizedPath: draft.normalizedPath
             )
@@ -866,6 +896,7 @@ private extension Book {
             lastReadAt: lastReadAt,
             groupID: groupID,
             progressPercentage: min(max(progressPercentage, 0), 1),
+            contentHash: row["contentHash"],
             sourcePath: row["sourcePath"],
             normalizedPath: row["normalizedPath"]
         )
