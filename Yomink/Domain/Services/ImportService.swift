@@ -223,7 +223,7 @@ final class ImportService {
 
     private func contentHash(for sourceURL: URL) async throws -> String {
         let decoder = decoder
-        try await Task.detached(priority: .userInitiated) {
+        return try await Task.detached(priority: .userInitiated) {
             let accessGranted = sourceURL.startAccessingSecurityScopedResource()
             defer {
                 if accessGranted {
@@ -248,7 +248,7 @@ final class ImportService {
 
     private func contentHashForReadableFile(at url: URL) async throws -> String {
         let decoder = decoder
-        try await Task.detached(priority: .utility) {
+        return try await Task.detached(priority: .utility) {
             let data: Data
             do {
                 data = try Data(contentsOf: url, options: .mappedIfSafe)
