@@ -12,6 +12,7 @@ struct LibraryView: View {
     @State private var selectedScope: LibraryScope = .ungrouped
     @State private var activeRoute: LibraryRoute?
     @State private var exportPayload: ExportPayload?
+    @State private var pendingBookDeletion: PendingBookDeletion?
 
     init() {
         Self.configureNavigationBarAppearance()
@@ -187,6 +188,16 @@ struct LibraryView: View {
                 }
             } message: {
                 Text(viewModel.importErrorMessage ?? "")
+            }
+            .alert(item: $pendingBookDeletion) { deletion in
+                Alert(
+                    title: Text("library.delete.confirm.title"),
+                    message: Text(verbatim: deletion.message),
+                    primaryButton: .destructive(Text("library.delete.confirm.action")) {
+                        performDeleteBooks(deletion.ids)
+                    },
+                    secondaryButton: .cancel(Text("common.cancel"))
+                )
             }
             .refreshable {
                 if case let .ready(services) = environment.bootstrapState {
@@ -450,7 +461,7 @@ struct LibraryView: View {
             )
             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                 Button(role: .destructive) {
-                    deleteBooks([book.id])
+                    requestDeleteBooks([book.id])
                 } label: {
                     Label {
                         Text("library.delete")
@@ -510,7 +521,7 @@ struct LibraryView: View {
     private var selectionActionBar: some View {
         HStack(spacing: 0) {
             Button(role: .destructive) {
-                deleteBooks(viewModel.selectedBookIDs)
+                requestDeleteBooks(viewModel.selectedBookIDs)
             } label: {
                 Text("library.delete")
                     .frame(maxWidth: .infinity, minHeight: 54)
@@ -682,7 +693,16 @@ struct LibraryView: View {
         )
     }
 
-    private func deleteBooks(_ ids: Set<UUID>) {
+    private func requestDeleteBooks(_ ids: Set<UUID>) {
+        let visibleIDs = Set(viewModel.books.map(\.id))
+        let deletableIDs = ids.intersection(visibleIDs)
+        guard !deletableIDs.isEmpty else {
+            return
+        }
+        pendingBookDeletion = PendingBookDeletion(ids: deletableIDs)
+    }
+
+    private func performDeleteBooks(_ ids: Set<UUID>) {
         guard let repository = currentRepository,
               let fileStore = currentFileStore
         else {
@@ -1903,6 +1923,26 @@ private enum SearchBarStyle {
 private struct ExportPayload: Identifiable {
     let id = UUID()
     let urls: [URL]
+}
+
+private struct PendingBookDeletion: Identifiable {
+    let id: String
+    let ids: Set<UUID>
+
+    init(ids: Set<UUID>) {
+        self.ids = ids
+        self.id = ids.map(\.uuidString).sorted().joined(separator: "-")
+    }
+
+    var message: String {
+        if ids.count <= 1 {
+            return NSLocalizedString("library.delete.confirm.single.message", comment: "")
+        }
+        return String(
+            format: NSLocalizedString("library.delete.confirm.multiple.message", comment: ""),
+            ids.count
+        )
+    }
 }
 
 private enum LibraryDrawerSide: Equatable {

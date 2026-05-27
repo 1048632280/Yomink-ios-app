@@ -569,6 +569,18 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func deleteReadingHistory(bookID: UUID) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM reading_history
+                WHERE bookId = ?
+                """,
+                arguments: [bookID.uuidString]
+            )
+        }
+    }
+
     func fetchLibrarySettings() async throws -> LibrarySettings {
         try await database.writer.read { db in
             guard let value = try String.fetchOne(

@@ -445,19 +445,32 @@ struct ReadingHistoryPage: View {
                     .foregroundColor(.secondary)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(historyItems) { item in
-                            Button {
-                                onOpenBook(item.book)
-                            } label: {
-                                DedicatedHistoryRow(item: item)
-                            }
-                            .buttonStyle(.plain)
+                List {
+                    ForEach(historyItems) { item in
+                        Button {
+                            onOpenBook(item.book)
+                        } label: {
+                            DedicatedHistoryRow(item: item)
                         }
+                        .buttonStyle(.plain)
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                deleteHistoryItem(item)
+                            } label: {
+                                Label {
+                                    Text("library.delete")
+                                } icon: {
+                                    Image(systemName: "trash")
+                                }
+                            }
+                        }
+                        .listRowBackground(Color(.systemGray6))
+                        .listRowInsets(
+                            EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                        )
                     }
-                    .frame(maxWidth: .infinity)
                 }
+                .listStyle(.plain)
                 .background(Color(.systemGray6))
             }
         }
@@ -516,6 +529,22 @@ struct ReadingHistoryPage: View {
                 try await repository.clearReadingHistory()
                 historyItems = []
             } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func deleteHistoryItem(_ item: ReadingHistoryItem) {
+        guard let index = historyItems.firstIndex(where: { $0.id == item.id }) else {
+            return
+        }
+
+        let removedItem = historyItems.remove(at: index)
+        Task {
+            do {
+                try await repository.deleteReadingHistory(bookID: item.book.id)
+            } catch {
+                historyItems.insert(removedItem, at: min(index, historyItems.count))
                 errorMessage = error.localizedDescription
             }
         }

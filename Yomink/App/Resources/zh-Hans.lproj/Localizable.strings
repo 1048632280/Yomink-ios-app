@@ -18,6 +18,10 @@
 "library.selection.move" = "移动";
 "library.selection.export" = "导出";
 "library.delete" = "删除";
+"library.delete.confirm.title" = "永久删除";
+"library.delete.confirm.action" = "永久删除";
+"library.delete.confirm.single.message" = "是否永久删除这本书？原文文件、阅读进度、书签、过滤规则和足迹都会被删除，此操作不可撤销。";
+"library.delete.confirm.multiple.message" = "是否永久删除选中的 %d 本图书？这些图书的原文文件、阅读进度、书签、过滤规则和足迹都会被删除，此操作不可撤销。";
 "library.error.title" = "书架操作失败";
 "library.move.error.title" = "移动失败";
 "library.delete.error.title" = "删除失败";

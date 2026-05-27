@@ -42,6 +42,7 @@ protocol LibraryRepository: Sendable {
     func fetchReadingProgress(bookID: UUID) async throws -> ReadingProgress?
     func saveReadingProgress(_ progress: ReadingProgress) async throws
     func fetchReadingHistory(limit: Int) async throws -> [ReadingHistoryItem]
+    func deleteReadingHistory(bookID: UUID) async throws
     func clearReadingHistory() async throws
     func fetchLibrarySettings() async throws -> LibrarySettings
     func saveLibrarySettings(_ settings: LibrarySettings) async throws
