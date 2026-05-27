@@ -1238,11 +1238,63 @@ private final class LibraryViewModel: ObservableObject {
     }
 
     func exportURLs(fileStore: AppFileStore) throws -> [URL] {
-        try books
+        cleanupExportDirectory()
+        let exportDirectory = exportDirectoryURL()
+        try FileManager.default.createDirectory(
+            at: exportDirectory,
+            withIntermediateDirectories: true
+        )
+        var usedFileNames: Set<String> = []
+        return try books
             .filter { selectedBookIDs.contains($0.id) }
             .map { book in
-                try fileStore.url(forRelativePath: book.sourcePath)
+                let sourceURL = try fileStore.url(forRelativePath: book.sourcePath)
+                let fileName = exportFileName(for: book, sourceURL: sourceURL, usedFileNames: &usedFileNames)
+                let destinationURL = exportDirectory.appendingPathComponent(fileName, isDirectory: false)
+                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+                return destinationURL
             }
+    }
+
+    func cleanupExportDirectory() {
+        try? FileManager.default.removeItem(at: exportDirectoryURL())
+    }
+
+    private func exportDirectoryURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkExports", isDirectory: true)
+    }
+
+    private func exportFileName(
+        for book: Book,
+        sourceURL: URL,
+        usedFileNames: inout Set<String>
+    ) -> String {
+        let rawTitle = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = sanitizedExportFileName(
+            rawTitle.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : rawTitle
+        )
+        let sourceExtension = sourceURL.pathExtension
+        let fileExtension = sourceExtension.isEmpty ? "txt" : sourceExtension
+        var candidate = "\(baseName).\(fileExtension)"
+        var suffix = 2
+        while usedFileNames.contains(candidate) {
+            candidate = "\(baseName) \(suffix).\(fileExtension)"
+            suffix += 1
+        }
+        usedFileNames.insert(candidate)
+        return candidate
+    }
+
+    private func sanitizedExportFileName(_ fileName: String) -> String {
+        let illegalCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+            .union(.newlines)
+            .union(.controlCharacters)
+        let sanitized = fileName
+            .components(separatedBy: illegalCharacters)
+            .joined(separator: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : sanitized
     }
 
     private func prepareImportPreview(
@@ -1333,7 +1385,7 @@ private struct BookShelfItemButton<Content: View>: View {
                 }
                 action()
             }
-            .onLongPressGesture(minimumDuration: 0.45) {
+            .onLongPressGesture(minimumDuration: 0.18) {
                 suppressNextTap = true
                 longPressAction()
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -1495,6 +1547,7 @@ private struct BookCoverPlaceholder: View {
                             .stroke(Color.accentColor, lineWidth: 2)
                     }
                 }
+                .brightness(isSelecting && !isSelected ? -0.18 : 0)
 
             if isSelecting {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -1974,7 +2027,7 @@ private enum SearchBarStyle {
     static let focusDelay: TimeInterval = 0.65
 }
 
-private struct ExportPayload: Identifiable {
+private struct ExportPayload: Identifiable, Equatable {
     let id = UUID()
     let urls: [URL]
 }

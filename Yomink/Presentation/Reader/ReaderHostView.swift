@@ -4964,9 +4964,9 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
 
         let velocityY = scrollView.panGestureRecognizer.velocity(in: scrollView).y
         if velocityY > Layout.catalogDirectionVelocityThreshold {
-            updateCatalogJumpTarget(.bottom)
-        } else if velocityY < -Layout.catalogDirectionVelocityThreshold {
             updateCatalogJumpTarget(.top)
+        } else if velocityY < -Layout.catalogDirectionVelocityThreshold {
+            updateCatalogJumpTarget(.bottom)
         }
     }
 
