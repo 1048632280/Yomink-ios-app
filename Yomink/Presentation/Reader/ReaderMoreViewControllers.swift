@@ -44,12 +44,7 @@ final class ReaderBookDetailViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.back", comment: ""),
-            style: .plain,
-            target: self,
-            action: #selector(closeButtonTapped)
-        )
+        configureCloseButtonIfNeeded()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: NSLocalizedString("common.edit", comment: ""),
             style: .plain,
@@ -59,6 +54,19 @@ final class ReaderBookDetailViewController: UIViewController {
         configureLayout()
         render()
         loadIntroFallbackIfNeeded()
+    }
+
+    private func configureCloseButtonIfNeeded() {
+        guard navigationController?.viewControllers.first === self else {
+            return
+        }
+
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.back", comment: ""),
+            style: .plain,
+            target: self,
+            action: #selector(closeButtonTapped)
+        )
     }
 
     private func configureLayout() {
@@ -271,7 +279,7 @@ final class ReaderBookDetailViewController: UIViewController {
     }
 
     @objc private func closeButtonTapped() {
-        dismiss(animated: true)
+        readerPopOrDismiss(animated: true)
     }
 
     @objc private func editButtonTapped() {
@@ -582,18 +590,26 @@ final class ReaderFilterRulesViewController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         tableView.backgroundColor = .systemGroupedBackground
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.back", comment: ""),
-            style: .plain,
-            target: self,
-            action: #selector(closeButtonTapped)
-        )
+        configureCloseButtonIfNeeded()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .add,
             target: self,
             action: #selector(addButtonTapped)
         )
         updateEmptyState()
+    }
+
+    private func configureCloseButtonIfNeeded() {
+        guard navigationController?.viewControllers.first === self else {
+            return
+        }
+
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.back", comment: ""),
+            style: .plain,
+            target: self,
+            action: #selector(closeButtonTapped)
+        )
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -650,7 +666,7 @@ final class ReaderFilterRulesViewController: UITableViewController {
     }
 
     @objc private func closeButtonTapped() {
-        dismiss(animated: true)
+        readerPopOrDismiss(animated: true)
     }
 
     @objc private func addButtonTapped() {
@@ -850,12 +866,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
-        navigationItem.leftBarButtonItem = UIBarButtonItem(
-            title: NSLocalizedString("common.back", comment: ""),
-            style: .plain,
-            target: self,
-            action: #selector(closeButtonTapped)
-        )
+        configureCloseButtonIfNeeded()
         configureViews()
         updateFooter()
     }
@@ -868,6 +879,19 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     deinit {
         searchTask?.cancel()
         searchDebounceTask?.cancel()
+    }
+
+    private func configureCloseButtonIfNeeded() {
+        guard navigationController?.viewControllers.first === self else {
+            return
+        }
+
+        navigationItem.leftBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.back", comment: ""),
+            style: .plain,
+            target: self,
+            action: #selector(closeButtonTapped)
+        )
     }
 
     private func configureViews() {
@@ -1214,7 +1238,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     }
 
     @objc private func closeButtonTapped() {
-        dismiss(animated: true)
+        readerPopOrDismiss(animated: true)
     }
 
     private nonisolated static func scanBatch(
@@ -1573,6 +1597,7 @@ final class ReaderPageTouchAreasViewController: UIViewController {
     private var settings: ReaderSettings
     private let onSave: (ReaderSettings) -> Void
     private var buttons: [UIButton] = []
+    private var didSaveSettings = false
 
     init(
         settings: ReaderSettings,
@@ -1594,11 +1619,36 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         edgesForExtendedLayout = [.top, .bottom]
         extendedLayoutIncludesOpaqueBars = true
         configureGrid()
-        configureEdgeBackGesture()
     }
 
     override var prefersStatusBarHidden: Bool {
         true
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+        navigationController?.interactivePopGestureRecognizer?.isEnabled = true
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        guard isMovingFromParent || navigationController?.isBeingDismissed == true else {
+            return
+        }
+
+        if let transitionCoordinator,
+           transitionCoordinator.isInteractive {
+            transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+                guard !context.isCancelled else {
+                    return
+                }
+                self?.saveSettingsIfNeeded()
+            }
+            return
+        }
+
+        saveSettingsIfNeeded()
     }
 
     private func configureGrid() {
@@ -1633,15 +1683,6 @@ final class ReaderPageTouchAreasViewController: UIViewController {
             gridStack.topAnchor.constraint(equalTo: view.topAnchor),
             gridStack.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-    }
-
-    private func configureEdgeBackGesture() {
-        let edgeBackGesture = UIScreenEdgePanGestureRecognizer(
-            target: self,
-            action: #selector(edgeBackGestureChanged(_:))
-        )
-        edgeBackGesture.edges = .left
-        view.addGestureRecognizer(edgeBackGesture)
     }
 
     private func cellButton(at index: Int) -> UIButton {
@@ -1733,23 +1774,18 @@ final class ReaderPageTouchAreasViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    @objc private func edgeBackGestureChanged(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard gesture.state == .ended else {
-            return
-        }
-
-        let translation = gesture.translation(in: view)
-        let velocity = gesture.velocity(in: view)
-        guard translation.x > view.bounds.width * 0.18 || velocity.x > 520 else {
-            return
-        }
-
-        saveAndExit()
+    private func saveAndExit() {
+        saveSettingsIfNeeded()
+        readerPopOrDismiss(animated: true)
     }
 
-    private func saveAndExit() {
+    private func saveSettingsIfNeeded() {
+        guard !didSaveSettings else {
+            return
+        }
+
+        didSaveSettings = true
         onSave(settings.normalized)
-        dismiss(animated: true)
     }
 }
 

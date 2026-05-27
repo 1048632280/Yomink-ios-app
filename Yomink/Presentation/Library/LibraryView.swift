@@ -127,20 +127,6 @@ struct LibraryView: View {
                     libraryTrailingToolbarContent
                 }
             }
-            .fullScreenCover(
-                item: $activeReaderBook,
-                onDismiss: reloadBooksIfReady
-            ) { book in
-                if case let .ready(services) = environment.bootstrapState {
-                    ReaderHostView(
-                        book: book,
-                        fileStore: services.fileStore,
-                        repository: services.libraryRepository
-                    )
-                    .ignoresSafeArea()
-                    .statusBar(hidden: true)
-                }
-            }
             .background {
                 DocumentPickerPresenter(
                     isPresented: $isImportPickerPresented,
@@ -441,7 +427,43 @@ struct LibraryView: View {
             }
             .hidden()
             .frame(width: 0, height: 0)
+
+            NavigationLink(
+                isActive: readerNavigationBinding
+            ) {
+                if let book = activeReaderBook {
+                    ReaderHostView(
+                        book: book,
+                        fileStore: services.fileStore,
+                        repository: services.libraryRepository
+                    )
+                    .ignoresSafeArea()
+                    .navigationBarHidden(true)
+                    .statusBar(hidden: true)
+                } else {
+                    EmptyView()
+                }
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
         }
+    }
+
+    private var readerNavigationBinding: Binding<Bool> {
+        Binding(
+            get: {
+                activeReaderBook != nil
+            },
+            set: { isActive in
+                guard !isActive else {
+                    return
+                }
+                activeReaderBook = nil
+                reloadBooksIfReady()
+            }
+        )
     }
 
     @ViewBuilder

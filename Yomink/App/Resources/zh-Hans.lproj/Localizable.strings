@@ -206,7 +206,7 @@
 "reader.touchAreas.menu" = "菜单";
 "reader.touchAreas.nextPage" = "下一页";
 "reader.touchAreas.none" = "无操作";
-"reader.touchAreas.edgeBackHint" = "侧滑返回书架";
+"reader.touchAreas.edgeBackHint" = "侧滑返回阅读";
 "reader.touchAreas.bindTitle" = "绑定动作";
 "reader.touchAreas.saveAndExit" = "保存并退出";
 "reader.error.title" = "操作失败";

@@ -443,6 +443,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         startInitialLoad()
     }
 
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        navigationController?.setNavigationBarHidden(true, animated: animated)
+        restoreNativeInteractivePopGesture()
+        updateReaderChromePreferences()
+    }
+
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         applyMenuPosition(animated: false)
@@ -469,6 +476,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        let destination = transitionCoordinator?.viewController(forKey: .to)
+        let hidesNavigationBar = (destination as? ReaderPageTouchAreasViewController) != nil
+        navigationController?.setNavigationBarHidden(
+            hidesNavigationBar,
+            animated: animated
+        )
         switch UIApplication.shared.applicationState {
         case .active:
             UIApplication.shared.isIdleTimerDisabled = false
@@ -2935,11 +2948,67 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         )
     }
 
-    private func presentFullScreenNavigation(_ rootViewController: UIViewController) {
-        let navigationController = UINavigationController(rootViewController: rootViewController)
-        navigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
-        navigationController.modalPresentationStyle = .fullScreen
-        present(navigationController, animated: true)
+    private func pushReaderPage(
+        _ viewController: UIViewController,
+        prefersNavigationBarHidden: Bool = false
+    ) {
+        viewController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+
+        guard let navigationController else {
+            let presentedNavigationController = UINavigationController(rootViewController: viewController)
+            presentedNavigationController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
+            presentedNavigationController.modalPresentationStyle = .fullScreen
+            present(presentedNavigationController, animated: true)
+            return
+        }
+
+        restoreNativeInteractivePopGesture()
+        navigationController.setNavigationBarHidden(prefersNavigationBarHidden, animated: false)
+        navigationController.pushViewController(viewController, animated: true)
+    }
+
+    private func closeReader(animated: Bool) {
+        onClose()
+    }
+
+    private func popBackToReader(animated: Bool) {
+        guard let navigationController else {
+            presentedViewController?.dismiss(animated: animated)
+            return
+        }
+
+        if let readerStackController = navigationStackControllerForReader() {
+            navigationController.popToViewController(readerStackController, animated: animated)
+        } else {
+            navigationController.popViewController(animated: animated)
+        }
+    }
+
+    private func navigationStackControllerForReader() -> UIViewController? {
+        guard let navigationController else {
+            return nil
+        }
+
+        var controller: UIViewController? = self
+        while let current = controller {
+            if navigationController.viewControllers.contains(where: { $0 === current }) {
+                return current
+            }
+            controller = current.parent
+        }
+
+        return nil
+    }
+
+    private func restoreNativeInteractivePopGesture() {
+        guard let navigationController,
+              let gesture = navigationController.interactivePopGestureRecognizer
+        else {
+            return
+        }
+
+        gesture.delegate = self
+        gesture.isEnabled = true
     }
 
     private func showError(_ error: Error) {
@@ -2966,7 +3035,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         saveSettingsImmediately()
-        onClose()
+        closeReader(animated: true)
     }
 
     @objc private func bookmarkButtonTapped() {
@@ -3032,9 +3101,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return
             }
             self.jumpTo(target)
-            self.dismiss(animated: true)
+            self.popBackToReader(animated: true)
         }
-        presentFullScreenNavigation(listViewController)
+        pushReaderPage(listViewController)
     }
 
     @objc private func settingsButtonTapped() {
@@ -3328,7 +3397,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard readerSettings.edgeSwipeBackEnabled,
+        guard navigationController == nil,
+              readerSettings.edgeSwipeBackEnabled,
               gesture.state == .ended else {
             return
         }
@@ -3374,10 +3444,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     return
                 }
                 self.jumpTo(target)
-                self.presentedViewController?.dismiss(animated: true)
+                self.popBackToReader(animated: true)
             }
         )
-        presentFullScreenNavigation(detailViewController)
+        pushReaderPage(detailViewController)
     }
 
     @objc private func showContentSearch() {
@@ -3392,9 +3462,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 return
             }
             self.jumpTo(target)
-            self.presentedViewController?.dismiss(animated: true)
+            self.popBackToReader(animated: true)
         }
-        presentFullScreenNavigation(searchViewController)
+        pushReaderPage(searchViewController)
     }
 
     @objc private func showFilterRules() {
@@ -3411,7 +3481,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             self.collectionView.reloadData()
             self.reopen(atAbsoluteOffset: self.currentDisplayByteOffset(), enforceChapterBoundary: true)
         }
-        presentFullScreenNavigation(filterViewController)
+        pushReaderPage(filterViewController)
     }
 
     @objc private func showPageTouchAreas() {
@@ -3419,9 +3489,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
             self?.applyReaderSettings(settings)
         }
-        viewController.overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
-        viewController.modalPresentationStyle = .fullScreen
-        present(viewController, animated: true)
+        pushReaderPage(viewController, prefersNavigationBarHidden: true)
     }
 
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
@@ -3559,8 +3627,22 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             let velocity = panGesture.velocity(in: settingsPanelScrollView)
             return abs(velocity.y) >= abs(velocity.x)
         }
-        if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
+        if let interactivePopGesture = navigationController?.interactivePopGestureRecognizer,
+           gestureRecognizer === interactivePopGesture {
+            guard (navigationController?.viewControllers.count ?? 0) > 1 else {
+                return false
+            }
+
+            if let topViewController = navigationController?.topViewController,
+               let readerStackController = navigationStackControllerForReader(),
+               topViewController !== readerStackController {
+                return true
+            }
+
             return readerSettings.edgeSwipeBackEnabled
+        }
+        if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
+            return navigationController == nil && readerSettings.edgeSwipeBackEnabled
         }
         return true
     }
@@ -3631,6 +3713,17 @@ struct ReaderHostView: UIViewControllerRepresentable {
         context: Context
     ) {
         uiViewController.update(book: book)
+    }
+}
+
+extension UIViewController {
+    func readerPopOrDismiss(animated: Bool) {
+        if let navigationController,
+           navigationController.viewControllers.count > 1 {
+            navigationController.popViewController(animated: animated)
+        } else {
+            dismiss(animated: animated)
+        }
     }
 }
 
@@ -4522,7 +4615,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
     }
 
     @objc private func closeButtonTapped() {
-        dismiss(animated: true)
+        readerPopOrDismiss(animated: true)
     }
 
     @objc private func segmentChanged() {
@@ -5222,7 +5315,7 @@ private final class ReaderSettingsViewController: UIViewController {
     }
 
     @objc private func closeButtonTapped() {
-        dismiss(animated: true)
+        readerPopOrDismiss(animated: true)
     }
 }
 
