@@ -18,6 +18,10 @@
 "library.selection.move" = "移动";
 "library.selection.export" = "导出";
 "library.delete" = "删除";
+"library.error.title" = "书架操作失败";
+"library.move.error.title" = "移动失败";
+"library.delete.error.title" = "删除失败";
+"library.export.error.title" = "导出失败";
 "library.error.bookNotFound" = "找不到这本书";
 "library.grid.progress" = "已读%@";
 "library.untitledBook" = "未命名书籍";

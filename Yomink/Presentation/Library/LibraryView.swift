@@ -172,18 +172,18 @@ struct LibraryView: View {
                 }
             }
             .alert(
-                "import.error.title",
+                viewModel.importErrorTitle,
                 isPresented: Binding(
                     get: { viewModel.importErrorMessage != nil },
                     set: { isPresented in
                         if !isPresented {
-                            viewModel.importErrorMessage = nil
+                            viewModel.clearError()
                         }
                     }
                 )
             ) {
                 Button("common.ok", role: .cancel) {
-                    viewModel.importErrorMessage = nil
+                    viewModel.clearError()
                 }
             } message: {
                 Text(viewModel.importErrorMessage ?? "")
@@ -710,7 +710,7 @@ struct LibraryView: View {
             exportPayload = ExportPayload(urls: urls)
             viewModel.exitSelection()
         } catch {
-            viewModel.importErrorMessage = error.localizedDescription
+            viewModel.showError(error, title: "library.export.error.title")
         }
     }
 
@@ -964,6 +964,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var selectedBookIDs: Set<UUID> = []
     @Published var isSelectionMode = false
     @Published var isImporting = false
+    @Published var importErrorTitle: LocalizedStringKey = "library.error.title"
     @Published var importErrorMessage: String?
     private var currentImportTask: Task<Void, Never>?
 
@@ -1001,7 +1002,7 @@ private final class LibraryViewModel: ObservableObject {
             )
             pruneSelection()
         } catch {
-            importErrorMessage = error.localizedDescription
+            showError(error, title: "library.error.title")
         }
     }
 
@@ -1028,7 +1029,7 @@ private final class LibraryViewModel: ObservableObject {
             books = try await fetchedBooks
             pruneSelection()
         } catch {
-            importErrorMessage = error.localizedDescription
+            showError(error, title: "library.error.title")
         }
     }
 
@@ -1054,7 +1055,7 @@ private final class LibraryViewModel: ObservableObject {
                 scope: scope
             )
         case let .failure(error):
-            importErrorMessage = error.localizedDescription
+            showError(error, title: "import.error.title")
         }
     }
 
@@ -1115,7 +1116,7 @@ private final class LibraryViewModel: ObservableObject {
                 await loadBooks(repository: repository, scope: scope)
                 exitSelection()
             } catch {
-                importErrorMessage = error.localizedDescription
+                showError(error, title: "library.move.error.title")
             }
         }
     }
@@ -1147,10 +1148,10 @@ private final class LibraryViewModel: ObservableObject {
                 exitSelection()
                 await loadBooks(repository: repository, scope: scope)
                 if let cleanupError {
-                    importErrorMessage = cleanupError.localizedDescription
+                    showError(cleanupError, title: "library.delete.error.title")
                 }
             } catch {
-                importErrorMessage = error.localizedDescription
+                showError(error, title: "library.delete.error.title")
             }
         }
     }
@@ -1186,7 +1187,7 @@ private final class LibraryViewModel: ObservableObject {
                 currentImportTask = nil
             } catch {
                 if !Task.isCancelled {
-                    importErrorMessage = error.localizedDescription
+                    showError(error, title: "import.error.title")
                     currentImportTask = nil
                 }
             }
@@ -1207,9 +1208,18 @@ private final class LibraryViewModel: ObservableObject {
             do {
                 try await repository.saveLibrarySettings(settings)
             } catch {
-                importErrorMessage = error.localizedDescription
+                showError(error, title: "settings.error.title")
             }
         }
+    }
+
+    func showError(_ error: Error, title: LocalizedStringKey) {
+        importErrorTitle = title
+        importErrorMessage = error.localizedDescription
+    }
+
+    func clearError() {
+        importErrorMessage = nil
     }
 
     private func pruneSelection() {

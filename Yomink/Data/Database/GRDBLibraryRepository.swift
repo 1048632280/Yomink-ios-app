@@ -783,11 +783,8 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
 
         try await database.writer.write { db in
-            try db.inTransaction {
-                for id in ids {
-                    _ = try BookRecord.deleteOne(db, key: id.uuidString)
-                }
-                return .commit
+            for id in ids {
+                _ = try BookRecord.deleteOne(db, key: id.uuidString)
             }
         }
     }
