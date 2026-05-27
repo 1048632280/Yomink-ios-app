@@ -4297,11 +4297,53 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         case bookmarks
     }
 
+    private enum CatalogJumpTarget {
+        case top
+        case bottom
+
+        var titleKey: String {
+            switch self {
+            case .top:
+                return "reader.catalog.jumpTop"
+            case .bottom:
+                return "reader.catalog.jumpBottom"
+            }
+        }
+
+        var opposite: CatalogJumpTarget {
+            switch self {
+            case .top:
+                return .bottom
+            case .bottom:
+                return .top
+            }
+        }
+
+        var scrollPosition: UITableView.ScrollPosition {
+            switch self {
+            case .top:
+                return .top
+            case .bottom:
+                return .bottom
+            }
+        }
+
+        func rowIndex(itemCount: Int) -> Int {
+            switch self {
+            case .top:
+                return 0
+            case .bottom:
+                return max(itemCount - 1, 0)
+            }
+        }
+    }
+
     private enum Layout {
         static let searchHeaderHeight: CGFloat = 56
         static let catalogEstimatedRowHeight: CGFloat = 52
         static let bookmarkEstimatedRowHeight: CGFloat = 118
         static let segmentedControlMinimumWidth: CGFloat = 128
+        static let catalogDirectionVelocityThreshold: CGFloat = 20
     }
 
     private struct ChapterListItem {
@@ -4340,7 +4382,8 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
     ])
     private var bookmarks: [Bookmark] = []
     private var currentMode: Mode = .chapters
-    private var isCatalogJumpingToBottom = false
+    private var catalogJumpTarget: CatalogJumpTarget = .bottom
+    private var ignoresCatalogScrollDirection = false
     private var searchText = ""
     private var needsSelectedChapterScroll = true
 
@@ -4488,7 +4531,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         }
 
         currentMode = mode
-        isCatalogJumpingToBottom = false
+        catalogJumpTarget = .bottom
         if mode == .bookmarks {
             clearCatalogSearch(animated: true)
         }
@@ -4507,13 +4550,18 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
             return
         }
 
-        isCatalogJumpingToBottom.toggle()
+        let target = catalogJumpTarget
+        catalogJumpTarget = target.opposite
+        ignoresCatalogScrollDirection = true
         scrollToChapterRow(
-            isCatalogJumpingToBottom ? displayedChapterItems.count - 1 : 0,
-            at: isCatalogJumpingToBottom ? .bottom : .top,
+            target.rowIndex(itemCount: displayedChapterItems.count),
+            at: target.scrollPosition,
             animated: true
         )
         updateCatalogJumpButton()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.ignoresCatalogScrollDirection = false
+        }
     }
 
     @MainActor
@@ -4553,15 +4601,21 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
 
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: NSLocalizedString(
-                isCatalogJumpingToBottom
-                    ? "reader.catalog.jumpTop"
-                    : "reader.catalog.jumpBottom",
+                catalogJumpTarget.titleKey,
                 comment: ""
             ),
             style: .plain,
             target: self,
             action: #selector(catalogJumpButtonTapped)
         )
+    }
+
+    private func updateCatalogJumpTarget(_ target: CatalogJumpTarget) {
+        guard catalogJumpTarget != target else {
+            return
+        }
+        catalogJumpTarget = target
+        updateCatalogJumpButton()
     }
 
     private func updateModeChrome() {
@@ -4805,6 +4859,31 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         }
     }
 
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard scrollView === tableView,
+              currentMode == .chapters,
+              displayedChapterItems.isEmpty == false,
+              scrollView.isDragging,
+              ignoresCatalogScrollDirection == false
+        else {
+            return
+        }
+
+        let velocityY = scrollView.panGestureRecognizer.velocity(in: scrollView).y
+        if velocityY > Layout.catalogDirectionVelocityThreshold {
+            updateCatalogJumpTarget(.bottom)
+        } else if velocityY < -Layout.catalogDirectionVelocityThreshold {
+            updateCatalogJumpTarget(.top)
+        }
+    }
+
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        guard scrollView === tableView else {
+            return
+        }
+        ignoresCatalogScrollDirection = false
+    }
+
     func searchBarTextDidBeginEditing(_ searchBar: UISearchBar) {
         searchBar.setShowsCancelButton(true, animated: true)
         revealSearchHeader(animated: true)
@@ -4815,7 +4894,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         textDidChange searchText: String
     ) {
         self.searchText = searchText
-        isCatalogJumpingToBottom = false
+        catalogJumpTarget = .bottom
         tableView.reloadData()
         updateCatalogJumpButton()
         revealSearchHeader(animated: false)
@@ -4831,7 +4910,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
 
     func searchBarCancelButtonClicked(_ searchBar: UISearchBar) {
         clearCatalogSearch(animated: true)
-        isCatalogJumpingToBottom = false
+        catalogJumpTarget = .bottom
         tableView.reloadData()
         updateCatalogJumpButton()
         collapseSearchHeaderToCatalogTop(animated: true)
