@@ -670,9 +670,6 @@ struct ImportBookEditPage: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
-                Spacer()
-                    .frame(height: 86)
-
                 metadataRows
 
                 Spacer(minLength: 0)
@@ -867,7 +864,7 @@ private struct ImportMetadataRow: View {
                 .foregroundColor(Color(.tertiaryLabel))
         }
         .padding(.horizontal, 16)
-        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .background(Color.white)
         .contentShape(Rectangle())
     }
@@ -885,7 +882,7 @@ private struct ImportMetadataFieldEditor: View {
 
     var body: some View {
         TextEditor(text: $text)
-            .font(.system(size: 28))
+            .font(.body)
             .foregroundColor(.primary)
             .padding(.horizontal, 8)
             .padding(.top, 20)
