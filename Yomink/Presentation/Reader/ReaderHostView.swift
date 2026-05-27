@@ -24,6 +24,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let repository: any LibraryRepository
     private let onClose: () -> Void
     private let collectionView: UICollectionView
+    private let verticalTopCoverView = UIView()
+    private let verticalBottomCoverView = UIView()
     private let topBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     private let titleLabel = UILabel()
@@ -390,8 +392,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     deinit {
+        let shouldRestoreBatteryMonitoring = previousBatteryMonitoringEnabled
         Task { @MainActor in
             UIApplication.shared.isIdleTimerDisabled = false
+            UIDevice.current.isBatteryMonitoringEnabled = shouldRestoreBatteryMonitoring
         }
         NotificationCenter.default.removeObserver(self)
         loadTask?.cancel()
@@ -401,7 +405,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         bookmarkTask?.cancel()
         autoReadDisplayLink?.invalidate()
         autoReadDisplayLink = nil
-        UIDevice.current.isBatteryMonitoringEnabled = previousBatteryMonitoringEnabled
     }
 
     override var prefersStatusBarHidden: Bool {
@@ -430,6 +433,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         previousBatteryMonitoringEnabled = UIDevice.current.isBatteryMonitoringEnabled
         UIDevice.current.isBatteryMonitoringEnabled = true
         configureCollectionView()
+        configureVerticalContentCovers()
         configureFixedWidgetOverlay()
         configureMenus()
         configureLoadingIndicator()
@@ -444,6 +448,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         applyMenuPosition(animated: false)
         applySettingsPanelPosition(animated: false)
         applyAutoReadPanelPosition()
+        updateVerticalContentCovers()
 
         let size = collectionView.bounds.size
         guard didStartOpening,
@@ -514,6 +519,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         ])
     }
 
+    private func configureVerticalContentCovers() {
+        [verticalTopCoverView, verticalBottomCoverView].forEach { coverView in
+            coverView.isUserInteractionEnabled = false
+            coverView.isHidden = true
+            view.addSubview(coverView)
+        }
+    }
+
     private func configureFixedWidgetOverlay() {
         fixedWidgetOverlay.translatesAutoresizingMaskIntoConstraints = false
         fixedWidgetOverlay.isUserInteractionEnabled = false
@@ -525,6 +538,25 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             fixedWidgetOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             fixedWidgetOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func refreshReaderOverlayOrdering() {
+        [
+            verticalTopCoverView,
+            verticalBottomCoverView,
+            fixedWidgetOverlay,
+            topBar,
+            bottomBar,
+            floatingActionStack,
+            settingsPanel,
+            autoReadPanel,
+            loadingIndicator
+        ].forEach { overlayView in
+            guard overlayView.superview === view else {
+                return
+            }
+            view.bringSubviewToFront(overlayView)
+        }
     }
 
     private func configureMenus() {
@@ -1617,6 +1649,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let settings = readerSettings.normalized
         let viewportSize = collectionView.bounds.size
         let safeAreaInsets = view.safeAreaInsets
+        let widgetInsets = widgetContentInsets()
+        let isVerticalViewport = usesVerticalScrolling
         let appFileStore = fileStore ?? self.fileStore
         didReachEndOfBook = false
         isLoadingNextPage = true
@@ -1632,6 +1666,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     filterRules: activeRules,
                     viewportSize: viewportSize,
                     safeAreaInsets: safeAreaInsets,
+                    widgetInsets: widgetInsets,
+                    isVerticalViewport: isVerticalViewport,
                     fileStore: appFileStore
                 )
                 try Task.checkCancellation()
@@ -1736,6 +1772,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let settings = readerSettings.normalized
         let viewportSize = collectionView.bounds.size
         let safeAreaInsets = view.safeAreaInsets
+        let widgetInsets = widgetContentInsets()
+        let isVerticalViewport = usesVerticalScrolling
         let appFileStore = fileStore
         isLoadingNextPage = insertingAtEnd
         updateSessionState(isLoadingNextPage: insertingAtEnd)
@@ -1751,6 +1789,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     filterRules: activeRules,
                     viewportSize: viewportSize,
                     safeAreaInsets: safeAreaInsets,
+                    widgetInsets: widgetInsets,
+                    isVerticalViewport: isVerticalViewport,
                     fileStore: appFileStore
                 )
                 try Task.checkCancellation()
@@ -1925,6 +1965,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.showsHorizontalScrollIndicator = false
         layout.invalidateLayout()
         collectionView.layoutIfNeeded()
+        updateVerticalContentCovers()
         updateFixedWidgetOverlay()
     }
 
@@ -1942,6 +1983,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.showsVerticalScrollIndicator = false
         layout.invalidateLayout()
         collectionView.layoutIfNeeded()
+        updateVerticalContentCovers()
         updateFixedWidgetOverlay()
     }
 
@@ -1976,11 +2018,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func verticalContinuousInsets() -> UIEdgeInsets {
-        let layout = effectiveReaderLayout()
+        let widgetInsets = widgetContentInsets()
         return UIEdgeInsets(
-            top: layout.topMargin,
+            top: widgetInsets.top,
             left: 0,
-            bottom: layout.bottomMargin,
+            bottom: widgetInsets.bottom,
             right: 0
         )
     }
@@ -1999,18 +2041,50 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             || visibility.time
             || visibility.chapterPageProgress
             || visibility.globalProgress
+        let widgetFont = UIFont.preferredFont(forTextStyle: .caption1)
+        let topWidgetHeight = ceil(widgetFont.lineHeight)
+        let hasBottomTextWidget = visibility.batteryPercentage
+            || visibility.time
+            || visibility.chapterPageProgress
+            || visibility.globalProgress
+        let bottomTextHeight = hasBottomTextWidget ? widgetFont.lineHeight : 0
+        let bottomIconHeight: CGFloat = visibility.batteryIcon ? 12 : 0
+        let bottomWidgetHeight = ceil(max(bottomTextHeight, bottomIconHeight))
         return UIEdgeInsets(
-            top: hasTopWidget ? CGFloat(values.widgetTitleTopMargin + 26) : 0,
+            top: hasTopWidget ? CGFloat(values.widgetTitleTopMargin) + topWidgetHeight : 0,
             left: 0,
-            bottom: hasBottomWidget ? CGFloat(values.widgetBottomMargin + 26) : 0,
+            bottom: hasBottomWidget ? CGFloat(values.widgetBottomMargin) + bottomWidgetHeight : 0,
             right: 0
         )
+    }
+
+    private func updateVerticalContentCovers() {
+        let insets = usesVerticalScrolling ? verticalContinuousInsets() : .zero
+        verticalTopCoverView.backgroundColor = readerSettings.theme.backgroundColor
+        verticalBottomCoverView.backgroundColor = readerSettings.theme.backgroundColor
+        verticalTopCoverView.isHidden = insets.top <= 0
+        verticalBottomCoverView.isHidden = insets.bottom <= 0
+        verticalTopCoverView.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: view.bounds.width,
+            height: max(0, insets.top)
+        )
+        verticalBottomCoverView.frame = CGRect(
+            x: 0,
+            y: max(0, view.bounds.height - max(0, insets.bottom)),
+            width: view.bounds.width,
+            height: max(0, insets.bottom)
+        )
+        refreshReaderOverlayOrdering()
     }
 
     private func applyTheme() {
         overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         view.backgroundColor = readerSettings.theme.backgroundColor
         collectionView.backgroundColor = readerSettings.theme.backgroundColor
+        verticalTopCoverView.backgroundColor = readerSettings.theme.backgroundColor
+        verticalBottomCoverView.backgroundColor = readerSettings.theme.backgroundColor
         fixedWidgetOverlay.backgroundColor = .clear
         loadingIndicator.color = readerSettings.theme.secondaryTextColor
         progressLabel.textColor = readerSettings.theme.secondaryTextColor
@@ -5372,6 +5446,8 @@ private enum CollectionReaderPaginator {
         filterRules: [TextFilterRule],
         viewportSize: CGSize,
         safeAreaInsets: UIEdgeInsets,
+        widgetInsets: UIEdgeInsets,
+        isVerticalViewport: Bool,
         fileStore: AppFileStore
     ) async throws -> CollectionReaderPage {
         try await Task.detached(priority: .userInitiated) {
@@ -5404,11 +5480,12 @@ private enum CollectionReaderPaginator {
                 ? NSLocalizedString("reader.emptyChapter", comment: "")
                 : filtered.displayText
             let normalizedSettings = settings.normalized
+            let effectiveWidgetInsets = isVerticalViewport ? .zero : widgetInsets
             let layout = Self.effectiveLayout(
                 settings: normalizedSettings,
                 viewportSize: viewportSize,
                 safeAreaInsets: safeAreaInsets,
-                widgetInsets: Self.widgetContentInsets(settings: normalizedSettings)
+                widgetInsets: effectiveWidgetInsets
             )
             let fittingSize = layout.contentRect(in: CGRect(origin: .zero, size: viewportSize)).size
             let typography = ReaderTypography(
@@ -5543,23 +5620,6 @@ private enum CollectionReaderPaginator {
         layout.topMargin = max(layout.topMargin, widgetInsets.top)
         layout.bottomMargin = max(layout.bottomMargin, widgetInsets.bottom)
         return layout
-    }
-
-    static func widgetContentInsets(settings: ReaderSettings) -> UIEdgeInsets {
-        let values = settings.effectiveLayoutValues
-        let visibility = settings.widgetVisibility
-        let hasTopWidget = visibility.chapterTitle
-        let hasBottomWidget = visibility.batteryPercentage
-            || visibility.batteryIcon
-            || visibility.time
-            || visibility.chapterPageProgress
-            || visibility.globalProgress
-        return UIEdgeInsets(
-            top: hasTopWidget ? CGFloat(values.widgetTitleTopMargin + 26) : 0,
-            left: 0,
-            bottom: hasBottomWidget ? CGFloat(values.widgetBottomMargin + 26) : 0,
-            right: 0
-        )
     }
 
     static func withDisabledWidgets(_ settings: ReaderSettings) -> ReaderSettings {
