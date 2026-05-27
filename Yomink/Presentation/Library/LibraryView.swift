@@ -926,7 +926,7 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
         Coordinator(parent: self)
     }
 
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+    final class Coordinator: NSObject, UIDocumentPickerDelegate, UIAdaptivePresentationControllerDelegate {
         var parent: DocumentPickerPresenter
         private weak var picker: UIDocumentPickerViewController?
         private var retryCount = 0
@@ -953,6 +953,7 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
                 asCopy: true
             )
             picker.delegate = self
+            picker.presentationController?.delegate = self
             picker.allowsMultipleSelection = false
             self.picker = picker
             viewController.present(picker, animated: true)
@@ -974,6 +975,12 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
         }
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            picker = nil
+            parent.isPresented = false
+        }
+
+        func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+            retryCount = 0
             picker = nil
             parent.isPresented = false
         }
