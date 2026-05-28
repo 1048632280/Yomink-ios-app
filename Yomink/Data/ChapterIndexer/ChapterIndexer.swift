@@ -323,7 +323,7 @@ struct ChapterIndexer: Sendable {
         let chineseChapterUnit = #"[章回节折卷部篇集话幕]"#
         let englishChapterNumber = #"(?:[0-9０-９]+|[IVXLCDM]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"#
         let specialTitle = #"(前言|引子|序|序言|序章|楔子|后记|尾声|终章|外传)"#
-        [
+        return [
             TitleExpression(
                 expression: makeExpression(#"^\s*"# + optionalOpening + #"第\s*("# + chineseNumber + #")\s*"# + chineseChapterUnit + #"\s*(.*?)"# + optionalClosing + #"$"#),
                 kind: .regular
