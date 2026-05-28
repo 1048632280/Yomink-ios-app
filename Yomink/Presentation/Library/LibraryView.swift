@@ -13,6 +13,7 @@ struct LibraryView: View {
     @State private var activeRoute: LibraryRoute?
     @State private var exportPayload: ExportPayload?
     @State private var pendingBookDeletion: PendingBookDeletion?
+    @State private var isReaderStatusBarHidden = false
 
     init() {
         Self.configureNavigationBarAppearance()
@@ -37,6 +38,7 @@ struct LibraryView: View {
             .clipped()
         }
         .ignoresSafeArea(.all)
+        .statusBar(hidden: activeReaderBook != nil && isReaderStatusBarHidden)
     }
 
     @ViewBuilder
@@ -436,11 +438,13 @@ struct LibraryView: View {
                     ReaderHostView(
                         book: book,
                         fileStore: services.fileStore,
-                        repository: services.libraryRepository
+                        repository: services.libraryRepository,
+                        onStatusBarHiddenChange: { isHidden in
+                            isReaderStatusBarHidden = isHidden
+                        }
                     )
                     .ignoresSafeArea()
                     .navigationBarHidden(true)
-                    .statusBar(hidden: true)
                 } else {
                     EmptyView()
                 }
@@ -461,6 +465,7 @@ struct LibraryView: View {
                 guard !isActive else {
                     return
                 }
+                isReaderStatusBarHidden = false
                 activeReaderBook = nil
                 reloadBooksIfReady()
             }

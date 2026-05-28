@@ -23,6 +23,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let fileStore: AppFileStore
     private let repository: any LibraryRepository
     private let onClose: () -> Void
+    private let onStatusBarHiddenChange: (Bool) -> Void
     private let collectionView: UICollectionView
     private let verticalTopCoverView = UIView()
     private let verticalBottomCoverView = UIView()
@@ -371,11 +372,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         book: Book,
         fileStore: AppFileStore,
         repository: any LibraryRepository,
-        onClose: @escaping () -> Void
+        onClose: @escaping () -> Void,
+        onStatusBarHiddenChange: @escaping (Bool) -> Void
     ) {
         self.book = book
         self.fileStore = fileStore
         self.repository = repository
+        self.onStatusBarHiddenChange = onStatusBarHiddenChange
 
         let layout = UICollectionViewFlowLayout()
         layout.scrollDirection = .horizontal
@@ -393,6 +396,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     deinit {
         let shouldRestoreBatteryMonitoring = previousBatteryMonitoringEnabled
+        onStatusBarHiddenChange(false)
         Task { @MainActor in
             UIApplication.shared.isIdleTimerDisabled = false
             UIDevice.current.isBatteryMonitoringEnabled = shouldRestoreBatteryMonitoring
@@ -408,16 +412,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     override var prefersStatusBarHidden: Bool {
-        guard readerSettings.autoHideStatusBar else {
-            return false
-        }
-        if isMenuVisible,
-           !isSettingsPanelVisible,
-           !isAutoReadPanelVisible,
-           !isAutoReading {
-            return false
-        }
-        return true
+        shouldHideSystemStatusBar
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
@@ -426,6 +421,21 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override var prefersHomeIndicatorAutoHidden: Bool {
         readerSettings.autoHideHomeIndicator
+    }
+
+    private var shouldHideSystemStatusBar: Bool {
+        if isAutoReading {
+            return true
+        }
+        guard readerSettings.autoHideStatusBar else {
+            return false
+        }
+        if isMenuVisible,
+           !isSettingsPanelVisible,
+           !isAutoReadPanelVisible {
+            return false
+        }
+        return true
     }
 
     override func viewDidLoad() {
@@ -2104,7 +2114,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         updateDarkModeButton()
         updateAutoReadButton()
         updateFixedWidgetOverlay()
-        setNeedsStatusBarAppearanceUpdate()
+        refreshSystemStatusBarVisibility()
     }
 
     private func updateDarkModeButton() {
@@ -2116,10 +2126,17 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         autoReadButton.setImage(UIImage(systemName: "circle"), for: .normal)
     }
 
+    private func refreshSystemStatusBarVisibility() {
+        let isHidden = shouldHideSystemStatusBar
+        onStatusBarHiddenChange(isHidden)
+        setNeedsStatusBarAppearanceUpdate()
+        navigationController?.setNeedsStatusBarAppearanceUpdate()
+    }
+
     private func updateReaderChromePreferences() {
         let normalized = readerSettings.normalized
         UIApplication.shared.isIdleTimerDisabled = normalized.keepScreenAwake
-        setNeedsStatusBarAppearanceUpdate()
+        refreshSystemStatusBarVisibility()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
         settingsPageModeControl.selectedSegmentIndex = normalized.pageMode.settingsPageTurnIndex
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases.firstIndex(of: normalized.theme) ?? 0
@@ -2160,7 +2177,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         topBar.isUserInteractionEnabled = visible
         bottomBar.isUserInteractionEnabled = visible
         floatingActionStack.isUserInteractionEnabled = visible
-        setNeedsStatusBarAppearanceUpdate()
+        refreshSystemStatusBarVisibility()
         view.layoutIfNeeded()
         if animated {
             UIView.animate(
@@ -2197,7 +2214,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
         isSettingsPanelVisible = visible
         settingsPanel.isUserInteractionEnabled = visible
-        setNeedsStatusBarAppearanceUpdate()
+        refreshSystemStatusBarVisibility()
         view.layoutIfNeeded()
         if animated {
             UIView.animate(
@@ -2223,7 +2240,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
         isAutoReadPanelVisible = visible
         autoReadPanel.isUserInteractionEnabled = visible
-        setNeedsStatusBarAppearanceUpdate()
+        refreshSystemStatusBarVisibility()
         view.layoutIfNeeded()
         if animated {
             UIView.animate(
@@ -2716,6 +2733,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let anchor = topAnchorAbsoluteOffset() ?? currentPage?.startAbsoluteOffset ?? 0
         setMenuVisible(false, animated: true)
         isAutoReading = true
+        refreshSystemStatusBarVisibility()
         configureCollectionViewForAutoReading()
         collectionView.reloadData()
         alignViewport(toAbsoluteOffset: anchor)
@@ -2735,6 +2753,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.layer.removeAllAnimations()
         isAutoReadingPausedForBackground = false
         isAutoReading = false
+        refreshSystemStatusBarVisibility()
         setAutoReadPanelVisible(false, animated: animated)
         updateAutoReadButton()
         if restoreLayout {
@@ -2758,6 +2777,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         updateCurrentPageFromVisiblePage()
         setAutoReadPanelVisible(false, animated: false)
         isAutoReadingPausedForBackground = true
+        refreshSystemStatusBarVisibility()
         saveProgressImmediately()
     }
 
@@ -2768,6 +2788,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         isAutoReadingPausedForBackground = false
         updateReaderChromePreferences()
+        refreshSystemStatusBarVisibility()
         configureCollectionViewForAutoReading()
         collectionView.reloadData()
         alignContentOffsetToCurrentPage()
@@ -3686,15 +3707,18 @@ struct ReaderHostView: UIViewControllerRepresentable {
     var book: Book
     let fileStore: AppFileStore
     let repository: any LibraryRepository
+    let onStatusBarHiddenChange: (Bool) -> Void
 
     init(
         book: Book,
         fileStore: AppFileStore,
-        repository: any LibraryRepository
+        repository: any LibraryRepository,
+        onStatusBarHiddenChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.book = book
         self.fileStore = fileStore
         self.repository = repository
+        self.onStatusBarHiddenChange = onStatusBarHiddenChange
     }
 
     func makeUIViewController(context: Context) -> CollectionReaderViewController {
@@ -3704,6 +3728,9 @@ struct ReaderHostView: UIViewControllerRepresentable {
             repository: repository,
             onClose: {
                 dismiss()
+            },
+            onStatusBarHiddenChange: { isHidden in
+                onStatusBarHiddenChange(isHidden)
             }
         )
     }
