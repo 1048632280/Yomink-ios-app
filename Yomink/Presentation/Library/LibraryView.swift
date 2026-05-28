@@ -36,6 +36,7 @@ struct LibraryView: View {
             .background(Color(.systemGray6))
             .clipped()
         }
+        .ignoresSafeArea(.all)
     }
 
     @ViewBuilder
