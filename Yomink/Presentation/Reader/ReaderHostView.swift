@@ -34,6 +34,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let moreButton = UIButton(type: .system)
     private let progressLabel = UILabel()
     private let progressSlider = UISlider()
+    private let progressTooltipView = UIView()
+    private let progressTooltipLabel = UILabel()
     private let previousChapterButton = UIButton(type: .system)
     private let nextChapterButton = UIButton(type: .system)
     private let catalogButton = UIButton(type: .system)
@@ -95,6 +97,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let bottomActionRowHeight: CGFloat = 48
         static let chapterButtonWidth: CGFloat = 74
         static let progressSliderHorizontalInset: CGFloat = 18
+        static let progressTooltipBottomSpacing: CGFloat = 20
+        static let progressTooltipHorizontalPadding: CGFloat = 12
+        static let progressTooltipVerticalPadding: CGFloat = 6
         static let floatingButtonSize: CGFloat = 42
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
@@ -134,7 +139,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
         static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
         static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
-        static let progressThumbColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
+        static let progressThumbColor = UIColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1)
+        static let progressThumbInnerStrokeColor = UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1)
+        static let progressTooltipBackgroundColor = UIColor(red: 0.133, green: 0.133, blue: 0.133, alpha: 1)
         static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
         static let settingsControlSelectedColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
         static let floatingButtonColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
@@ -577,6 +584,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             verticalTopCoverView,
             verticalBottomCoverView,
             fixedWidgetOverlay,
+            progressTooltipView,
             topBar,
             bottomBar,
             floatingActionStack,
@@ -600,6 +608,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         bottomBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
         configureTopBar()
         configureBottomBar()
+        configureProgressTooltip()
         configureFloatingActionButtons()
         configureSettingsPanel()
         configureAutoReadPanel()
@@ -712,7 +721,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
         progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
         progressSlider.thumbTintColor = MenuStyle.progressThumbColor
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 18), for: .normal)
+        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .normal)
         progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .highlighted)
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchBegan), for: .touchDown)
@@ -826,6 +835,48 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         ])
     }
 
+    private func configureProgressTooltip() {
+        progressTooltipView.backgroundColor = MenuStyle.progressTooltipBackgroundColor
+        progressTooltipView.layer.cornerRadius = 4
+        progressTooltipView.layer.masksToBounds = true
+        progressTooltipView.alpha = 0
+        progressTooltipView.isHidden = true
+        progressTooltipView.isUserInteractionEnabled = false
+        progressTooltipView.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(progressTooltipView)
+
+        progressTooltipLabel.font = .systemFont(ofSize: 14, weight: .regular)
+        progressTooltipLabel.textColor = .white
+        progressTooltipLabel.textAlignment = .center
+        progressTooltipLabel.numberOfLines = 1
+        progressTooltipLabel.translatesAutoresizingMaskIntoConstraints = false
+        progressTooltipView.addSubview(progressTooltipLabel)
+
+        NSLayoutConstraint.activate([
+            progressTooltipView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            progressTooltipView.bottomAnchor.constraint(
+                equalTo: bottomBar.topAnchor,
+                constant: -Layout.progressTooltipBottomSpacing
+            ),
+            progressTooltipLabel.leadingAnchor.constraint(
+                equalTo: progressTooltipView.leadingAnchor,
+                constant: Layout.progressTooltipHorizontalPadding
+            ),
+            progressTooltipLabel.trailingAnchor.constraint(
+                equalTo: progressTooltipView.trailingAnchor,
+                constant: -Layout.progressTooltipHorizontalPadding
+            ),
+            progressTooltipLabel.topAnchor.constraint(
+                equalTo: progressTooltipView.topAnchor,
+                constant: Layout.progressTooltipVerticalPadding
+            ),
+            progressTooltipLabel.bottomAnchor.constraint(
+                equalTo: progressTooltipView.bottomAnchor,
+                constant: -Layout.progressTooltipVerticalPadding
+            )
+        ])
+    }
+
     private func configureFloatingActionButtons() {
         floatingActionStack.axis = .vertical
         floatingActionStack.alignment = .center
@@ -925,7 +976,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
-        let shadowPadding: CGFloat = 2
+        let shadowPadding: CGFloat = 4
         let size = CGSize(
             width: diameter + shadowPadding * 2,
             height: diameter + shadowPadding * 2
@@ -940,28 +991,20 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             )
             let cgContext = context.cgContext
             cgContext.setShadow(
-                offset: CGSize(width: 0, height: 1.5),
-                blur: 3,
-                color: UIColor.black.withAlphaComponent(0.32).cgColor
+                offset: CGSize(width: 0, height: 2),
+                blur: 4,
+                color: UIColor.black.withAlphaComponent(0.36).cgColor
             )
 
-            UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1).setFill()
+            MenuStyle.progressThumbColor.setFill()
             cgContext.fillEllipse(in: bounds)
             cgContext.setShadow(offset: .zero, blur: 0, color: nil)
-            MenuStyle.progressThumbColor.setFill()
-            cgContext.fillEllipse(in: bounds.insetBy(dx: 2, dy: 2))
 
-            UIColor(white: 0.64, alpha: 0.28).setFill()
-            cgContext.fillEllipse(
-                in: CGRect(
-                    x: bounds.minX + diameter * 0.30,
-                    y: bounds.minY + diameter * 0.22,
-                    width: diameter * 0.40,
-                    height: diameter * 0.18
-                )
-            )
+            MenuStyle.progressThumbInnerStrokeColor.setStroke()
+            cgContext.setLineWidth(1.5)
+            cgContext.strokeEllipse(in: bounds.insetBy(dx: 5, dy: 5))
 
-            UIColor(red: 0.39, green: 0.39, blue: 0.39, alpha: 1).setStroke()
+            UIColor(white: 0.78, alpha: 0.2).setStroke()
             cgContext.setLineWidth(1)
             cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
         }
@@ -2314,9 +2357,20 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             globalProgress: globalProgress
         )
         if !isTrackingProgressSlider {
-            progressSlider.value = Float(globalProgress)
+            progressSlider.value = Float(chapterProgress(for: currentPage, in: chapter))
         }
         updateFixedWidgetOverlay()
+    }
+
+    private func chapterProgress(
+        for page: CollectionReaderPage,
+        in chapter: Chapter
+    ) -> Double {
+        guard chapter.byteLength > 0 else {
+            return 0
+        }
+        let offset = max(page.startAbsoluteOffset - chapter.startOffset, 0)
+        return min(max(Double(offset) / Double(chapter.byteLength), 0), 1)
     }
 
     private func progressText(
@@ -2330,6 +2384,61 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(chapterProgress, 0), 1))) ?? "0%",
             NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(globalProgress, 0), 1))) ?? "0%"
         )
+    }
+
+    private func progressTooltipText(
+        chapterProgress: Double,
+        pageIndex: Int
+    ) -> String {
+        String(
+            format: NSLocalizedString("reader.progress.tooltip.format", comment: ""),
+            NumberFormatter.readerProgressTooltipPercent.string(
+                from: NSNumber(value: min(max(chapterProgress, 0), 1))
+            ) ?? "0.00%",
+            pageIndex + 1
+        )
+    }
+
+    private func updateProgressTooltip() {
+        if let target = targetProgressInCurrentChapter(progress: Double(progressSlider.value)) {
+            updateProgressTooltip(target: target)
+        } else if let currentPage,
+                  let chapter = chapter(containingAbsoluteOffset: currentPage.startAbsoluteOffset) {
+            updateProgressTooltip(
+                target: (
+                    chapter: chapter,
+                    chapterOffset: max(currentPage.startAbsoluteOffset - chapter.startOffset, 0),
+                    chapterProgress: chapterProgress(for: currentPage, in: chapter),
+                    pageIndex: currentPage.localPageIndex
+                )
+            )
+        }
+    }
+
+    private func updateProgressTooltip(
+        target: (chapter: Chapter, chapterOffset: Int, chapterProgress: Double, pageIndex: Int)
+    ) {
+        progressTooltipLabel.text = progressTooltipText(
+            chapterProgress: target.chapterProgress,
+            pageIndex: target.pageIndex
+        )
+    }
+
+    private func setProgressTooltipVisible(_ visible: Bool) {
+        if visible {
+            progressTooltipView.isHidden = false
+        }
+        UIView.animate(
+            withDuration: 0.08,
+            delay: 0,
+            options: [.beginFromCurrentState, .curveEaseOut]
+        ) {
+            self.progressTooltipView.alpha = visible ? 1 : 0
+        } completion: { _ in
+            if !visible {
+                self.progressTooltipView.isHidden = true
+            }
+        }
     }
 
     private func pageWidgetSnapshot(for page: CollectionReaderPage) -> ReaderPageWidgetSnapshot {
@@ -2918,21 +3027,54 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return true
     }
 
-    private func targetChapter(forGlobalProgress progress: Double) -> (index: Int, chapter: Chapter, chapterOffset: Int, chapterProgress: Double)? {
-        guard let lastEnd = chapters.last?.endOffset,
-              lastEnd > 0 else {
+    private func targetProgressInCurrentChapter(
+        progress: Double
+    ) -> (chapter: Chapter, chapterOffset: Int, chapterProgress: Double, pageIndex: Int)? {
+        guard let currentPage,
+              let chapter = chapter(containingAbsoluteOffset: currentPage.startAbsoluteOffset)
+        else {
             return nil
         }
-        let absolute = min(max(Int(Double(lastEnd) * min(max(progress, 0), 1)), 0), lastEnd - 1)
-        guard let index = chapters.firstIndex(where: { absolute >= $0.startOffset && absolute < $0.endOffset }) else {
-            return nil
+
+        let chapterProgress = min(max(progress, 0), 1)
+        let maxOffset = max(chapter.byteLength - 1, 0)
+        let chapterOffset = min(
+            max(Int((Double(chapter.byteLength) * chapterProgress).rounded(.down)), 0),
+            maxOffset
+        )
+        let estimatedPageIndex = pageIndex(
+            containingChapterOffset: chapterOffset,
+            in: currentPage
+        )
+        return (
+            chapter: chapter,
+            chapterOffset: chapterOffset,
+            chapterProgress: chapterProgress,
+            pageIndex: estimatedPageIndex
+        )
+    }
+
+    private func pageIndex(
+        containingChapterOffset offset: Int,
+        in page: CollectionReaderPage
+    ) -> Int {
+        let starts = page.chapterPageStartOffsets
+        guard starts.isEmpty == false else {
+            return min(max(page.localPageIndex, 0), max(page.chapterPageCount - 1, 0))
         }
-        let chapter = chapters[index]
-        let chapterOffset = max(0, absolute - chapter.startOffset)
-        let chapterProgress = chapter.byteLength > 0
-            ? Double(chapterOffset) / Double(chapter.byteLength)
-            : 0
-        return (index, chapter, chapterOffset, chapterProgress)
+
+        var lowerBound = 0
+        var upperBound = starts.count
+        while lowerBound < upperBound {
+            let middle = (lowerBound + upperBound) / 2
+            if starts[middle] <= offset {
+                lowerBound = middle + 1
+            } else {
+                upperBound = middle
+            }
+        }
+
+        return min(max(lowerBound - 1, 0), max(starts.count - 1, 0))
     }
 
     private func chapter(containingAbsoluteOffset offset: Int) -> Chapter? {
@@ -3199,19 +3341,25 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     @objc private func progressSliderChanged() {
-        guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
+        guard let target = targetProgressInCurrentChapter(progress: Double(progressSlider.value)) else {
             return
         }
+        let total = max(chapters.last?.endOffset ?? target.chapter.endOffset, 1)
+        let absoluteOffset = target.chapter.startOffset + target.chapterOffset
+        let globalProgress = min(max(Double(absoluteOffset) / Double(total), 0), 1)
         progressLabel.text = progressText(
             chapter: target.chapter,
             chapterProgress: target.chapterProgress,
-            globalProgress: Double(progressSlider.value)
+            globalProgress: globalProgress
         )
+        updateProgressTooltip(target: target)
+        setProgressTooltipVisible(true)
     }
 
     @objc private func progressSliderTouchFinished() {
         isTrackingProgressSlider = false
-        guard let target = targetChapter(forGlobalProgress: Double(progressSlider.value)) else {
+        setProgressTooltipVisible(false)
+        guard let target = targetProgressInCurrentChapter(progress: Double(progressSlider.value)) else {
             return
         }
         pagingGeneration += 1
@@ -3780,6 +3928,14 @@ private extension NumberFormatter {
         formatter.numberStyle = .percent
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 1
+        return formatter
+    }()
+
+    static let readerProgressTooltipPercent: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .percent
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
         return formatter
     }()
 }
@@ -5619,6 +5775,7 @@ private struct CollectionReaderPage: Equatable, @unchecked Sendable {
     let pageIndex: Int
     let localPageIndex: Int
     let chapterPageCount: Int
+    let chapterPageStartOffsets: [Int]
     let startAbsoluteOffset: Int
     let endAbsoluteOffset: Int
     let startChapterOffset: Int
@@ -5720,6 +5877,13 @@ private enum CollectionReaderPaginator {
                 containingDisplayUTF16Index: displayIndex
             )
             let page = paginator.page(at: localPageIndex)
+            let chapterPageStartOffsets: [Int] = isPlaceholderPage
+                ? [0]
+                : (0..<paginator.pageCount).map { index in
+                    filtered.originalByteOffset(
+                        atDisplayUTF16Index: paginator.pageStartDisplayUTF16Index(at: index)
+                    )
+                }
             let pageEndDisplayIndex = page.startDisplayUTF16Index + page.displayUTF16Length
             let pageStartOffset: Int
             let pageEndOffset: Int
@@ -5768,6 +5932,7 @@ private enum CollectionReaderPaginator {
                 pageIndex: pageIndex,
                 localPageIndex: localPageIndex,
                 chapterPageCount: paginator.pageCount,
+                chapterPageStartOffsets: chapterPageStartOffsets,
                 startAbsoluteOffset: startAbsoluteOffset,
                 endAbsoluteOffset: endAbsoluteOffset,
                 startChapterOffset: pageStartOffset,

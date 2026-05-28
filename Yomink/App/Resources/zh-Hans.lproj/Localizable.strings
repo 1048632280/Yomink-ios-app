@@ -233,6 +233,7 @@
 "reader.error.title" = "操作失败";
 "reader.error.invalidUTF8Content" = "书籍正文无法按 UTF-8 解码。";
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";
+"reader.progress.tooltip.format" = "%@ 第%d页";
 "reader.preview.chapter.title" = "预览章节";
 
 "chapter.preface" = "序";
