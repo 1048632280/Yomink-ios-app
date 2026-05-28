@@ -123,15 +123,40 @@ enum RandomPickerScope: Hashable, Codable, Sendable {
 struct RandomPickerState: Codable, Equatable, Sendable {
     var selectedScopes: [RandomPickerScope]?
     var recentBookIDs: [UUID]
+    var drawCounts: [UUID: Int]
 
     static let storageKey = "randomPicker.state"
-    static let cooldownLimit = 5
+    static let cooldownLimit = 10
+
+    private enum CodingKeys: String, CodingKey {
+        case selectedScopes
+        case recentBookIDs
+        case drawCounts
+    }
 
     static var `default`: RandomPickerState {
         RandomPickerState(
             selectedScopes: nil,
-            recentBookIDs: []
+            recentBookIDs: [],
+            drawCounts: [:]
         )
+    }
+
+    init(
+        selectedScopes: [RandomPickerScope]? = nil,
+        recentBookIDs: [UUID] = [],
+        drawCounts: [UUID: Int] = [:]
+    ) {
+        self.selectedScopes = selectedScopes
+        self.recentBookIDs = recentBookIDs
+        self.drawCounts = drawCounts
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        selectedScopes = try container.decodeIfPresent([RandomPickerScope].self, forKey: .selectedScopes)
+        recentBookIDs = (try? container.decodeIfPresent([UUID].self, forKey: .recentBookIDs)) ?? []
+        drawCounts = (try? container.decodeIfPresent([UUID: Int].self, forKey: .drawCounts)) ?? [:]
     }
 
     var normalized: RandomPickerState {
@@ -143,6 +168,9 @@ struct RandomPickerState: Codable, Equatable, Sendable {
             }
         }
         state.recentBookIDs = Array(state.recentBookIDs.uniqued().prefix(Self.cooldownLimit))
+        state.drawCounts = state.drawCounts.filter { entry in
+            entry.value > 0
+        }
         return state
     }
 }

@@ -62,16 +62,22 @@
 "randomPicker.scope.title" = "抽取范围";
 "randomPicker.scope.ungrouped" = "未分组";
 "randomPicker.scope.count" = "%d本";
+"randomPicker.scope.choose" = "选择范围";
+"randomPicker.scope.emptySummary" = "未选择分组";
+"randomPicker.scope.selectedSummary" = "已选%d个分组 · %d本";
 "randomPicker.action.draw" = "开始抽取";
 "randomPicker.action.skip" = "跳过动画";
 "randomPicker.action.read" = "立即阅读";
 "randomPicker.action.redraw" = "重新抽取";
 "randomPicker.empty.message" = "当前范围没有可抽取的书籍";
 "randomPicker.result.placeholder" = "选择范围后开始抽取";
-"randomPicker.history.title" = "最近抽中";
+"randomPicker.history.title" = "最近抽中（冷却池）";
 "randomPicker.history.empty" = "还没有抽中过书";
 "randomPicker.cooldownReset" = "书籍太少，已重置抽取池";
 "randomPicker.error.title" = "随机抽取失败";
+"randomPicker.stats.title" = "统计";
+"randomPicker.stats.empty" = "还没有抽取统计";
+"randomPicker.stats.count" = "%d次";
 
 "sidebar.groups.section" = "书架分组";
 "sidebar.groupWithCount" = "%@(%d本)";
