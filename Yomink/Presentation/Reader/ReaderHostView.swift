@@ -350,6 +350,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var didReachEndOfBook = false
     private var isLoadingNextPage = false
     private var pendingTapTargetPageIndex: Int?
+    private var pendingRestoreAbsoluteOffset: Int?
     private var previousBatteryMonitoringEnabled = false
     private var autoReadDisplayLink: CADisplayLink?
     private var lastAutoReadTimestamp: CFTimeInterval?
@@ -480,6 +481,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
 
         lastViewportSize = size
+        if currentPage == nil {
+            guard let pendingRestoreAbsoluteOffset else {
+                return
+            }
+            reopen(atAbsoluteOffset: pendingRestoreAbsoluteOffset, enforceChapterBoundary: true)
+            return
+        }
+
         let offset = currentDisplayByteOffset()
         reopen(atAbsoluteOffset: offset, enforceChapterBoundary: true)
     }
@@ -1598,6 +1607,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         showLoading(true)
         loadTask?.cancel()
         pageTask?.cancel()
+        pendingRestoreAbsoluteOffset = nil
         pagingGeneration += 1
         let generation = pagingGeneration
         let targetBook = book
@@ -1653,13 +1663,18 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         generation: Int? = nil,
         fileStore: AppFileStore? = nil
     ) {
-        guard !chapters.isEmpty,
-              collectionView.bounds.width > 1,
-              collectionView.bounds.height > 1 else {
+        guard !chapters.isEmpty else {
             showLoading(false)
             return
         }
+        guard collectionView.bounds.width > 1,
+              collectionView.bounds.height > 1 else {
+            pendingRestoreAbsoluteOffset = absoluteOffset
+            showLoading(true)
+            return
+        }
 
+        pendingRestoreAbsoluteOffset = nil
         pageTask?.cancel()
         let activeGeneration = generation ?? {
             pagingGeneration += 1
