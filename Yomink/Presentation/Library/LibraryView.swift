@@ -14,6 +14,9 @@ struct LibraryView: View {
     @State private var exportPayload: ExportPayload?
     @State private var pendingBookDeletion: PendingBookDeletion?
     @State private var isReaderStatusBarHidden = false
+    @State private var pendingReaderBook: Book?
+    @State private var pendingReaderOpenID = UUID()
+    @State private var readerNavigationGuardUntil: Date?
 
     init() {
         Self.configureNavigationBarAppearance()
@@ -484,6 +487,11 @@ struct LibraryView: View {
                 guard !isActive else {
                     return
                 }
+                if let guardUntil = readerNavigationGuardUntil,
+                   Date() < guardUntil {
+                    return
+                }
+                readerNavigationGuardUntil = nil
                 isReaderStatusBarHidden = false
                 activeReaderBook = nil
                 reloadBooksIfReady()
@@ -843,9 +851,28 @@ struct LibraryView: View {
     }
 
     private func openBookAfterRouteDismissal(_ book: Book) {
+        pendingReaderBook = book
+        let openID = UUID()
+        pendingReaderOpenID = openID
         activeRoute = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.28) {
-            activeReaderBook = book
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.routeReaderOpenDelay) {
+            guard pendingReaderOpenID == openID,
+                  let bookToOpen = pendingReaderBook,
+                  bookToOpen.id == book.id
+            else {
+                return
+            }
+
+            readerNavigationGuardUntil = Date().addingTimeInterval(Self.readerNavigationGuardDuration)
+            activeReaderBook = bookToOpen
+            self.pendingReaderBook = nil
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.readerNavigationGuardDuration) {
+                if let guardUntil = readerNavigationGuardUntil,
+                   Date() >= guardUntil {
+                    readerNavigationGuardUntil = nil
+                }
+            }
         }
     }
 
@@ -901,6 +928,8 @@ struct LibraryView: View {
     }
 
     private static let drawerAnimationDuration = 0.28
+    private static let routeReaderOpenDelay = 0.56
+    private static let readerNavigationGuardDuration = 0.72
 
     private static let drawerAnimation = Animation.spring(
         response: 0.28,

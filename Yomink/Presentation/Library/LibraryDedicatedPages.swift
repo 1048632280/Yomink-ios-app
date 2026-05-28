@@ -549,9 +549,9 @@ struct RandomBookPickerPage: View {
     @State private var showsScopePanel = false
     @State private var showsStatsPage = false
 
-    private let cardWidth: CGFloat = 126
-    private let cardHeight: CGFloat = 226
-    private let cardSpacing: CGFloat = 12
+    private let cardWidth: CGFloat = 108
+    private let cardHeight: CGFloat = 188
+    private let cardSpacing: CGFloat = 10
 
     private var scopeOptions: [RandomPickerScope] {
         [.ungrouped] + groups.map { .group($0.id) }
@@ -592,17 +592,17 @@ struct RandomBookPickerPage: View {
                 Color(.systemGray6)
                     .ignoresSafeArea()
 
-                ScrollView {
-                    VStack(spacing: 22) {
-                        scopeSection
-                        carouselSection
-                        actionSection
-                        historySection
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 20)
-                    .padding(.bottom, 34)
+                VStack(spacing: 10) {
+                    scopeSection
+                    carouselSection
+                    actionSection
+                    Spacer(minLength: 0)
+                    historySection
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, max(proxy.safeAreaInsets.bottom, 8))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 NavigationLink(
                     destination: RandomPickerStatsPage(
@@ -694,7 +694,7 @@ struct RandomBookPickerPage: View {
                 .disabled(isDrawing)
             }
         }
-        .padding(16)
+        .padding(12)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -797,7 +797,7 @@ struct RandomBookPickerPage: View {
     }
 
     private var carouselSection: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 6) {
             GeometryReader { proxy in
                 ZStack {
                     if carouselBooks.isEmpty {
@@ -832,16 +832,15 @@ struct RandomBookPickerPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
             }
-            .frame(height: cardHeight + 34)
+            .frame(height: cardHeight + 18)
 
-            if showsCooldownResetMessage {
-                Text("randomPicker.cooldownReset")
-                    .font(.footnote.weight(.medium))
-                    .foregroundColor(.orange)
-                    .transition(.opacity)
-            }
+            Text("randomPicker.cooldownReset")
+                .font(.caption.weight(.medium))
+                .foregroundColor(.orange)
+                .opacity(showsCooldownResetMessage ? 1 : 0)
+                .frame(height: 15)
         }
-        .padding(.vertical, 18)
+        .padding(.vertical, 10)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -854,7 +853,7 @@ struct RandomBookPickerPage: View {
             } label: {
                 Text("randomPicker.action.skip")
                     .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .frame(maxWidth: .infinity, minHeight: 46)
             }
             .buttonStyle(.bordered)
         } else if let resultBook {
@@ -864,7 +863,7 @@ struct RandomBookPickerPage: View {
                 } label: {
                     Text("randomPicker.action.read")
                         .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .frame(maxWidth: .infinity, minHeight: 46)
                 }
                 .buttonStyle(.borderedProminent)
 
@@ -873,7 +872,7 @@ struct RandomBookPickerPage: View {
                 } label: {
                     Text("randomPicker.action.redraw")
                         .font(.headline)
-                        .frame(maxWidth: .infinity, minHeight: 52)
+                        .frame(maxWidth: .infinity, minHeight: 46)
                 }
                 .buttonStyle(.bordered)
                 .disabled(candidateBooks.isEmpty)
@@ -884,7 +883,7 @@ struct RandomBookPickerPage: View {
             } label: {
                 Text("randomPicker.action.draw")
                     .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 52)
+                    .frame(maxWidth: .infinity, minHeight: 46)
             }
             .buttonStyle(.borderedProminent)
             .disabled(candidateBooks.isEmpty || selectedScopes.isEmpty)
@@ -892,7 +891,7 @@ struct RandomBookPickerPage: View {
     }
 
     private var historySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             Text("randomPicker.history.title")
                 .font(.headline)
                 .foregroundColor(.primary)
@@ -901,10 +900,10 @@ struct RandomBookPickerPage: View {
                 Text("randomPicker.history.empty")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 68, alignment: .center)
+                    .frame(maxWidth: .infinity, minHeight: 90, alignment: .center)
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         ForEach(recentBooks) { book in
                             Button {
                                 onOpenBook(book)
@@ -918,7 +917,7 @@ struct RandomBookPickerPage: View {
                 }
             }
         }
-        .padding(16)
+        .padding(12)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -1526,11 +1525,11 @@ private struct RandomPickerScopeChip: View {
 private struct RandomPickerBookCard: View {
     let book: Book
     let isHighlighted: Bool
-    private let coverWidth: CGFloat = 106
+    private let coverWidth: CGFloat = 82
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            RandomPickerCoverView(title: displayTitle, initialFontSize: 42)
+        VStack(alignment: .leading, spacing: 7) {
+            RandomPickerCoverView(title: displayTitle, initialFontSize: 34)
                 .frame(width: coverWidth, height: coverWidth * 4.0 / 3.0)
                 .frame(maxWidth: .infinity)
                 .overlay {
@@ -1542,21 +1541,21 @@ private struct RandomPickerBookCard: View {
                 }
 
             Text(displayTitle)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(progressText)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundColor(.secondary)
                 .monospacedDigit()
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 0)
         }
-        .padding(10)
+        .padding(8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -1594,17 +1593,17 @@ private struct RandomPickerHistoryCard: View {
     let book: Book
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            RandomPickerCoverView(title: displayTitle, initialFontSize: 28)
-                .frame(width: 58, height: 78)
+        VStack(alignment: .leading, spacing: 5) {
+            RandomPickerCoverView(title: displayTitle, initialFontSize: 24)
+                .frame(width: 50, height: 50 * 4.0 / 3.0)
 
             Text(displayTitle)
                 .font(.caption)
                 .foregroundColor(.primary)
                 .lineLimit(2)
-                .frame(width: 74, alignment: .leading)
+                .frame(width: 66, alignment: .leading)
         }
-        .frame(width: 74, height: 116, alignment: .topLeading)
+        .frame(width: 66, height: 100, alignment: .topLeading)
     }
 
     private var displayTitle: String {

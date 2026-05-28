@@ -71,7 +71,7 @@
 "randomPicker.action.redraw" = "重新抽取";
 "randomPicker.empty.message" = "当前范围没有可抽取的书籍";
 "randomPicker.result.placeholder" = "选择范围后开始抽取";
-"randomPicker.history.title" = "最近抽中（冷却池）";
+"randomPicker.history.title" = "抽取记录";
 "randomPicker.history.empty" = "还没有抽中过书";
 "randomPicker.cooldownReset" = "书籍太少，已重置抽取池";
 "randomPicker.error.title" = "随机抽取失败";
