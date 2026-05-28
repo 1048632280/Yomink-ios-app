@@ -346,6 +346,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var pagingGeneration = 0
     private var saveGeneration = 0
     private var settingsSaveGeneration = 0
+    // 拖动 / paging 减速期间,把新加载页的 mutation(reloadData + contentOffset 平移 + 头部修剪)
+    // 暂存到这里,等 scrollView 真正静止后再统一提交,避免 paging snap 错位与"前一页瞬变"。
+    private var pendingPageInsertions: [(page: CollectionReaderPage, atEnd: Bool)] = []
     private var isMenuVisible = false
     private var isSettingsPanelVisible = false
     private var isAutoReading = false
@@ -1719,6 +1722,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
         pendingRestoreAbsoluteOffset = nil
         pageTask?.cancel()
+        pendingPageInsertions.removeAll()
         let activeGeneration = generation ?? {
             pagingGeneration += 1
             return pagingGeneration
@@ -1880,7 +1884,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                           self.pagingGeneration == generation else {
                         return
                     }
-                    self.pageTask = nil
+                    // 若处于"拖动 / paging 减速"窗口,appendPage / prependPage 会把页面挂起,
+                    // 此时保留 pageTask 非 nil 充当忙信号,阻止 loadXxxIfNeeded 在同窗口里重复加载同一页;
+                    // flushPendingPageInsertions 会在静止时统一释放该信号。
+                    if !self.shouldDeferPageMutationForActivePaging {
+                        self.pageTask = nil
+                    }
                     if insertingAtEnd {
                         self.appendPage(page)
                     } else {
@@ -1904,8 +1913,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func appendPage(_ page: CollectionReaderPage) {
-        if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset }) {
+        if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset })
+            || pendingPageInsertions.contains(where: { $0.page.startAbsoluteOffset == page.startAbsoluteOffset }) {
             updateSessionState(isLoadingNextPage: false)
+            return
+        }
+        if shouldDeferPageMutationForActivePaging {
+            // 仅挂起,不修改 pages / contentOffset / reloadData;pageTask 保持忙信号,等 flush。
+            pendingPageInsertions.append((page, true))
             return
         }
         pages.append(page)
@@ -1921,8 +1936,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func prependPage(_ page: CollectionReaderPage) {
-        if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset }) {
+        if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset })
+            || pendingPageInsertions.contains(where: { $0.page.startAbsoluteOffset == page.startAbsoluteOffset }) {
             updateSessionState(isLoadingNextPage: false)
+            return
+        }
+        if shouldDeferPageMutationForActivePaging {
+            pendingPageInsertions.append((page, false))
             return
         }
         let extent = usesVerticalScrolling
@@ -1942,6 +1962,35 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
            let index = pages.firstIndex(of: page) {
             pendingTapTargetPageIndex = nil
             turnToPage(at: index, direction: .previous)
+        }
+    }
+
+    /// 仅当处于 paged / curl 且 scrollView 正在拖动或 paging 减速时返回 true。
+    /// 自动阅读走垂直布局且有自己的 displayLink 节奏,scroll 模式没有 paging snap,都不需要挂起。
+    private var shouldDeferPageMutationForActivePaging: Bool {
+        guard !isAutoReading,
+              readerSettings.pageMode == .paged || readerSettings.pageMode == .curl else {
+            return false
+        }
+        return collectionView.isDragging
+            || collectionView.isTracking
+            || collectionView.isDecelerating
+    }
+
+    /// scrollView 静止后统一提交挂起的页面;先释放 pageTask 忙信号,再按原顺序走 append / prepend。
+    private func flushPendingPageInsertions() {
+        guard !pendingPageInsertions.isEmpty else {
+            return
+        }
+        let pending = pendingPageInsertions
+        pendingPageInsertions.removeAll()
+        pageTask = nil
+        for entry in pending {
+            if entry.atEnd {
+                appendPage(entry.page)
+            } else {
+                prependPage(entry.page)
+            }
         }
     }
 
@@ -3731,6 +3780,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         finishPageTurn()
+        flushPendingPageInsertions()
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
@@ -3738,6 +3788,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         finishPageTurn()
+        flushPendingPageInsertions()
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
@@ -3748,6 +3799,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         finishPageTurn()
+        flushPendingPageInsertions()
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
