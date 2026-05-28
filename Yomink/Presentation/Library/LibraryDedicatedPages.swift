@@ -549,9 +549,9 @@ struct RandomBookPickerPage: View {
     @State private var showsScopePanel = false
     @State private var showsStatsPage = false
 
-    private let cardWidth: CGFloat = 108
-    private let cardHeight: CGFloat = 188
-    private let cardSpacing: CGFloat = 10
+    private let cardWidth: CGFloat = 126
+    private let cardHeight: CGFloat = 226
+    private let cardSpacing: CGFloat = 12
 
     private var scopeOptions: [RandomPickerScope] {
         [.ungrouped] + groups.map { .group($0.id) }
@@ -592,11 +592,13 @@ struct RandomBookPickerPage: View {
                 Color(.systemGray6)
                     .ignoresSafeArea()
 
-                VStack(spacing: 10) {
+                VStack(spacing: 0) {
                     scopeSection
+                    Spacer(minLength: 8)
                     carouselSection
+                    Spacer(minLength: 8)
                     actionSection
-                    Spacer(minLength: 0)
+                    Spacer(minLength: 8)
                     historySection
                 }
                 .padding(.horizontal, 16)
@@ -797,7 +799,7 @@ struct RandomBookPickerPage: View {
     }
 
     private var carouselSection: some View {
-        VStack(spacing: 6) {
+        ZStack(alignment: .bottom) {
             GeometryReader { proxy in
                 ZStack {
                     if carouselBooks.isEmpty {
@@ -832,15 +834,15 @@ struct RandomBookPickerPage: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
             }
-            .frame(height: cardHeight + 18)
 
             Text("randomPicker.cooldownReset")
                 .font(.caption.weight(.medium))
                 .foregroundColor(.orange)
                 .opacity(showsCooldownResetMessage ? 1 : 0)
-                .frame(height: 15)
+                .padding(.bottom, 2)
         }
-        .padding(.vertical, 10)
+        .frame(height: cardHeight + 34)
+        .padding(.vertical, 18)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
@@ -1107,21 +1109,8 @@ struct RandomBookPickerPage: View {
 
     private func drawAnimationProgress(_ progress: Double) -> Double {
         let clampedProgress = min(max(progress, 0), 1)
-
-        if clampedProgress < 0.2 {
-            return clampedProgress * 1.6
-        }
-
-        if clampedProgress < 0.62 {
-            return 0.32 + (clampedProgress - 0.2) * 0.86
-        }
-
-        let decelerationProgress = (clampedProgress - 0.62) / 0.38
-        return 0.68 + 0.32 * easeOutCubic(decelerationProgress)
-    }
-
-    private func easeOutCubic(_ value: Double) -> Double {
-        1 - pow(1 - min(max(value, 0), 1), 3)
+        return clampedProgress * clampedProgress * clampedProgress
+            * (clampedProgress * (clampedProgress * 6 - 15) + 10)
     }
 
     private func skipAnimation() {
@@ -1525,11 +1514,11 @@ private struct RandomPickerScopeChip: View {
 private struct RandomPickerBookCard: View {
     let book: Book
     let isHighlighted: Bool
-    private let coverWidth: CGFloat = 82
+    private let coverWidth: CGFloat = 106
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            RandomPickerCoverView(title: displayTitle, initialFontSize: 34)
+        VStack(alignment: .leading, spacing: 8) {
+            RandomPickerCoverView(title: displayTitle, initialFontSize: 42)
                 .frame(width: coverWidth, height: coverWidth * 4.0 / 3.0)
                 .frame(maxWidth: .infinity)
                 .overlay {
@@ -1541,21 +1530,21 @@ private struct RandomPickerBookCard: View {
                 }
 
             Text(displayTitle)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(.primary)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Text(progressText)
-                .font(.caption2)
+                .font(.caption)
                 .foregroundColor(.secondary)
                 .monospacedDigit()
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer(minLength: 0)
         }
-        .padding(8)
+        .padding(10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
