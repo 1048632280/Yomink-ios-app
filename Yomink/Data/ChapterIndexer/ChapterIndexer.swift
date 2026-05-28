@@ -55,66 +55,93 @@ struct ChapterIndexer: Sendable {
         var candidates: [ChapterCandidate] = []
         var lineStartIndex = text.startIndex
         var lineStartOffset = 0
+        var lineByteLength = 0
+        var index = text.startIndex
 
-        while lineStartIndex < text.endIndex {
-            var lineEndIndex = lineStartIndex
-            while lineEndIndex < text.endIndex,
-                  text[lineEndIndex] != "\n",
-                  text[lineEndIndex] != "\r" {
-                lineEndIndex = text.index(after: lineEndIndex)
+        while index < text.endIndex {
+            let character = text[index]
+            guard let lineBreakByteLength = Self.lineBreakByteLength(in: character) else {
+                lineByteLength += String(character).utf8.count
+                index = text.index(after: index)
+                continue
             }
 
-            let rawLine = String(text[lineStartIndex..<lineEndIndex])
-            if let kind = Self.chapterTitleKind(rawLine) {
-                candidates.append(
-                    ChapterCandidate(
-                        title: rawLine.trimmingCharacters(in: .whitespacesAndNewlines),
-                        startOffset: lineStartOffset,
-                        lineStartIndex: lineStartIndex,
-                        kind: kind
-                    )
-                )
+            Self.appendChapterCandidateIfNeeded(
+                text: text,
+                lineStartIndex: lineStartIndex,
+                lineEndIndex: index,
+                lineStartOffset: lineStartOffset,
+                to: &candidates
+            )
+
+            var newlineByteLength = lineBreakByteLength
+            var nextLineStartIndex = text.index(after: index)
+            if Self.isSingleCarriageReturn(character),
+               nextLineStartIndex < text.endIndex,
+               Self.isSingleLineFeed(text[nextLineStartIndex]) {
+                newlineByteLength += String(text[nextLineStartIndex]).utf8.count
+                nextLineStartIndex = text.index(after: nextLineStartIndex)
             }
 
-            var nextLineStartIndex = lineEndIndex
-            var newlineByteLength = 0
-            if nextLineStartIndex < text.endIndex {
-                let newline = text[nextLineStartIndex]
-                if newline == "\r" {
-                    newlineByteLength += 1
-                    nextLineStartIndex = text.index(after: nextLineStartIndex)
-                    if nextLineStartIndex < text.endIndex,
-                       text[nextLineStartIndex] == "\n" {
-                        newlineByteLength += 1
-                        nextLineStartIndex = text.index(after: nextLineStartIndex)
-                    }
-                } else if newline == "\n" {
-                    newlineByteLength += 1
-                    nextLineStartIndex = text.index(after: nextLineStartIndex)
-                }
-            }
-
-            lineStartOffset += rawLine.utf8.count + newlineByteLength
+            lineStartOffset += lineByteLength + newlineByteLength
             lineStartIndex = nextLineStartIndex
+            lineByteLength = 0
+            index = nextLineStartIndex
         }
 
+        Self.appendChapterCandidateIfNeeded(
+            text: text,
+            lineStartIndex: lineStartIndex,
+            lineEndIndex: text.endIndex,
+            lineStartOffset: lineStartOffset,
+            to: &candidates
+        )
+
         return Self.filterNumberedListFalsePositives(candidates)
+    }
+
+    private static func appendChapterCandidateIfNeeded(
+        text: String,
+        lineStartIndex: String.Index,
+        lineEndIndex: String.Index,
+        lineStartOffset: Int,
+        to candidates: inout [ChapterCandidate]
+    ) {
+        let rawLine = String(text[lineStartIndex..<lineEndIndex])
+        if let kind = Self.chapterTitleKind(rawLine) {
+            candidates.append(
+                ChapterCandidate(
+                    title: rawLine.trimmingCharacters(in: .whitespacesAndNewlines),
+                    startOffset: lineStartOffset,
+                    lineStartIndex: lineStartIndex,
+                    kind: kind
+                )
+            )
+        }
     }
 
     private static func chapterTitleKind(_ rawLine: String) -> ChapterCandidate.Kind? {
         let trimmedLine = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmedLine.isEmpty == false,
-              trimmedLine.count < maximumTitleCharacterCount,
-              !endsWithSentencePunctuation(trimmedLine)
+              trimmedLine.count < maximumTitleCharacterCount
         else {
             return nil
         }
 
         let matchingLine = normalizedLineForMatching(trimmedLine)
         let range = NSRange(matchingLine.startIndex..<matchingLine.endIndex, in: matchingLine)
-        return titleExpressions.first { titleExpression in
+        guard let kind = titleExpressions.first(where: { titleExpression in
             titleExpression.expression.firstMatch(in: matchingLine, options: [], range: range) != nil
-        }?.kind
+        })?.kind else {
+            return nil
+        }
+
+        if kind == .numbered,
+           endsWithSentencePunctuation(trimmedLine) {
+            return nil
+        }
+
+        return kind
     }
 
     private static func filterNumberedListFalsePositives(
@@ -170,6 +197,50 @@ struct ChapterIndexer: Sendable {
         }
 
         return String(normalizedScalars)
+    }
+
+    private static func isLineBreakScalar(_ scalar: UnicodeScalar) -> Bool {
+        lineBreakScalarValues.contains(scalar.value)
+    }
+
+    private static func lineBreakByteLength(in character: Character) -> Int? {
+        var byteLength = 0
+        var foundLineBreak = false
+
+        for scalar in String(character).unicodeScalars {
+            guard isLineBreakScalar(scalar) else {
+                return nil
+            }
+            foundLineBreak = true
+            byteLength += utf8ByteLength(of: scalar)
+        }
+
+        return foundLineBreak ? byteLength : nil
+    }
+
+    private static func isSingleCarriageReturn(_ character: Character) -> Bool {
+        let scalars = String(character).unicodeScalars
+        return scalars.count == 1
+            && scalars.first?.value == carriageReturnScalarValue
+    }
+
+    private static func isSingleLineFeed(_ character: Character) -> Bool {
+        let scalars = String(character).unicodeScalars
+        return scalars.count == 1
+            && scalars.first?.value == lineFeedScalarValue
+    }
+
+    private static func utf8ByteLength(of scalar: UnicodeScalar) -> Int {
+        switch scalar.value {
+        case 0...0x7F:
+            return 1
+        case 0x80...0x7FF:
+            return 2
+        case 0x800...0xFFFF:
+            return 3
+        default:
+            return 4
+        }
     }
 
     private static func pseudoChapters(for text: String) -> [ImportedChapterDraft] {
@@ -246,29 +317,39 @@ struct ChapterIndexer: Sendable {
     }
 
     private static func makeTitleExpressions() -> [TitleExpression] {
+        let optionalOpening = #"[【\[\(（「『《]?\s*"#
+        let optionalClosing = #"\s*[】\]\)）」』》]?\s*"#
+        let chineseNumber = #"[0-9０-９零〇一二两三四五六七八九十百千万]+(?:\s*[0-9０-９零〇一二两三四五六七八九十百千万]+)*"#
+        let chineseChapterUnit = #"[章回节折卷部篇集话幕]"#
+        let englishChapterNumber = #"(?:[0-9０-９]+|[IVXLCDM]+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)"#
+        let specialTitle = #"(前言|引子|序|序言|序章|楔子|后记|尾声|终章|外传)"#
         [
             TitleExpression(
-                expression: makeExpression(#"^\s*第\s*([0-9零〇一二两三四五六七八九十百千万]+(?:\s*[0-9零〇一二两三四五六七八九十百千万]+)*)\s*[章回节折卷部篇集]\s*(.*)$"#),
+                expression: makeExpression(#"^\s*"# + optionalOpening + #"第\s*("# + chineseNumber + #")\s*"# + chineseChapterUnit + #"\s*(.*?)"# + optionalClosing + #"$"#),
                 kind: .regular
             ),
             TitleExpression(
-                expression: makeExpression(#"^\s*卷\s*([0-9零〇一二两三四五六七八九十百千万]+(?:\s*[0-9零〇一二两三四五六七八九十百千万]+)*)\s*(.*)$"#),
+                expression: makeExpression(#"^\s*"# + optionalOpening + #"卷\s*("# + chineseNumber + #")\s*(.*?)"# + optionalClosing + #"$"#),
                 kind: .regular
             ),
             TitleExpression(
-                expression: makeExpression(#"^\s*Chapter\s+\d+.*$"#, options: [.caseInsensitive]),
+                expression: makeExpression(#"^\s*"# + optionalOpening + #"Chapter\s+"# + englishChapterNumber + #"(?:\s*[-:：\.\)]?\s*.*?)?"# + optionalClosing + #"$"#, options: [.caseInsensitive]),
                 kind: .regular
             ),
             TitleExpression(
-                expression: makeExpression(#"^\s*\d+[\.\、]\s*.+$"#),
+                expression: makeExpression(#"^\s*(?:[0-9０-９]+|[零〇一二两三四五六七八九十百千万]+)[\.．、]\s*.+$"#),
                 kind: .numbered
             ),
             TitleExpression(
-                expression: makeExpression(#"^\s*(前言|引子|序|序言|序章|楔子|后记)(\s+.*|[:：].*)?$"#),
+                expression: makeExpression(#"^\s*[\(（]?(?:[0-9０-９]+|[零〇一二两三四五六七八九十百千万]+)[\)）][\s\.．、]*.+$"#),
+                kind: .numbered
+            ),
+            TitleExpression(
+                expression: makeExpression(#"^\s*"# + optionalOpening + specialTitle + #"(\s+.*|[:：].*)?"# + optionalClosing + #"$"#),
                 kind: .special
             ),
             TitleExpression(
-                expression: makeExpression(#"^\s*番外\s*.*$"#),
+                expression: makeExpression(#"^\s*"# + optionalOpening + #"番外\s*.*"# + optionalClosing + #"$"#),
                 kind: .special
             )
         ]
@@ -280,6 +361,15 @@ struct ChapterIndexer: Sendable {
     private static let minimumNumberedTitleCandidates = 3
     private static let pseudoChapterByteLength = 128 * 1_024
     private static let normalizedWhitespaceScalar = UnicodeScalar(" ")
+    private static let lineFeedScalarValue: UInt32 = 0x000A
+    private static let carriageReturnScalarValue: UInt32 = 0x000D
+    private static let lineBreakScalarValues: Set<UInt32> = [
+        lineFeedScalarValue,
+        carriageReturnScalarValue,
+        0x0085,
+        0x2028,
+        0x2029
+    ]
     private static let sentenceEndingScalars = Set("。！？!?".unicodeScalars)
     private static let trailingQuoteAndBracketScalars = Set("\"'”’」』》）)]}".unicodeScalars)
 }
