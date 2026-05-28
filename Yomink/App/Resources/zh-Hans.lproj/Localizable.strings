@@ -5,7 +5,7 @@
 "library.add.open" = "添加";
 "library.drawer.close" = "关闭侧边栏";
 "library.empty.title" = "还没有导入书籍";
-"library.empty.message" = "从本地文件导入 TXT，Yomink 会复制原文并生成 UTF-8 阅读缓存。";
+"library.empty.message" = "导入 TXT 后，Yomink 会转换为 UTF-8 正文文件并保存在书架中。";
 "library.count" = "%d 本书";
 "library.viewMode.toggle" = "切换书架视图";
 "library.sort.menu" = "排序";
@@ -20,8 +20,8 @@
 "library.delete" = "删除";
 "library.delete.confirm.title" = "永久删除";
 "library.delete.confirm.action" = "永久删除";
-"library.delete.confirm.single.message" = "是否永久删除这本书？原文文件、阅读进度、书签、过滤规则和足迹都会被删除，此操作不可撤销。";
-"library.delete.confirm.multiple.message" = "是否永久删除选中的 %d 本图书？这些图书的原文文件、阅读进度、书签、过滤规则和足迹都会被删除，此操作不可撤销。";
+"library.delete.confirm.single.message" = "是否永久删除这本书？正文文件、阅读进度、书签、过滤规则和足迹都会被删除，此操作不可撤销。";
+"library.delete.confirm.multiple.message" = "是否永久删除选中的 %d 本图书？这些图书的正文文件、阅读进度、书签、过滤规则和足迹都会被删除，此操作不可撤销。";
 "library.error.title" = "书架操作失败";
 "library.move.error.title" = "移动失败";
 "library.delete.error.title" = "删除失败";
@@ -106,7 +106,7 @@
 
 "reader.placeholder.title" = "阅读器核心容器";
 "reader.placeholder.message" = "UIKit 阅读器已接入分页、滚动、进度和阅读设置。";
-"reader.book.placeholder.message" = "导入链路已完成，阅读缓存：%@";
+"reader.book.placeholder.message" = "导入链路已完成，正文文件：%@";
 "reader.loading" = "正在打开书籍...";
 "reader.close" = "返回书架";
 "reader.bookmark.add" = "添加书签";
@@ -231,7 +231,7 @@
 "reader.touchAreas.bindTitle" = "绑定动作";
 "reader.touchAreas.saveAndExit" = "保存并退出";
 "reader.error.title" = "操作失败";
-"reader.error.invalidUTF8Cache" = "阅读缓存无法按 UTF-8 解码。";
+"reader.error.invalidUTF8Content" = "书籍正文无法按 UTF-8 解码。";
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";
 "reader.preview.chapter.title" = "预览章节";
 
@@ -249,9 +249,9 @@
 "import.duplicate.message" = "这本 TXT 已经在书架中。";
 "import.duplicate.openExisting" = "打开现有书籍";
 "import.duplicate.cancel" = "取消";
-"import.progress.message" = "正在导入并生成阅读缓存...";
+"import.progress.message" = "正在导入并转换为 UTF-8...";
 "import.error.title" = "导入失败";
 "import.error.unsupportedFileType" = "请选择 TXT 文本文件。";
 "import.error.unsupportedEncoding" = "暂不支持这个文件的编码。请使用 UTF-8、GBK 或 GB2312 TXT。";
 "import.error.cannotReadFile" = "无法读取或复制这个文件。";
-"import.error.cannotWriteUTF8Cache" = "无法生成 UTF-8 阅读缓存。";
+"import.error.cannotWriteUTF8Content" = "无法写入 UTF-8 正文文件。";

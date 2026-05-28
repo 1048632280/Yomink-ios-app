@@ -23,8 +23,7 @@ struct PreviewLibraryRepository: LibraryRepository {
                 groupID: nil,
                 progressPercentage: 0,
                 contentHash: nil,
-                sourcePath: "Books/\(Self.sampleBookID.uuidString.lowercased())/source.txt",
-                normalizedPath: "Books/\(Self.sampleBookID.uuidString.lowercased())/normalized.txt"
+                sourcePath: "Books/\(Self.sampleBookID.uuidString.lowercased())/content.txt"
             )
         ]
 
@@ -93,8 +92,7 @@ struct PreviewLibraryRepository: LibraryRepository {
                 groupID: nil,
                 progressPercentage: 0,
                 contentHash: nil,
-                sourcePath: "Books/\(id.uuidString.lowercased())/source.txt",
-                normalizedPath: "Books/\(id.uuidString.lowercased())/normalized.txt"
+                sourcePath: "Books/\(id.uuidString.lowercased())/content.txt"
             )
         book.title = title
         book.author = author
@@ -235,8 +233,7 @@ struct PreviewLibraryRepository: LibraryRepository {
             groupID: nil,
             progressPercentage: 0,
             contentHash: draft.contentHash,
-            sourcePath: draft.sourcePath,
-            normalizedPath: draft.normalizedPath
+            sourcePath: draft.sourcePath
         )
     }
 

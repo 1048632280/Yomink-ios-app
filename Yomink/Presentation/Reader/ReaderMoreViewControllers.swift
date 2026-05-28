@@ -326,8 +326,7 @@ final class ReaderBookDetailViewController: UIViewController {
         fileStore: AppFileStore
     ) async throws -> String {
         try await Task.detached(priority: .utility) {
-            let relativePath = book.normalizedPath ?? book.sourcePath
-            let url = try fileStore.url(forRelativePath: relativePath)
+            let url = try fileStore.url(forRelativePath: book.sourcePath)
             let handle = try FileHandle(forReadingFrom: url)
             defer {
                 try? handle.close()
@@ -1464,8 +1463,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         fileStore: AppFileStore
     ) async throws -> String {
         try await Task.detached(priority: .utility) {
-            let relativePath = book.normalizedPath ?? book.sourcePath
-            let url = try fileStore.url(forRelativePath: relativePath)
+            let url = try fileStore.url(forRelativePath: book.sourcePath)
             let handle = try FileHandle(forReadingFrom: url)
             defer {
                 try? handle.close()

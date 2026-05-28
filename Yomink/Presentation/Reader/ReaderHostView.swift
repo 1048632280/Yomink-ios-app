@@ -5636,7 +5636,7 @@ private struct CollectionReaderPage: Equatable, @unchecked Sendable {
 private enum CollectionReaderError: LocalizedError {
     case bookNotFound
     case emptyPage
-    case invalidTextCache
+    case invalidContentFile
 
     var errorDescription: String? {
         switch self {
@@ -5644,8 +5644,8 @@ private enum CollectionReaderError: LocalizedError {
             return NSLocalizedString("library.error.bookNotFound", comment: "")
         case .emptyPage:
             return NSLocalizedString("reader.emptyChapter", comment: "")
-        case .invalidTextCache:
-            return NSLocalizedString("reader.error.invalidUTF8Cache", comment: "")
+        case .invalidContentFile:
+            return NSLocalizedString("reader.error.invalidUTF8Content", comment: "")
         }
     }
 }
@@ -5798,8 +5798,7 @@ private enum CollectionReaderPaginator {
         chapter: Chapter,
         fileStore: AppFileStore
     ) throws -> String {
-        let relativePath = book.normalizedPath ?? book.sourcePath
-        let url = try fileStore.url(forRelativePath: relativePath)
+        let url = try fileStore.url(forRelativePath: book.sourcePath)
         let handle = try FileHandle(forReadingFrom: url)
         defer {
             try? handle.close()
@@ -5807,7 +5806,7 @@ private enum CollectionReaderPaginator {
         try handle.seek(toOffset: UInt64(chapter.startOffset))
         let data = handle.readData(ofLength: chapter.byteLength)
         guard let text = String(data: data, encoding: .utf8) else {
-            throw CollectionReaderError.invalidTextCache
+            throw CollectionReaderError.invalidContentFile
         }
         return text
     }

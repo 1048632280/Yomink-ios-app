@@ -14,15 +14,14 @@ struct ImportedBookDraft: Equatable, Sendable {
     var importedAt: Date
     var importSourceDisplayPath: String?
     var sourcePath: String
-    var normalizedPath: String
 }
 
 struct ImportedChapterDraft: Equatable, Sendable {
     let id: UUID
     var title: String
-    /// UTF-8 byte offset in normalized.txt, inclusive.
+    /// UTF-8 byte offset in the canonical content file, inclusive.
     var startOffset: Int
-    /// UTF-8 byte offset in normalized.txt, exclusive.
+    /// UTF-8 byte offset in the canonical content file, exclusive.
     var endOffset: Int
     var sortOrder: Int
     var source: ChapterSource

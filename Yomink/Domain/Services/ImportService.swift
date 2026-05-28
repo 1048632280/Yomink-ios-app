@@ -27,7 +27,7 @@ final class ImportService {
     enum ImportError: LocalizedError {
         case unsupportedFileType
         case cannotReadFile
-        case cannotWriteUTF8Cache
+        case cannotWriteUTF8Content
 
         var errorDescription: String? {
             switch self {
@@ -35,8 +35,8 @@ final class ImportService {
                 return NSLocalizedString("import.error.unsupportedFileType", comment: "")
             case .cannotReadFile:
                 return NSLocalizedString("import.error.cannotReadFile", comment: "")
-            case .cannotWriteUTF8Cache:
-                return NSLocalizedString("import.error.cannotWriteUTF8Cache", comment: "")
+            case .cannotWriteUTF8Content:
+                return NSLocalizedString("import.error.cannotWriteUTF8Content", comment: "")
             }
         }
     }
@@ -141,17 +141,14 @@ final class ImportService {
 
             let bookID = UUID()
             let bookDirectoryURL = fileStore.bookDirectoryURL(for: bookID)
-            let sourceCopyURL = fileStore.sourceURL(for: bookID)
-            let normalizedURL = fileStore.normalizedURL(for: bookID)
-            let sourcePath = try fileStore.relativePath(for: sourceCopyURL)
-            let normalizedPath = try fileStore.relativePath(for: normalizedURL)
+            let contentURL = fileStore.contentURL(for: bookID)
+            let contentPath = try fileStore.relativePath(for: contentURL)
 
             do {
                 try fileManager.createDirectory(
                     at: bookDirectoryURL,
                     withIntermediateDirectories: true
                 )
-                try fileManager.copyItem(at: sourceURL, to: sourceCopyURL)
             } catch {
                 try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
                 throw ImportError.cannotReadFile
@@ -159,18 +156,20 @@ final class ImportService {
 
             do {
                 try Task.checkCancellation()
-                let data = try Data(contentsOf: sourceCopyURL, options: .mappedIfSafe)
+                let data: Data
+                do {
+                    data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+                } catch {
+                    throw ImportError.cannotReadFile
+                }
                 try Task.checkCancellation()
                 let decodedText = try decoder.decode(data)
+                let utf8Data = Data(decodedText.text.utf8)
                 let contentHash = Self.sha256Hex(for: decodedText.text)
                 do {
-                    try decodedText.text.write(
-                        to: normalizedURL,
-                        atomically: true,
-                        encoding: .utf8
-                    )
+                    try utf8Data.write(to: contentURL, options: .atomic)
                 } catch {
-                    throw ImportError.cannotWriteUTF8Cache
+                    throw ImportError.cannotWriteUTF8Content
                 }
                 try Task.checkCancellation()
 
@@ -181,15 +180,14 @@ final class ImportService {
                     author: sourceAuthor,
                     intro: sourceIntro,
                     fileName: sourceFileName,
-                    fileSize: Int64(data.count),
+                    fileSize: Int64(utf8Data.count),
                     encoding: decodedText.encodingName,
                     wordCount: Self.visibleCharacterCount(in: decodedText.text),
                     contentHash: contentHash,
                     chapters: chapterIndexer.indexChapters(for: decodedText.text),
                     importedAt: importedAt,
                     importSourceDisplayPath: sourceDisplayPath,
-                    sourcePath: sourcePath,
-                    normalizedPath: normalizedPath
+                    sourcePath: contentPath
                 )
                 return PreparedImport(
                     draft: draft,

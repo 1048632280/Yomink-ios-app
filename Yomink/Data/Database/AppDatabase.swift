@@ -67,8 +67,7 @@ final class AppDatabase: @unchecked Sendable {
                 groupId TEXT REFERENCES book_groups(id) ON DELETE SET NULL,
                 importSourceDisplayPath TEXT,
                 sourceBookmark BLOB,
-                sourcePath TEXT NOT NULL,
-                normalizedPath TEXT
+                sourcePath TEXT NOT NULL
             )
             """)
 
@@ -93,7 +92,7 @@ final class AppDatabase: @unchecked Sendable {
             )
             """)
 
-            // Chapter offsets are UTF-8 byte offsets in normalized.txt:
+            // Chapter offsets are UTF-8 byte offsets in the canonical content file:
             // startOffset is inclusive and endOffset is exclusive.
             try db.execute(sql: """
             CREATE TABLE chapters (

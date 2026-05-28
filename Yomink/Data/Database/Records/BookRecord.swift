@@ -19,5 +19,4 @@ struct BookRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
     let importSourceDisplayPath: String?
     let sourceBookmark: Data?
     let sourcePath: String
-    let normalizedPath: String?
 }

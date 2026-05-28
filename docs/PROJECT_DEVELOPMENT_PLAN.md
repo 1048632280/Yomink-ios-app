@@ -90,8 +90,7 @@ SwiftUI 通过 `UIViewControllerRepresentable` 嵌入阅读器 UIKit 容器。
 Documents/
 └─ Books/
    └─ {bookId}/
-      ├─ source.txt              原始导入文件，用于导出
-      ├─ normalized.txt          可选，统一编码后的 UTF-8 阅读缓存
+      ├─ content.txt             App 管理的 UTF-8 正文文件，用于阅读与导出
       ├─ chapter_index.json      可选，章节/块索引缓存
       └─ cover_cache/            预留，当前版本可不启用
 
@@ -102,8 +101,8 @@ Library/Application Support/
 
 原则：
 
-- 原始 TXT 必须保留，保证导出是原文。
-- 阅读使用 `normalized.txt` 或分块缓存，避免每次重复编码识别。
+- 导入时将 TXT 转换为 App 管理的 UTF-8 正文文件，不长期保留原始编码文件，减少双倍空间占用。
+- 导出以 `content.txt` 为准，导出内容为 UTF-8 TXT；不承诺与导入文件 byte-for-byte 完全一致。
 - 删除书籍时同步删除文件目录、缓存、阅读进度、书签、全文索引。
 
 ### 3.2 GRDB 数据表建议
@@ -123,8 +122,7 @@ Library/Application Support/
 - `groupId`: 所属分组，可空。
 - `importSourceDisplayPath`: 导入来源路径，仅用于展示，可空。
 - `sourceBookmark`: iOS security-scoped bookmark，可空，用于后续重新访问外部来源文件。
-- `sourcePath`: App 沙盒内原文相对路径，真实阅读和导出以此为准。
-- `normalizedPath`: 阅读缓存相对路径，可空。
+- `sourcePath`: App 沙盒内 UTF-8 正文文件相对路径，真实阅读和导出以此为准。
 
 `groups`
 
@@ -214,7 +212,7 @@ Library/Application Support/
 
 - 长按进入多选模式。
 - 多选后支持移动至分组、删除、反选、导出。
-- 删除必须清理原文、缓存、进度、书签、索引。
+- 删除必须清理正文文件、缓存、进度、书签、索引。
 
 ### 4.2 左侧边栏
 
@@ -432,12 +430,12 @@ Library/Application Support/
 - 先检测 BOM。
 - 再尝试 UTF-8。
 - 再使用 CoreFoundation 字符串编码能力尝试 GB18030/GBK。
-- 导入后将阅读缓存转为 UTF-8，减少阅读阶段反复解码成本。
+- 导入后将书籍正文转为 UTF-8 并作为 App 内唯一正文文件，减少阅读阶段反复解码成本。
 
 注意：
 
 - GBK/GB2312 随机 byte offset 到字符 offset 的映射复杂，阅读阶段不应直接依赖原始编码文件做随机字符定位。
-- 原文用于导出，阅读缓存用于分页、搜索、过滤。
+- UTF-8 正文文件用于导出、分页、搜索、过滤。
 
 ### 5.2 章节识别
 
@@ -452,7 +450,7 @@ Library/Application Support/
 启发式过滤：
 
 - 候选标题行 trim 后长度必须小于 50 个字符，过长行直接排除。
-- 标题匹配前应将 Unicode 空白统一归一化为 ASCII 空格；章节 byte offset 仍按原始文本计算。
+- 标题匹配前应将 Unicode 空白统一归一化为 ASCII 空格；章节 byte offset 仍按 UTF-8 正文文本计算。
 - 候选标题行若以常见句末标点或句末标点后的右引号结尾，例如 `。`、`！`、`？`、`。”`、`！”`、`？”`，大概率是正文对话或叙述，应排除；冒号不作为排除条件，因为章节标题常见 `第一章：标题`。
 - 数字标题规则（如 `1. 标题`）容易与列表项冲突；若同时存在中文/英文常规章节候选，则数字标题候选数量至少达到 3 个才保留，否则过滤掉。
 
@@ -590,7 +588,7 @@ Library/Application Support/
 
 - 文件导入 TXT。
 - 文件复制到沙盒。
-- 编码识别和 UTF-8 阅读缓存生成。
+- 编码识别和 UTF-8 正文文件生成。
 - 创建书籍记录。
 - 书架列表展示。
 
@@ -653,7 +651,7 @@ Library/Application Support/
 验收：
 
 - 删除时同步清理 books / chapters / reading_progress / bookmarks / filter_rules / reading_history 及文件目录。（补：§11 删除约束的端到端验收，最容易在多选场景漏一条数据表）
-- 导出 TXT 原文成功。
+- 导出 UTF-8 TXT 成功。
 - 搜索历史可展示和清空。
 - 列表/网格切换后书架内容一致，排序设置变更后立即生效。
 

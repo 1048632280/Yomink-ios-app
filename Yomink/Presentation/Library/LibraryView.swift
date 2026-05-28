@@ -1303,10 +1303,10 @@ private final class LibraryViewModel: ObservableObject {
         return try books
             .filter { selectedBookIDs.contains($0.id) }
             .map { book in
-                let sourceURL = try fileStore.url(forRelativePath: book.sourcePath)
-                let fileName = exportFileName(for: book, sourceURL: sourceURL, usedFileNames: &usedFileNames)
+                let contentURL = try fileStore.url(forRelativePath: book.sourcePath)
+                let fileName = exportFileName(for: book, contentURL: contentURL, usedFileNames: &usedFileNames)
                 let destinationURL = exportDirectory.appendingPathComponent(fileName, isDirectory: false)
-                try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+                try FileManager.default.copyItem(at: contentURL, to: destinationURL)
                 return destinationURL
             }
     }
@@ -1322,15 +1322,15 @@ private final class LibraryViewModel: ObservableObject {
 
     private func exportFileName(
         for book: Book,
-        sourceURL: URL,
+        contentURL: URL,
         usedFileNames: inout Set<String>
     ) -> String {
         let rawTitle = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseName = sanitizedExportFileName(
             rawTitle.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : rawTitle
         )
-        let sourceExtension = sourceURL.pathExtension
-        let fileExtension = sourceExtension.isEmpty ? "txt" : sourceExtension
+        let contentExtension = contentURL.pathExtension
+        let fileExtension = contentExtension.isEmpty ? "txt" : contentExtension
         var candidate = "\(baseName).\(fileExtension)"
         var suffix = 2
         while usedFileNames.contains(candidate) {

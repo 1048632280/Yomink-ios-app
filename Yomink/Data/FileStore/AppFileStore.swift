@@ -92,14 +92,9 @@ final class AppFileStore: @unchecked Sendable {
         booksURL.appendingPathComponent(bookID.uuidString.lowercased(), isDirectory: true)
     }
 
-    func sourceURL(for bookID: UUID) -> URL {
+    func contentURL(for bookID: UUID) -> URL {
         bookDirectoryURL(for: bookID)
-            .appendingPathComponent("source.txt", isDirectory: false)
-    }
-
-    func normalizedURL(for bookID: UUID) -> URL {
-        bookDirectoryURL(for: bookID)
-            .appendingPathComponent("normalized.txt", isDirectory: false)
+            .appendingPathComponent("content.txt", isDirectory: false)
     }
 
     func removeBookFiles(id bookID: UUID) throws {

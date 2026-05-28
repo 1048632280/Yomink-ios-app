@@ -53,7 +53,7 @@ final class AppEnvironment: ObservableObject {
                 withIntermediateDirectories: true
             )
             try PreviewLibraryRepository.sampleText.write(
-                to: fileStore.normalizedURL(for: PreviewLibraryRepository.sampleBookID),
+                to: fileStore.contentURL(for: PreviewLibraryRepository.sampleBookID),
                 atomically: true,
                 encoding: .utf8
             )

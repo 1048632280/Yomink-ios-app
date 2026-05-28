@@ -15,7 +15,6 @@ struct Book: Identifiable, Equatable, Sendable {
     var progressPercentage: Double
     var contentHash: String?
     var sourcePath: String
-    var normalizedPath: String?
 }
 
 enum LibraryScope: Equatable, Sendable {

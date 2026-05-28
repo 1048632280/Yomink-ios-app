@@ -805,8 +805,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             contentHash: draft.contentHash,
             importSourceDisplayPath: draft.importSourceDisplayPath,
             sourceBookmark: nil,
-            sourcePath: draft.sourcePath,
-            normalizedPath: draft.normalizedPath
+            sourcePath: draft.sourcePath
         )
         let progress = ReadingProgressRecord(
             bookId: draft.id.uuidString,
@@ -853,8 +852,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                 groupID: nil,
                 progressPercentage: 0,
                 contentHash: draft.contentHash,
-                sourcePath: draft.sourcePath,
-                normalizedPath: draft.normalizedPath
+                sourcePath: draft.sourcePath
             )
         }
     }
@@ -943,8 +941,7 @@ private extension Book {
             groupID: groupID,
             progressPercentage: min(max(progressPercentage, 0), 1),
             contentHash: row["contentHash"],
-            sourcePath: row["sourcePath"],
-            normalizedPath: row["normalizedPath"]
+            sourcePath: row["sourcePath"]
         )
     }
 }
