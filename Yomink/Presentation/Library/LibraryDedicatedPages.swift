@@ -1227,13 +1227,13 @@ private struct RandomPickerStatsPage: View {
 
     private var rankedBooks: [RandomPickerRankedBook] {
         let bookLookup = Dictionary(uniqueKeysWithValues: books.map { ($0.id, $0) })
-        return pickerState.drawCounts.compactMap { entry in
+        return pickerState.drawCounts.compactMap { entry -> RandomPickerCountedBook? in
             guard entry.value > 0,
                   let book = bookLookup[entry.key]
             else {
                 return nil
             }
-            return (book: book, count: entry.value)
+            return RandomPickerCountedBook(book: book, count: entry.value)
         }
         .sorted { lhs, rhs in
             if lhs.count != rhs.count {
@@ -1424,6 +1424,11 @@ private struct RandomPickerStatsPage: View {
             count
         )
     }
+}
+
+private struct RandomPickerCountedBook: Equatable {
+    let book: Book
+    let count: Int
 }
 
 private struct RandomPickerRankedBook: Identifiable, Equatable {
