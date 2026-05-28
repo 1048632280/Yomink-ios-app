@@ -525,6 +525,729 @@ struct ReadingHistoryPage: View {
     }
 }
 
+struct RandomBookPickerPage: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let repository: any LibraryRepository
+    let onOpenBook: (Book) -> Void
+
+    @State private var groups: [BookGroup] = []
+    @State private var books: [Book] = []
+    @State private var selectedScopes: Set<RandomPickerScope> = []
+    @State private var pickerState = RandomPickerState.default
+    @State private var carouselBooks: [Book] = []
+    @State private var carouselOffset: CGFloat = 0
+    @State private var resultBook: Book?
+    @State private var highlightedIndex: Int?
+    @State private var isDrawing = false
+    @State private var resetMessageID = UUID()
+    @State private var showsCooldownResetMessage = false
+    @State private var errorMessage: String?
+    @State private var drawTask: Task<Void, Never>?
+    @State private var drawGeneration = 0
+    @State private var activeDrawBaseState = RandomPickerState.default
+
+    private let cardWidth: CGFloat = 128
+    private let cardHeight: CGFloat = 214
+    private let cardSpacing: CGFloat = 14
+
+    private var scopeOptions: [RandomPickerScope] {
+        [.ungrouped] + groups.map { .group($0.id) }
+    }
+
+    private var selectedScopeList: [RandomPickerScope] {
+        scopeOptions.filter { selectedScopes.contains($0) }
+    }
+
+    private var candidateBooks: [Book] {
+        let scopes = selectedScopes
+        guard !scopes.isEmpty else {
+            return []
+        }
+
+        return books.filter { book in
+            if book.groupID == nil,
+               scopes.contains(.ungrouped) {
+                return true
+            }
+            if let groupID = book.groupID,
+               scopes.contains(.group(groupID)) {
+                return true
+            }
+            return false
+        }
+    }
+
+    private var recentBooks: [Book] {
+        pickerState.recentBookIDs.compactMap { id in
+            books.first { $0.id == id }
+        }
+    }
+
+    var body: some View {
+        ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 22) {
+                    scopeSection
+                    carouselSection
+                    actionSection
+                    historySection
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                .padding(.bottom, 34)
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("randomPicker.title")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    dismiss()
+                }
+            }
+        }
+        .task {
+            await loadPickerData()
+        }
+        .onDisappear {
+            drawTask?.cancel()
+            drawTask = nil
+        }
+        .alert(
+            "randomPicker.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private var scopeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("randomPicker.scope.title")
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                Spacer()
+
+                Text(
+                    String(
+                        format: NSLocalizedString("randomPicker.scope.count", comment: ""),
+                        candidateBooks.count
+                    )
+                )
+                .font(.footnote)
+                .foregroundColor(.secondary)
+            }
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 138), spacing: 10)],
+                alignment: .leading,
+                spacing: 10
+            ) {
+                ForEach(scopeOptions, id: \.storageKey) { scope in
+                    Button {
+                        toggleScope(scope)
+                    } label: {
+                        RandomPickerScopeChip(
+                            title: title(for: scope),
+                            count: bookCount(for: scope),
+                            isSelected: selectedScopes.contains(scope)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isDrawing)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var carouselSection: some View {
+        VStack(spacing: 12) {
+            GeometryReader { proxy in
+                ZStack {
+                    if carouselBooks.isEmpty {
+                        RandomPickerPlaceholderCard(
+                            textKey: candidateBooks.isEmpty
+                                ? "randomPicker.empty.message"
+                                : "randomPicker.result.placeholder"
+                        )
+                        .frame(width: cardWidth, height: cardHeight)
+                    } else {
+                        HStack(spacing: cardSpacing) {
+                            ForEach(Array(carouselBooks.enumerated()), id: \.offset) { index, book in
+                                RandomPickerBookCard(
+                                    book: book,
+                                    isHighlighted: highlightedIndex == index
+                                )
+                                .frame(width: cardWidth, height: cardHeight)
+                                .scaleEffect(highlightedIndex == index ? 1.08 : 1)
+                                .shadow(
+                                    color: highlightedIndex == index
+                                        ? Color.accentColor.opacity(0.32)
+                                        : Color.black.opacity(0.08),
+                                    radius: highlightedIndex == index ? 18 : 8,
+                                    x: 0,
+                                    y: highlightedIndex == index ? 10 : 5
+                                )
+                            }
+                        }
+                        .offset(x: carouselOffset + (proxy.size.width - cardWidth) / 2)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .clipped()
+            }
+            .frame(height: cardHeight + 34)
+
+            if showsCooldownResetMessage {
+                Text("randomPicker.cooldownReset")
+                    .font(.footnote.weight(.medium))
+                    .foregroundColor(.orange)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.vertical, 18)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var actionSection: some View {
+        if isDrawing {
+            Button {
+                skipAnimation()
+            } label: {
+                Text("randomPicker.action.skip")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+            }
+            .buttonStyle(.bordered)
+        } else if let resultBook {
+            HStack(spacing: 12) {
+                Button {
+                    onOpenBook(resultBook)
+                } label: {
+                    Text("randomPicker.action.read")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button {
+                    startDraw()
+                } label: {
+                    Text("randomPicker.action.redraw")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 52)
+                }
+                .buttonStyle(.bordered)
+                .disabled(candidateBooks.isEmpty)
+            }
+        } else {
+            Button {
+                startDraw()
+            } label: {
+                Text("randomPicker.action.draw")
+                    .font(.headline)
+                    .frame(maxWidth: .infinity, minHeight: 52)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(candidateBooks.isEmpty || selectedScopes.isEmpty)
+        }
+    }
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("randomPicker.history.title")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            if recentBooks.isEmpty {
+                Text("randomPicker.history.empty")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 68, alignment: .center)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(recentBooks) { book in
+                            Button {
+                                onOpenBook(book)
+                            } label: {
+                                RandomPickerHistoryCard(book: book)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    @MainActor
+    private func loadPickerData() async {
+        do {
+            async let fetchedGroups = repository.fetchGroups()
+            async let fetchedBooks = repository.fetchBooks(scope: .all, sortOrder: .lastReadAt)
+            async let fetchedState = repository.fetchRandomPickerState()
+            groups = try await fetchedGroups
+            books = try await fetchedBooks
+            pickerState = try await fetchedState
+            applyPersistedScopes()
+            pruneMissingRecentBooks()
+            refreshCarouselSeed()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func applyPersistedScopes() {
+        let options = scopeOptions
+        guard !options.isEmpty else {
+            selectedScopes = []
+            return
+        }
+
+        if let persistedScopes = pickerState.selectedScopes {
+            let filtered = persistedScopes.filter { options.contains($0) }
+            selectedScopes = filtered.isEmpty && !persistedScopes.isEmpty
+                ? Set(options)
+                : Set(filtered)
+        } else {
+            selectedScopes = Set(options)
+        }
+    }
+
+    private func pruneMissingRecentBooks() {
+        let bookIDs = Set(books.map(\.id))
+        let prunedIDs = pickerState.recentBookIDs.filter { bookIDs.contains($0) }
+        guard prunedIDs != pickerState.recentBookIDs else {
+            return
+        }
+        pickerState.recentBookIDs = prunedIDs
+        persistPickerState()
+    }
+
+    private func refreshCarouselSeed() {
+        let sourceBooks = resultBook.map { [$0] } ?? Array(candidateBooks.prefix(8))
+        carouselBooks = sourceBooks
+        highlightedIndex = resultBook == nil ? nil : 0
+        carouselOffset = 0
+    }
+
+    private func toggleScope(_ scope: RandomPickerScope) {
+        if selectedScopes.contains(scope) {
+            selectedScopes.remove(scope)
+        } else {
+            selectedScopes.insert(scope)
+        }
+        resultBook = nil
+        highlightedIndex = nil
+        refreshCarouselSeed()
+        persistPickerState()
+    }
+
+    private func title(for scope: RandomPickerScope) -> String {
+        switch scope {
+        case .ungrouped:
+            return NSLocalizedString("randomPicker.scope.ungrouped", comment: "")
+        case let .group(id):
+            return groups.first { $0.id == id }?.name
+                ?? NSLocalizedString("sidebar.untitledGroup", comment: "")
+        }
+    }
+
+    private func bookCount(for scope: RandomPickerScope) -> Int {
+        books.filter { book in
+            switch scope {
+            case .ungrouped:
+                return book.groupID == nil
+            case let .group(id):
+                return book.groupID == id
+            }
+        }.count
+    }
+
+    private func startDraw() {
+        drawTask?.cancel()
+        drawGeneration += 1
+        let generation = drawGeneration
+        let candidates = candidateBooks
+        guard !candidates.isEmpty else {
+            return
+        }
+
+        var state = pickerState.normalized
+        let candidateIDs = Set(candidates.map(\.id))
+        if candidates.count <= RandomPickerState.cooldownLimit,
+           state.recentBookIDs.contains(where: { candidateIDs.contains($0) }) {
+            state.recentBookIDs.removeAll { candidateIDs.contains($0) }
+            showCooldownResetMessage()
+        }
+
+        var availableBooks = candidates.filter { !state.recentBookIDs.contains($0.id) }
+        if availableBooks.isEmpty {
+            state.recentBookIDs.removeAll { candidateIDs.contains($0) }
+            availableBooks = candidates
+            showCooldownResetMessage()
+        }
+
+        guard let winner = availableBooks.randomElement() else {
+            return
+        }
+
+        resultBook = nil
+        highlightedIndex = nil
+        isDrawing = true
+
+        let sequence = animationSequence(candidates: candidates, winner: winner)
+        let targetIndex = sequence.count - 1
+        activeDrawBaseState = state.normalized
+        carouselBooks = sequence
+        carouselOffset = 0
+
+        drawTask = Task { @MainActor in
+            await runDrawAnimation(
+                generation: generation,
+                winner: winner,
+                targetIndex: targetIndex,
+                baseState: activeDrawBaseState
+            )
+        }
+    }
+
+    @MainActor
+    private func runDrawAnimation(
+        generation: Int,
+        winner: Book,
+        targetIndex: Int,
+        baseState: RandomPickerState
+    ) async {
+        let stride = cardWidth + cardSpacing
+        let firstBrakeIndex = max(targetIndex - 10, 0)
+        let secondBrakeIndex = max(targetIndex - 3, 0)
+        let overshoot = CGFloat(10)
+
+        withAnimation(.timingCurve(0.18, 0.0, 0.28, 1.0, duration: 0.42)) {
+            carouselOffset = -stride * CGFloat(min(6, targetIndex))
+        }
+        try? await Task.sleep(nanoseconds: 430_000_000)
+        guard shouldContinueDraw(generation) else {
+            return
+        }
+
+        withAnimation(.linear(duration: 0.72)) {
+            carouselOffset = -stride * CGFloat(firstBrakeIndex)
+        }
+        try? await Task.sleep(nanoseconds: 730_000_000)
+        guard shouldContinueDraw(generation) else {
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.92)) {
+            carouselOffset = -stride * CGFloat(secondBrakeIndex)
+        }
+        try? await Task.sleep(nanoseconds: 930_000_000)
+        guard shouldContinueDraw(generation) else {
+            return
+        }
+
+        withAnimation(.easeOut(duration: 0.46)) {
+            carouselOffset = -stride * CGFloat(targetIndex) - overshoot
+        }
+        try? await Task.sleep(nanoseconds: 470_000_000)
+        guard shouldContinueDraw(generation) else {
+            return
+        }
+
+        withAnimation(.interpolatingSpring(stiffness: 170, damping: 16)) {
+            carouselOffset = -stride * CGFloat(targetIndex)
+            highlightedIndex = targetIndex
+        }
+        finishDraw(
+            winner: winner,
+            targetIndex: targetIndex,
+            baseState: baseState
+        )
+    }
+
+    private func skipAnimation() {
+        guard let winner = carouselBooks.last else {
+            return
+        }
+        let targetIndex = max(carouselBooks.count - 1, 0)
+        let state = activeDrawBaseState.normalized
+        drawTask?.cancel()
+        drawTask = nil
+        drawGeneration += 1
+        var transaction = Transaction()
+        transaction.animation = nil
+        withTransaction(transaction) {
+            carouselOffset = -(cardWidth + cardSpacing) * CGFloat(targetIndex)
+            highlightedIndex = targetIndex
+        }
+        finishDraw(
+            winner: winner,
+            targetIndex: targetIndex,
+            baseState: state
+        )
+    }
+
+    private func shouldContinueDraw(_ generation: Int) -> Bool {
+        !Task.isCancelled && drawGeneration == generation
+    }
+
+    private func finishDraw(
+        winner: Book,
+        targetIndex: Int,
+        baseState: RandomPickerState
+    ) {
+        highlightedIndex = targetIndex
+        resultBook = winner
+        isDrawing = false
+        drawTask = nil
+
+        var nextState = baseState
+        nextState.selectedScopes = selectedScopeList
+        nextState.recentBookIDs.removeAll { $0 == winner.id }
+        nextState.recentBookIDs.insert(winner.id, at: 0)
+        nextState.recentBookIDs = Array(nextState.recentBookIDs.prefix(RandomPickerState.cooldownLimit))
+        pickerState = nextState.normalized
+        persistPickerState()
+    }
+
+    private func animationSequence(candidates: [Book], winner: Book) -> [Book] {
+        var sequence: [Book] = []
+        let spinCount = max(18, min(30, candidates.count * 6))
+        for _ in 0..<spinCount {
+            if let book = candidates.randomElement() {
+                sequence.append(book)
+            }
+        }
+        sequence.append(winner)
+        return sequence
+    }
+
+    private func showCooldownResetMessage() {
+        resetMessageID = UUID()
+        let messageID = resetMessageID
+        withAnimation(.easeInOut(duration: 0.18)) {
+            showsCooldownResetMessage = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_300_000_000)
+            guard resetMessageID == messageID else {
+                return
+            }
+            withAnimation(.easeInOut(duration: 0.18)) {
+                showsCooldownResetMessage = false
+            }
+        }
+    }
+
+    private func persistPickerState() {
+        var state = pickerState
+        state.selectedScopes = selectedScopeList
+        pickerState = state.normalized
+        let repository = repository
+        let nextState = pickerState
+        Task {
+            do {
+                try await repository.saveRandomPickerState(nextState)
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+}
+
+private struct RandomPickerScopeChip: View {
+    let title: String
+    let count: Int
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(isSelected ? .accentColor : Color(.systemGray3))
+
+            Text(verbatim: title)
+                .font(.subheadline.weight(.medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            Text(
+                String(
+                    format: NSLocalizedString("randomPicker.scope.count", comment: ""),
+                    count
+                )
+            )
+            .font(.caption)
+            .foregroundColor(.secondary)
+            .lineLimit(1)
+        }
+        .padding(.horizontal, 10)
+        .frame(maxWidth: .infinity, minHeight: 38)
+        .background(isSelected ? Color.accentColor.opacity(0.12) : Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(isSelected ? Color.accentColor.opacity(0.35) : Color.clear, lineWidth: 1)
+        }
+    }
+}
+
+private struct RandomPickerBookCard: View {
+    let book: Book
+    let isHighlighted: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color(.systemGray5),
+                                Color(.systemGray4).opacity(0.65)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                Text(verbatim: coverInitial)
+                    .font(.system(size: 48, weight: .semibold))
+                    .foregroundColor(Color(.darkGray).opacity(0.64))
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+            }
+            .frame(height: 116)
+            .overlay {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .stroke(
+                        isHighlighted ? Color.accentColor.opacity(0.65) : Color.clear,
+                        lineWidth: 2
+                    )
+            }
+
+            Text(displayTitle)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text(progressText)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+        }
+        .padding(10)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var displayTitle: String {
+        let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+
+    private var coverInitial: String {
+        displayTitle.dedicatedFirstBookCoverCharacter
+            .map(String.init)
+            ?? NSLocalizedString("library.cover.fallbackInitial", comment: "")
+    }
+
+    private var progressText: String {
+        NumberFormatter.dedicatedReadingProgress.string(
+            from: NSNumber(value: min(max(book.progressPercentage, 0), 1))
+        ) ?? "0%"
+    }
+}
+
+private struct RandomPickerPlaceholderCard: View {
+    let textKey: LocalizedStringKey
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color(.systemGray5))
+            .overlay {
+                Text(textKey)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(14)
+            }
+    }
+}
+
+private struct RandomPickerHistoryCard: View {
+    let book: Book
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color(.systemGray5))
+
+                Text(verbatim: coverInitial)
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundColor(Color(.darkGray).opacity(0.62))
+                    .lineLimit(1)
+            }
+            .frame(width: 58, height: 78)
+
+            Text(displayTitle)
+                .font(.caption)
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .frame(width: 74, alignment: .leading)
+        }
+        .frame(width: 74, alignment: .leading)
+    }
+
+    private var displayTitle: String {
+        let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+
+    private var coverInitial: String {
+        displayTitle.dedicatedFirstBookCoverCharacter
+            .map(String.init)
+            ?? NSLocalizedString("library.cover.fallbackInitial", comment: "")
+    }
+}
+
 struct LibrarySettingsPage: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -1610,6 +2333,27 @@ private enum DedicatedPageStyle {
         Rectangle()
             .fill(Color(.systemGray4))
             .frame(height: 0.5)
+    }
+}
+
+private extension NumberFormatter {
+    static let dedicatedReadingProgress: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .percent
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = 1
+        return formatter
+    }()
+}
+
+private extension String {
+    var dedicatedFirstBookCoverCharacter: Character? {
+        trimmingCharacters(in: .whitespacesAndNewlines)
+            .first { character in
+                character.unicodeScalars.contains { scalar in
+                    CharacterSet.letters.contains(scalar)
+                }
+            }
     }
 }
 

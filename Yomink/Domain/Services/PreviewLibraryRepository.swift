@@ -206,6 +206,12 @@ struct PreviewLibraryRepository: LibraryRepository {
 
     func saveLibrarySettings(_ settings: LibrarySettings) async throws {}
 
+    func fetchRandomPickerState() async throws -> RandomPickerState {
+        .default
+    }
+
+    func saveRandomPickerState(_ state: RandomPickerState) async throws {}
+
     func fetchReaderSettings() async throws -> ReaderSettings {
         .default
     }

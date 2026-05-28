@@ -78,6 +78,75 @@ struct LibrarySettings: Codable, Equatable, Sendable {
     }
 }
 
+enum RandomPickerScope: Hashable, Codable, Sendable {
+    case ungrouped
+    case group(UUID)
+
+    private static let ungroupedStorageValue = "ungrouped"
+    private static let groupPrefix = "group:"
+
+    var storageKey: String {
+        switch self {
+        case .ungrouped:
+            return Self.ungroupedStorageValue
+        case let .group(id):
+            return "\(Self.groupPrefix)\(id.uuidString)"
+        }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        if rawValue == Self.ungroupedStorageValue {
+            self = .ungrouped
+            return
+        }
+        if rawValue.hasPrefix(Self.groupPrefix) {
+            let idString = String(rawValue.dropFirst(Self.groupPrefix.count))
+            if let id = UUID(uuidString: idString) {
+                self = .group(id)
+                return
+            }
+        }
+        throw DecodingError.dataCorruptedError(
+            in: container,
+            debugDescription: "Invalid random picker scope: \(rawValue)"
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(storageKey)
+    }
+}
+
+struct RandomPickerState: Codable, Equatable, Sendable {
+    var selectedScopes: [RandomPickerScope]?
+    var recentBookIDs: [UUID]
+
+    static let storageKey = "randomPicker.state"
+    static let cooldownLimit = 5
+
+    static var `default`: RandomPickerState {
+        RandomPickerState(
+            selectedScopes: nil,
+            recentBookIDs: []
+        )
+    }
+
+    var normalized: RandomPickerState {
+        var state = self
+        state.selectedScopes = state.selectedScopes.map { scopes in
+            var seenKeys: Set<String> = []
+            return scopes.filter { scope in
+                seenKeys.insert(scope.storageKey).inserted
+            }
+        }
+        state.recentBookIDs = Array(state.recentBookIDs.uniqued().prefix(Self.cooldownLimit))
+        return state
+    }
+}
+
 struct SearchHistoryItem: Identifiable, Equatable, Sendable {
     let id: UUID
     var keyword: String
@@ -90,4 +159,11 @@ struct ReadingHistoryItem: Identifiable, Equatable, Sendable {
     var chapterTitle: String?
     var offset: Int
     var readAt: Date
+}
+
+private extension Array where Element: Hashable {
+    func uniqued() -> [Element] {
+        var seen: Set<Element> = []
+        return filter { seen.insert($0).inserted }
+    }
 }

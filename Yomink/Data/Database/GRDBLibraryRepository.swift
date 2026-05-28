@@ -654,6 +654,52 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
+    func fetchRandomPickerState() async throws -> RandomPickerState {
+        try await database.writer.read { db in
+            guard let value = try String.fetchOne(
+                db,
+                sql: """
+                SELECT value
+                FROM app_settings
+                WHERE key = ?
+                """,
+                arguments: [RandomPickerState.storageKey]
+            ) else {
+                return .default
+            }
+
+            guard let data = value.data(using: .utf8) else {
+                return .default
+            }
+
+            return (try? JSONDecoder().decode(RandomPickerState.self, from: data).normalized)
+                ?? .default
+        }
+    }
+
+    func saveRandomPickerState(_ state: RandomPickerState) async throws {
+        let normalizedState = state.normalized
+        let data = try JSONEncoder().encode(normalizedState)
+        guard let value = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                INSERT INTO app_settings (key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET
+                    value = excluded.value
+                """,
+                arguments: [
+                    RandomPickerState.storageKey,
+                    value
+                ]
+            )
+        }
+    }
+
     func fetchReaderSettings() async throws -> ReaderSettings {
         try await database.writer.read { db in
             guard let value = try String.fetchOne(

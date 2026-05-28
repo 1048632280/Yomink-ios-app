@@ -47,6 +47,8 @@ protocol LibraryRepository: Sendable {
     func clearReadingHistory() async throws
     func fetchLibrarySettings() async throws -> LibrarySettings
     func saveLibrarySettings(_ settings: LibrarySettings) async throws
+    func fetchRandomPickerState() async throws -> RandomPickerState
+    func saveRandomPickerState(_ state: RandomPickerState) async throws
     func fetchReaderSettings() async throws -> ReaderSettings
     func saveReaderSettings(_ settings: ReaderSettings) async throws
     func markBookOpened(id: UUID, at date: Date) async throws

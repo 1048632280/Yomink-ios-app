@@ -4,13 +4,16 @@ import UIKit
 struct AddBookSidebarView: View {
     let onImportFromFile: () -> Void
     let onOpenHistoryPage: () -> Void
+    let onOpenRandomPickerPage: () -> Void
 
     init(
         onImportFromFile: @escaping () -> Void = {},
-        onOpenHistoryPage: @escaping () -> Void = {}
+        onOpenHistoryPage: @escaping () -> Void = {},
+        onOpenRandomPickerPage: @escaping () -> Void = {}
     ) {
         self.onImportFromFile = onImportFromFile
         self.onOpenHistoryPage = onOpenHistoryPage
+        self.onOpenRandomPickerPage = onOpenRandomPickerPage
     }
 
     var body: some View {
@@ -28,6 +31,13 @@ struct AddBookSidebarView: View {
                         onOpenHistoryPage()
                     } label: {
                         SidebarItemRow(localizedTitle: "add.reading.history")
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        onOpenRandomPickerPage()
+                    } label: {
+                        SidebarItemRow(localizedTitle: "randomPicker.title")
                     }
                     .buttonStyle(.plain)
                 }

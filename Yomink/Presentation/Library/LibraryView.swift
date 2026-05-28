@@ -323,6 +323,9 @@ struct LibraryView: View {
                 },
                 onOpenHistoryPage: {
                     openRouteFromDrawer(.history)
+                },
+                onOpenRandomPickerPage: {
+                    openRouteFromDrawer(.randomPicker)
                 }
             )
         }
@@ -356,6 +359,22 @@ struct LibraryView: View {
                 selection: $activeRoute
             ) {
                 ReadingHistoryPage(
+                    repository: services.libraryRepository,
+                    onOpenBook: { book in
+                        openBookAfterRouteDismissal(book)
+                    }
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
+
+            NavigationLink(
+                tag: LibraryRoute.randomPicker,
+                selection: $activeRoute
+            ) {
+                RandomBookPickerPage(
                     repository: services.libraryRepository,
                     onOpenBook: { book in
                         openBookAfterRouteDismissal(book)
@@ -923,6 +942,7 @@ struct LibraryView: View {
 private enum LibraryRoute: Hashable {
     case groups
     case history
+    case randomPicker
     case search
     case settings
     case importBook
