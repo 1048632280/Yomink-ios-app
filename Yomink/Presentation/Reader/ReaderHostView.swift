@@ -440,7 +440,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
-        readerSettings.autoHideHomeIndicator
+        // 始终返回 false: 我们要的不是隐藏小横条,而是让它进入灰色"未唤醒"状态。
+        // 真正的灰色效果由 preferredScreenEdgesDeferringSystemGestures = .bottom 提供。
+        false
     }
 
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
