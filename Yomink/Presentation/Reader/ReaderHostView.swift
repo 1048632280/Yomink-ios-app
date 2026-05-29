@@ -440,7 +440,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
-        readerSettings.autoHideHomeIndicator
+        false  
     }
 
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
