@@ -359,6 +359,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var isSettingsPanelVisible = false
     private var isAutoReading = false
     private var isAutoReadingPausedForBackground = false
+    private var isAutoReadingPausedForInteractiveReturn = false
     private var isAutoReadPanelVisible = false
     private var isTrackingProgressSlider = false
     private var isApplyingProgrammaticScroll = false
@@ -374,6 +375,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var autoReadVelocity: CGFloat = 0
     private var shouldSuppressNextAutoReadTap = false
     private weak var autoReadTouchResetGesture: UIGestureRecognizer?
+    private weak var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
+    private weak var configuredInteractivePopGesture: UIGestureRecognizer?
     private static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
     private static let autoReadReverseInertiaDecayConstant: CGFloat = 2.5
     private var lastViewportSize = CGSize.zero
@@ -474,6 +477,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: animated)
         restoreNativeInteractivePopGesture()
+        bindReaderGesturesToEdgeBackIfNeeded()
         updateReaderChromePreferences()
     }
 
@@ -517,6 +521,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             hidesNavigationBar,
             animated: animated
         )
+        if handleInteractiveReaderReturnIfNeeded() {
+            return
+        }
         switch UIApplication.shared.applicationState {
         case .active:
             UIApplication.shared.isIdleTimerDisabled = false
@@ -1637,6 +1644,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         edgeBack.edges = .left
         edgeBack.delegate = self
         view.addGestureRecognizer(edgeBack)
+        edgeBackGesture = edgeBack
+        bindReaderGesturesToEdgeBackIfNeeded()
     }
 
     private func configureLifecycleObservers() {
@@ -1652,6 +1661,60 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             name: UIApplication.didBecomeActiveNotification,
             object: nil
         )
+    }
+
+    private func bindReaderGesturesToEdgeBackIfNeeded() {
+        let returnGesture = navigationController?.interactivePopGestureRecognizer ?? edgeBackGesture
+        guard configuredInteractivePopGesture !== returnGesture else {
+            return
+        }
+
+        configuredInteractivePopGesture = returnGesture
+        guard let returnGesture else {
+            return
+        }
+
+        collectionView.panGestureRecognizer.require(toFail: returnGesture)
+        collectionView.gestureRecognizers?
+            .filter { $0 is UISwipeGestureRecognizer }
+            .forEach { $0.require(toFail: returnGesture) }
+    }
+
+    private func handleInteractiveReaderReturnIfNeeded() -> Bool {
+        guard UIApplication.shared.applicationState == .active,
+              let transitionCoordinator,
+              transitionCoordinator.isInteractive,
+              let destination = transitionCoordinator.viewController(forKey: .to),
+              !(destination is ReaderPageTouchAreasViewController)
+        else {
+            return false
+        }
+
+        UIApplication.shared.isIdleTimerDisabled = false
+        pauseAutoReadingForInteractiveReturn()
+        saveProgressImmediately()
+        saveSettingsImmediately()
+        transitionCoordinator.notifyWhenInteractionChanges { [weak self] context in
+            let isCancelled = context.isCancelled
+            Task { [weak self] in
+                guard let self else {
+                    return
+                }
+                if isCancelled {
+                    await self.restoreAfterInteractiveReturnCancellation()
+                } else {
+                    await self.finishAutoReadingAfterInteractiveReturnCompletion()
+                }
+            }
+        }
+        return true
+    }
+
+    private func restoreAfterInteractiveReturnCancellation() {
+        navigationController?.setNavigationBarHidden(true, animated: true)
+        updateReaderChromePreferences()
+        refreshSystemStatusBarVisibility()
+        resumeAutoReadingAfterInteractiveReturnCancellationIfNeeded()
     }
 
     private func startInitialLoad() {
@@ -3049,6 +3112,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         invalidateAutoReadDisplayLink()
         collectionView.layer.removeAllAnimations()
         isAutoReadingPausedForBackground = false
+        isAutoReadingPausedForInteractiveReturn = false
         isAutoReading = false
         refreshSystemStatusBarVisibility()
         setAutoReadPanelVisible(false, animated: animated)
@@ -3078,6 +3142,18 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         saveProgressImmediately()
     }
 
+    private func pauseAutoReadingForInteractiveReturn() {
+        guard isAutoReading else {
+            return
+        }
+        invalidateAutoReadDisplayLink()
+        collectionView.layer.removeAllAnimations()
+        updateCurrentPageFromVisiblePage()
+        setAutoReadPanelVisible(false, animated: false)
+        isAutoReadingPausedForInteractiveReturn = true
+        refreshSystemStatusBarVisibility()
+    }
+
     private func resumeAutoReadingAfterBackgroundIfNeeded() {
         guard isAutoReading,
               isAutoReadingPausedForBackground else {
@@ -3091,6 +3167,33 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         alignContentOffsetToCurrentPage()
         updateAutoReadButton()
         startAutoReadDisplayLink()
+    }
+
+    private func resumeAutoReadingAfterInteractiveReturnCancellationIfNeeded() {
+        guard isAutoReading,
+              isAutoReadingPausedForInteractiveReturn else {
+            return
+        }
+        isAutoReadingPausedForInteractiveReturn = false
+        updateReaderChromePreferences()
+        refreshSystemStatusBarVisibility()
+        updateFixedWidgetOverlay()
+        updateAutoReadButton()
+        startAutoReadDisplayLink()
+    }
+
+    private func finishAutoReadingAfterInteractiveReturnCompletion() {
+        guard isAutoReading || autoReadDisplayLink != nil || isAutoReadingPausedForInteractiveReturn else {
+            return
+        }
+        invalidateAutoReadDisplayLink()
+        collectionView.layer.removeAllAnimations()
+        isAutoReadingPausedForInteractiveReturn = false
+        isAutoReadingPausedForBackground = false
+        isAutoReading = false
+        setAutoReadPanelVisible(false, animated: false)
+        updateAutoReadButton()
+        refreshSystemStatusBarVisibility()
     }
 
     private func alignContentOffsetToCurrentPage() {
