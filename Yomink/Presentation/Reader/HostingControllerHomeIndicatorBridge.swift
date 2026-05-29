@@ -82,11 +82,11 @@ enum HostingControllerHomeIndicatorBridge {
         let imp = method_getImplementation(donorMethod)
         let typeEncoding = method_getTypeEncoding(donorMethod)
 
-        // class_addMethod 只在该类自身方法表里没有此 selector 时成功。
-        // 成功 = hosting controller 之前从父类继承(返回 nil),被我们覆盖。
-        // 失败 = 该类自身已有实现(可能是我们之前注入的,或 SwiftUI 自定义),
-        //        保持现状,避免重复替换或破坏 SwiftUI 自己的实现。
-        _ = class_addMethod(cls, selector, imp, typeEncoding)
+        // 用 replace 而不是 add:SwiftUI 的 UIHostingController 自己实现了这两个
+        // getter(返回 nil),class_addMethod 会因方法表已存在条目而静默失败。
+        // class_replaceMethod 无条件覆盖目标类自身方法表中的 IMP,确保我们的
+        // 转发实现真正生效。
+        class_replaceMethod(cls, selector, imp, typeEncoding)
     }
 }
 
