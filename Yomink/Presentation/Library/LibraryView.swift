@@ -412,6 +412,7 @@ struct LibraryView: View {
             ) {
                 LibrarySettingsPage(
                     repository: services.libraryRepository,
+                    fileStore: services.fileStore,
                     settings: viewModel.settings,
                     onChange: { settings in
                         viewModel.applyLibrarySettings(settings)
