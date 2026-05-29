@@ -443,6 +443,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         readerSettings.autoHideHomeIndicator
     }
 
+    override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
+        readerSettings.autoHideHomeIndicator ? .bottom : []
+    }
+
     private var shouldHideSystemStatusBar: Bool {
         if isAutoReading {
             return true
@@ -2411,6 +2415,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         UIApplication.shared.isIdleTimerDisabled = normalized.keepScreenAwake
         refreshSystemStatusBarVisibility()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         settingsPageModeControl.selectedSegmentIndex = normalized.pageMode.settingsPageTurnIndex
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases.firstIndex(of: normalized.theme) ?? 0
         settingsLayoutPresetControl.selectedSegmentIndex = ReaderSettings.LayoutPreset.allCases.firstIndex(of: normalized.layoutPreset) ?? 0
