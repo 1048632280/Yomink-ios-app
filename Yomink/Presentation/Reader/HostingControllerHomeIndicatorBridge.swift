@@ -2,31 +2,35 @@ import SwiftUI
 import UIKit
 import ObjectiveC
 
-/// SwiftUI 的 `UIHostingController<Content>` 在 Objective-C runtime 中,每个不同
-/// 的泛型实参都是一个**独立的类**(`UIHostingController<AnyView>` 与
-/// `UIHostingController<ModifiedContent<...>>` 不共享方法表)。
+/// 让 SwiftUI 包裹的 UIKit 视图控制器能够正确控制 home indicator 行为。
 ///
-/// 因此不能只 swizzle "UIHostingController" 一个类,必须遍历运行时已注册的全部
-/// 类,把所有从 `UIHostingController` 继承的子类一一注入桥接方法。
+/// SwiftUI 的 `UIHostingController` 默认不会把
+/// `prefersHomeIndicatorAutoHidden` / `preferredScreenEdgesDeferringSystemGestures`
+/// 的查询转发给内嵌的 UIKit 子控制器,导致重写的属性被系统忽略。本桥接器
+/// 在运行时为所有 `UIHostingController` 子类注入两组方法:
 ///
-/// 注入两组方法:
+/// 1. `childForHomeIndicatorAutoHidden` /
+///    `childForScreenEdgesDeferringSystemGestures`
+///    返回 `presentedViewController` 或 `children.last`,
+///    打通从 root 到内层 UIKit VC 的 child 查询链。
 ///
-/// 1. `childForHomeIndicatorAutoHidden` / `childForScreenEdgesDeferringSystemGestures`
-///    优先返回 `presentedViewController` 否则 `children.last`,
-///    保证沿 child 链能找到内层 UIKit VC。
+/// 2. `preferredScreenEdgesDeferringSystemGestures` getter 本身
+///    iOS 15 查询此属性时不会沿 child 链向下,只读 hosting controller
+///    自己的值。覆盖后会沿 child / presented 链找到链尾 VC,
+///    把链尾的诉求"提"到 hosting controller 上,系统在任何层级求值
+///    都能拿到正确的延迟边缘。
 ///
-/// 2. `preferredScreenEdgesDeferringSystemGestures` getter 直接覆盖:
-///    iOS 15 不会沿 child 链查询这个值,只读 hosting controller 自己的。
-///    我们让 hosting controller 沿 child 链向下递归找到链尾 VC,
-///    如果链尾是开启了"小横条休眠"的 reader VC,就返回 `.bottom`。
-///    这样系统对 hosting controller 自身求值时也能拿到正确的延迟边缘。
+/// 注意:每个泛型实参的 `UIHostingController<T>` 在 Objective-C runtime
+/// 中是独立的类(方法表互不共享),因此必须遍历所有已注册类逐一注入。
 enum HostingControllerHomeIndicatorBridge {
+    /// 在 App 启动期调用一次,触发对当前已注册类的全量扫描。
     static let install: Void = {
         installForAllHostingSubclasses()
     }()
 
-    /// 供 reader VC 在 viewDidAppear 时再次调用,覆盖 SwiftUI 后续才注册的
-    /// 新泛型 hosting controller 子类。
+    /// 兜底入口:SwiftUI 可能在 App 启动后才动态生成新的泛型 hosting
+    /// 子类(例如打开 reader 时),此方法用于在恰当时机重新扫描。
+    /// 重复调用幂等。
     static func ensureInstalledForCurrentlyRegisteredClasses() {
         installForAllHostingSubclasses()
     }
@@ -35,35 +39,27 @@ enum HostingControllerHomeIndicatorBridge {
         let classCount = objc_getClassList(nil, 0)
         guard classCount > 0 else { return }
 
-        let allClasses = UnsafeMutablePointer<AnyClass>.allocate(capacity: Int(classCount))
-        defer { allClasses.deallocate() }
-        let autoreleasingPtr = AutoreleasingUnsafeMutablePointer<AnyClass>(allClasses)
-        let actualCount = objc_getClassList(autoreleasingPtr, classCount)
+        let buffer = UnsafeMutablePointer<AnyClass>.allocate(capacity: Int(classCount))
+        defer { buffer.deallocate() }
+        let actualCount = objc_getClassList(
+            AutoreleasingUnsafeMutablePointer<AnyClass>(buffer),
+            classCount
+        )
 
         for i in 0..<Int(actualCount) {
-            let cls: AnyClass = allClasses[i]
+            let cls: AnyClass = buffer[i]
             guard isHostingControllerClass(cls) else { continue }
             inject(into: cls)
         }
     }
 
-    /// 判断一个类是不是 `UIHostingController` 子类。
-    ///
-    /// 之前用 `NSClassFromString("SwiftUI.UIHostingController") ?? superclass()`
-    /// 拿 base class——这是**严重 bug**:
-    /// - `NSClassFromString` 对 Swift mangled 名失败返回 nil
-    /// - fallback 到 `UIHostingController<AnyView>.superclass()` =
-    ///   `UIViewController.self`
-    /// - 结果**所有 UIViewController 子类**(包括 CollectionReaderViewController
-    ///   自己!)都被注入了 swizzle 方法,把 reader VC 自己的 override 干掉了。
-    ///
-    /// 改用类名字符串匹配:Swift mangled 名里会包含 `UIHostingController`,
-    /// 不会误伤普通 UIKit VC。
+    /// 通过类名字符串匹配判断是否是 `UIHostingController` 子类。
+    /// 不能使用 `isSubclass(of: UIHostingController<...>.superclass())`——
+    /// 那个 superclass 是 `UIViewController` 自身,会误伤所有 UIKit VC。
     private static func isHostingControllerClass(_ cls: AnyClass) -> Bool {
         var current: AnyClass? = cls
         while let c = current {
-            let name = NSStringFromClass(c)
-            if name.contains("UIHostingController") {
+            if NSStringFromClass(c).contains("UIHostingController") {
                 return true
             }
             current = class_getSuperclass(c)
@@ -72,22 +68,20 @@ enum HostingControllerHomeIndicatorBridge {
     }
 
     private static func inject(into cls: AnyClass) {
-        // child 链转发 (沿用)
         injectMethod(
             into: cls,
             selector: #selector(getter: UIViewController.childForHomeIndicatorAutoHidden),
-            donorSelector: #selector(YominkHostingChildForwarder.yomink_childForHomeIndicatorAutoHidden)
+            donorSelector: #selector(HostingHomeIndicatorBridgeDonor.bridge_childForHomeIndicatorAutoHidden)
         )
         injectMethod(
             into: cls,
             selector: #selector(getter: UIViewController.childForScreenEdgesDeferringSystemGestures),
-            donorSelector: #selector(YominkHostingChildForwarder.yomink_childForScreenEdgesDeferringSystemGestures)
+            donorSelector: #selector(HostingHomeIndicatorBridgeDonor.bridge_childForScreenEdgesDeferringSystemGestures)
         )
-        // 关键新增:直接覆盖 deferring edges getter
         injectMethod(
             into: cls,
             selector: #selector(getter: UIViewController.preferredScreenEdgesDeferringSystemGestures),
-            donorSelector: #selector(YominkHostingChildForwarder.yomink_preferredScreenEdgesDeferringSystemGestures)
+            donorSelector: #selector(HostingHomeIndicatorBridgeDonor.bridge_preferredScreenEdgesDeferringSystemGestures)
         )
     }
 
@@ -97,50 +91,48 @@ enum HostingControllerHomeIndicatorBridge {
         donorSelector: Selector
     ) {
         guard let donorMethod = class_getInstanceMethod(
-            YominkHostingChildForwarder.self,
+            HostingHomeIndicatorBridgeDonor.self,
             donorSelector
         ) else { return }
 
-        let imp = method_getImplementation(donorMethod)
-        let typeEncoding = method_getTypeEncoding(donorMethod)
-
-        // 用 replace 强制覆盖:SwiftUI 的 UIHostingController 自带这些 getter 的实现,
-        // class_addMethod 会在已有同名方法时静默失败,所以必须 replace。
-        class_replaceMethod(cls, selector, imp, typeEncoding)
+        // 用 replace 强制覆盖:SwiftUI 的 UIHostingController 自带这些
+        // getter 的默认实现(均返回 nil / []),class_addMethod 会因方法已存在
+        // 而静默失败,必须用 replace 才能真正生效。
+        class_replaceMethod(
+            cls,
+            selector,
+            method_getImplementation(donorMethod),
+            method_getTypeEncoding(donorMethod)
+        )
     }
 }
 
-/// 仅用于承载注入方法的实现。运行时这些方法体会被复制到每个
-/// UIHostingController 子类的方法表里。`self` 在方法被调用时指向那个
+/// 仅用于承载注入方法的实现宿主。运行时这些方法体会被复制到每个
+/// `UIHostingController` 子类的方法表里;调用时 `self` 指向真实的
 /// hosting controller 实例。
-private final class YominkHostingChildForwarder: UIViewController {
-    @objc func yomink_childForHomeIndicatorAutoHidden() -> UIViewController? {
+private final class HostingHomeIndicatorBridgeDonor: UIViewController {
+    @objc func bridge_childForHomeIndicatorAutoHidden() -> UIViewController? {
         if let presented = presentedViewController, !presented.isBeingDismissed {
             return presented
         }
         return children.last
     }
 
-    @objc func yomink_childForScreenEdgesDeferringSystemGestures() -> UIViewController? {
+    @objc func bridge_childForScreenEdgesDeferringSystemGestures() -> UIViewController? {
         if let presented = presentedViewController, !presented.isBeingDismissed {
             return presented
         }
         return children.last
     }
 
-    /// 直接返回 deferring edges:沿 child / presented 链找到链尾的非 hosting VC,
-    /// 如果它声明了希望延迟底部边缘手势,就返回 `.bottom`,否则 `[]`。
-    /// iOS 15 不会沿 child 链查询这个属性,所以每个 hosting controller 自己求值
-    /// 时都要把链尾的诉求"提"上来。
-    @objc func yomink_preferredScreenEdgesDeferringSystemGestures() -> UIRectEdge {
+    @objc func bridge_preferredScreenEdgesDeferringSystemGestures() -> UIRectEdge {
         let tail = Self.findChainTail(from: self)
         guard tail !== self else { return [] }
         return tail.preferredScreenEdgesDeferringSystemGestures
     }
 
-    /// 沿 presentedViewController(优先)或 children.last 一路向下,直到链尾。
-    /// 链尾 = 没有 presented 且没有 children 的那个 VC,
-    /// 或者沿途遇到非 hosting controller 时就停下来用它的值。
+    /// 沿 `presentedViewController`(优先)或 `children.last` 一路向下,
+    /// 直到没有更深层的 VC 为止。`visited` 防止循环引用。
     private static func findChainTail(from start: UIViewController) -> UIViewController {
         var current: UIViewController = start
         var visited: Set<ObjectIdentifier> = [ObjectIdentifier(current)]
@@ -148,15 +140,12 @@ private final class YominkHostingChildForwarder: UIViewController {
             let next: UIViewController?
             if let presented = current.presentedViewController, !presented.isBeingDismissed {
                 next = presented
-            } else if let lastChild = current.children.last {
-                next = lastChild
             } else {
-                next = nil
+                next = current.children.last
             }
             guard let n = next else { return current }
             let id = ObjectIdentifier(n)
-            if visited.contains(id) { return current }
-            visited.insert(id)
+            if visited.insert(id).inserted == false { return current }
             current = n
         }
     }
