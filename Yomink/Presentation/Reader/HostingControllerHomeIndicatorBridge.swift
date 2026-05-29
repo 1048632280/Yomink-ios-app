@@ -32,10 +32,6 @@ enum HostingControllerHomeIndicatorBridge {
     }
 
     private static func installForAllHostingSubclasses() {
-        let hostingBaseClass: AnyClass = NSClassFromString("SwiftUI.UIHostingController")
-            ?? UIHostingController<AnyView>.superclass()
-            ?? UIViewController.self
-
         let classCount = objc_getClassList(nil, 0)
         guard classCount > 0 else { return }
 
@@ -46,15 +42,30 @@ enum HostingControllerHomeIndicatorBridge {
 
         for i in 0..<Int(actualCount) {
             let cls: AnyClass = allClasses[i]
-            guard isSubclass(cls, of: hostingBaseClass) else { continue }
+            guard isHostingControllerClass(cls) else { continue }
             inject(into: cls)
         }
     }
 
-    private static func isSubclass(_ cls: AnyClass, of base: AnyClass) -> Bool {
+    /// 判断一个类是不是 `UIHostingController` 子类。
+    ///
+    /// 之前用 `NSClassFromString("SwiftUI.UIHostingController") ?? superclass()`
+    /// 拿 base class——这是**严重 bug**:
+    /// - `NSClassFromString` 对 Swift mangled 名失败返回 nil
+    /// - fallback 到 `UIHostingController<AnyView>.superclass()` =
+    ///   `UIViewController.self`
+    /// - 结果**所有 UIViewController 子类**(包括 CollectionReaderViewController
+    ///   自己!)都被注入了 swizzle 方法,把 reader VC 自己的 override 干掉了。
+    ///
+    /// 改用类名字符串匹配:Swift mangled 名里会包含 `UIHostingController`,
+    /// 不会误伤普通 UIKit VC。
+    private static func isHostingControllerClass(_ cls: AnyClass) -> Bool {
         var current: AnyClass? = cls
         while let c = current {
-            if c === base { return true }
+            let name = NSStringFromClass(c)
+            if name.contains("UIHostingController") {
+                return true
+            }
             current = class_getSuperclass(c)
         }
         return false
