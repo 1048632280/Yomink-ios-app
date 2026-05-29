@@ -117,6 +117,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let autoReadIconSize: CGFloat = 24
         static let autoReadExitButtonHeight: CGFloat = 42
         static let maximumResidentPages = 14
+        static let horizontalPrefetchDistance = 4
     }
 
     private static let widgetTimeFormatter: DateFormatter = {
@@ -1830,7 +1831,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func loadPreviousPageIfNeeded(scrollAfterLoading: Bool = false) {
         guard pageTask == nil,
-              let firstPage = pages.first,
+              let firstPage = leadingBoundaryPage(),
               firstPage.startAbsoluteOffset > 0 else {
             return
         }
@@ -1953,6 +1954,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         // 拖动中做这件事一定会破坏 paging snap;挂起到静止时再做。
         if shouldDeferPageMutationForActivePaging {
             pendingPagePrepends.append(page)
+            updateSessionState(isLoadingNextPage: false)
+            prefetchPagesNearCurrent()
             return
         }
         let extent = usesVerticalScrolling
@@ -2013,11 +2016,37 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         guard !pendingPagePrepends.isEmpty else {
             return
         }
-        let pending = pendingPagePrepends
+        let pending = Array(pendingPagePrepends.reversed())
         pendingPagePrepends.removeAll()
-        for page in pending {
-            prependPage(page)
+
+        let extent = pending.reduce(CGFloat(0)) { result, page in
+            result + (
+                usesVerticalScrolling
+                    ? verticalExtent(for: page)
+                    : pageExtentForCurrentMode()
+            )
         }
+        let insertedIndexPaths = pending.indices.map { IndexPath(item: $0, section: 0) }
+        UIView.performWithoutAnimation {
+            self.pages.insert(contentsOf: pending, at: 0)
+            self.collectionView.insertItems(at: insertedIndexPaths)
+            if let plan = self.planSuffixTrim() {
+                self.applySuffixTrim(plan)
+            }
+            if extent > 0 {
+                let adjusted = self.usesVerticalScrolling
+                    ? CGPoint(
+                        x: self.collectionView.contentOffset.x,
+                        y: self.collectionView.contentOffset.y + extent
+                    )
+                    : CGPoint(
+                        x: self.collectionView.contentOffset.x + extent,
+                        y: self.collectionView.contentOffset.y
+                    )
+                self.collectionView.setContentOffset(adjusted, animated: false)
+            }
+        }
+        updateSessionState(isLoadingNextPage: false)
     }
 
     private func previousPageStartOffset(before absoluteOffset: Int) -> Int {
@@ -2108,12 +2137,22 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
               let index = pages.firstIndex(of: currentPage) else {
             return
         }
-        if index <= 1 {
+        let leadingCount = index + pendingPagePrepends.count
+        let trailingCount = pages.count - index - 1
+
+        if leadingCount <= Layout.horizontalPrefetchDistance {
             loadPreviousPageIfNeeded()
+            if pageTask != nil {
+                return
+            }
         }
-        if index >= pages.count - 2 {
+        if trailingCount <= Layout.horizontalPrefetchDistance {
             loadNextPageIfNeeded()
         }
+    }
+
+    private func leadingBoundaryPage() -> CollectionReaderPage? {
+        pendingPagePrepends.last ?? pages.first
     }
 
     private func configureCollectionViewForActiveSettings() {
@@ -2893,9 +2932,30 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func finishPageTurn() {
+        flushPendingPageInsertions()
+        snapToNearestHorizontalPageIfNeeded()
         updateCurrentPageFromVisiblePage()
         prefetchPagesNearCurrent()
         scheduleProgressSave()
+    }
+
+    private func snapToNearestHorizontalPageIfNeeded() {
+        guard !usesVerticalScrolling,
+              !pages.isEmpty,
+              let index = visiblePageIndex(),
+              pages.indices.contains(index) else {
+            return
+        }
+
+        let targetOffset = contentOffset(forPageAt: index)
+        guard abs(collectionView.contentOffset.x - targetOffset.x) > 0.5
+            || abs(collectionView.contentOffset.y - targetOffset.y) > 0.5 else {
+            return
+        }
+
+        isApplyingProgrammaticScroll = true
+        collectionView.setContentOffset(targetOffset, animated: false)
+        isApplyingProgrammaticScroll = false
     }
 
     private func moveToNextPage() {
@@ -3837,7 +3897,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
         finishPageTurn()
-        flushPendingPageInsertions()
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
@@ -3845,7 +3904,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         finishPageTurn()
-        flushPendingPageInsertions()
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
@@ -3856,13 +3914,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
         finishPageTurn()
-        flushPendingPageInsertions()
         if isAutoReading {
             lastAutoReadTimestamp = nil
         }
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        flushPendingPageInsertions()
+        snapToNearestHorizontalPageIfNeeded()
         pendingTapTargetPageIndex = nil
         updateCurrentPageFromVisiblePage()
         if isAutoReading {
