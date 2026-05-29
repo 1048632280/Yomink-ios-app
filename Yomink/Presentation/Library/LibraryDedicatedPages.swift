@@ -1636,6 +1636,8 @@ struct LibrarySettingsPage: View {
 
     let repository: any LibraryRepository
     let fileStore: AppFileStore
+    let onOpenBook: (Book) -> Void
+    let onLibraryChanged: () -> Void
     let onChange: (LibrarySettings) -> Void
 
     @State private var settings: LibrarySettings
@@ -1645,10 +1647,14 @@ struct LibrarySettingsPage: View {
         repository: any LibraryRepository,
         fileStore: AppFileStore,
         settings: LibrarySettings,
+        onOpenBook: @escaping (Book) -> Void,
+        onLibraryChanged: @escaping () -> Void,
         onChange: @escaping (LibrarySettings) -> Void
     ) {
         self.repository = repository
         self.fileStore = fileStore
+        self.onOpenBook = onOpenBook
+        self.onLibraryChanged = onLibraryChanged
         self.onChange = onChange
         _settings = State(initialValue: settings)
     }
@@ -1730,7 +1736,9 @@ struct LibrarySettingsPage: View {
             NavigationLink {
                 StorageManagementPage(
                     repository: repository,
-                    fileStore: fileStore
+                    fileStore: fileStore,
+                    onOpenBook: onOpenBook,
+                    onLibraryChanged: onLibraryChanged
                 )
             } label: {
                 SettingsListRow(
@@ -1760,12 +1768,16 @@ struct StorageManagementPage: View {
 
     let repository: any LibraryRepository
     let fileStore: AppFileStore
+    let onOpenBook: (Book) -> Void
+    let onLibraryChanged: () -> Void
 
     @State private var snapshot: StorageUsageSnapshot?
     @State private var sort: StorageBookSort = .size
     @State private var filter: StorageBookFilter = .all
     @State private var isLoading = true
+    @State private var errorTitle: LocalizedStringKey = "storage.error.title"
     @State private var errorMessage: String?
+    @State private var exportPayload: StorageExportPayload?
 
     var body: some View {
         ZStack {
@@ -1781,7 +1793,10 @@ struct StorageManagementPage: View {
                             books: snapshot.books,
                             groups: snapshot.groups,
                             sort: $sort,
-                            filter: $filter
+                            filter: $filter,
+                            onOpenBook: onOpenBook,
+                            onExportBook: exportBook,
+                            onDeleteBook: deleteBook
                         )
                     } else {
                         StorageLoadingCard(isLoading: isLoading)
@@ -1808,8 +1823,11 @@ struct StorageManagementPage: View {
         .task {
             await reloadStorage()
         }
+        .sheet(item: $exportPayload) { payload in
+            ActivityPresenter(activityItems: [payload.url as Any])
+        }
         .alert(
-            "storage.error.title",
+            errorTitle,
             isPresented: Binding(
                 get: { errorMessage != nil },
                 set: { isPresented in
@@ -1841,9 +1859,47 @@ struct StorageManagementPage: View {
                 groups: groups
             )
         } catch {
+            errorTitle = "storage.error.title"
             errorMessage = error.localizedDescription
         }
         isLoading = false
+    }
+
+    private func exportBook(_ book: Book) {
+        do {
+            let url = try StorageBookExporter.exportURL(for: book, fileStore: fileStore)
+            exportPayload = StorageExportPayload(url: url)
+        } catch {
+            errorTitle = "library.export.error.title"
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func deleteBook(_ book: Book) {
+        Task {
+            do {
+                try await repository.deleteBooks(ids: Set([book.id]))
+                var cleanupError: Error?
+                do {
+                    try fileStore.removeBookFiles(id: book.id)
+                } catch {
+                    cleanupError = error
+                }
+                await reloadStorage()
+                await MainActor.run {
+                    onLibraryChanged()
+                    if let cleanupError {
+                        errorTitle = "library.delete.error.title"
+                        errorMessage = cleanupError.localizedDescription
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    errorTitle = "library.delete.error.title"
+                    errorMessage = error.localizedDescription
+                }
+            }
+        }
     }
 }
 
@@ -2010,6 +2066,9 @@ private struct StorageBookManagementCard: View {
     let groups: [BookGroup]
     @Binding var sort: StorageBookSort
     @Binding var filter: StorageBookFilter
+    let onOpenBook: (Book) -> Void
+    let onExportBook: (Book) -> Void
+    let onDeleteBook: (Book) -> Void
 
     private var visibleBooks: [StorageBookUsage] {
         let now = Date()
@@ -2040,7 +2099,18 @@ private struct StorageBookManagementCard: View {
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(visibleBooks.enumerated()), id: \.element.id) { index, book in
-                        StorageBookUsageRow(book: book)
+                        NavigationLink {
+                            StorageBookDetailPage(
+                                bookUsage: book,
+                                groups: groups,
+                                onOpenBook: onOpenBook,
+                                onExportBook: onExportBook,
+                                onDeleteBook: onDeleteBook
+                            )
+                        } label: {
+                            StorageBookUsageRow(book: book)
+                        }
+                        .buttonStyle(.plain)
 
                         if index < visibleBooks.count - 1 {
                             SettingsPageStyle.separator
@@ -2225,6 +2295,10 @@ private struct StorageBookUsageRow: View {
                 .font(.body.monospacedDigit())
                 .foregroundColor(.secondary)
                 .lineLimit(1)
+
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundColor(Color(.tertiaryLabel))
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
@@ -2234,6 +2308,201 @@ private struct StorageBookUsageRow: View {
     private var displayTitle: String {
         let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+}
+
+private struct StorageBookDetailPage: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let bookUsage: StorageBookUsage
+    let groups: [BookGroup]
+    let onOpenBook: (Book) -> Void
+    let onExportBook: (Book) -> Void
+    let onDeleteBook: (Book) -> Void
+
+    @State private var showsDeleteConfirmation = false
+
+    var body: some View {
+        ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 16) {
+                    detailCard
+                    actionCard
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 20)
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("storage.book.detail.title")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    dismiss()
+                }
+            }
+        }
+        .alert(
+            "storage.book.delete.title",
+            isPresented: $showsDeleteConfirmation
+        ) {
+            Button("common.cancel", role: .cancel) {}
+            Button("storage.book.delete.action", role: .destructive) {
+                dismiss()
+                onDeleteBook(bookUsage.book)
+            }
+        } message: {
+            Text("storage.book.delete.message")
+        }
+    }
+
+    private var detailCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(displayTitle)
+                .font(.headline)
+                .foregroundColor(.primary)
+                .lineLimit(2)
+                .padding(.bottom, 12)
+
+            StorageBookDetailRow(
+                title: "storage.book.size",
+                value: StorageByteCountFormatter.string(from: bookUsage.bytes)
+            )
+            SettingsPageStyle.separator
+
+            StorageBookDetailRow(
+                title: "storage.book.importedAt",
+                value: StorageDateFormatter.string(from: bookUsage.importedAt)
+            )
+            SettingsPageStyle.separator
+
+            StorageBookDetailRow(
+                title: "storage.book.lastReadAt",
+                value: bookUsage.lastReadAt.map { StorageDateFormatter.string(from: $0) }
+                    ?? NSLocalizedString("storage.book.neverRead", comment: "")
+            )
+            SettingsPageStyle.separator
+
+            StorageBookDetailRow(
+                title: "storage.book.progress",
+                value: StorageProgressFormatter.string(from: bookUsage.progressPercentage)
+            )
+            SettingsPageStyle.separator
+
+            StorageBookDetailRow(
+                title: "storage.book.group",
+                value: groupName
+            )
+        }
+        .storageCardStyle()
+    }
+
+    private var actionCard: some View {
+        VStack(spacing: 0) {
+            Button {
+                onOpenBook(bookUsage.book)
+            } label: {
+                StorageBookActionRow(
+                    title: "storage.book.action.read",
+                    systemImage: "book",
+                    tint: .accentColor
+                )
+            }
+            .buttonStyle(.plain)
+
+            SettingsPageStyle.separator
+
+            Button {
+                onExportBook(bookUsage.book)
+            } label: {
+                StorageBookActionRow(
+                    title: "storage.book.action.export",
+                    systemImage: "square.and.arrow.up",
+                    tint: .accentColor
+                )
+            }
+            .buttonStyle(.plain)
+
+            SettingsPageStyle.separator
+
+            Button(role: .destructive) {
+                showsDeleteConfirmation = true
+            } label: {
+                StorageBookActionRow(
+                    title: "storage.book.action.delete",
+                    systemImage: "trash",
+                    tint: .red
+                )
+            }
+            .buttonStyle(.plain)
+        }
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+
+    private var displayTitle: String {
+        let trimmed = bookUsage.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
+    }
+
+    private var groupName: String {
+        guard let groupID = bookUsage.groupID else {
+            return NSLocalizedString("sidebar.ungrouped", comment: "")
+        }
+        return groups.first { $0.id == groupID }?.name
+            ?? NSLocalizedString("sidebar.untitledGroup", comment: "")
+    }
+}
+
+private struct StorageBookDetailRow: View {
+    let title: LocalizedStringKey
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.body)
+                .foregroundColor(.secondary)
+
+            Spacer(minLength: 16)
+
+            Text(verbatim: value)
+                .font(.body)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+        }
+        .padding(.vertical, 11)
+    }
+}
+
+private struct StorageBookActionRow: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let tint: Color
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .foregroundColor(tint)
+                .frame(width: 22)
+
+            Text(title)
+                .font(.body)
+                .foregroundColor(tint)
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+        .background(Color.white)
+        .contentShape(Rectangle())
     }
 }
 
@@ -2264,12 +2533,7 @@ private enum StorageUsageScanner {
             let fileManager = FileManager.default
             let bookUsages = books.map { book in
                 StorageBookUsage(
-                    id: book.id,
-                    title: book.title,
-                    groupID: book.groupID,
-                    importedAt: book.importedAt,
-                    lastReadAt: book.lastReadAt,
-                    progressPercentage: book.progressPercentage,
+                    book: book,
                     bytes: Self.contentSize(for: book, fileStore: fileStore, fileManager: fileManager)
                 )
             }
@@ -2462,13 +2726,32 @@ private struct StorageDonutSlice: Identifiable {
 }
 
 private struct StorageBookUsage: Identifiable, Sendable {
-    let id: UUID
-    let title: String
-    let groupID: UUID?
-    let importedAt: Date
-    let lastReadAt: Date?
-    let progressPercentage: Double
+    let book: Book
     let bytes: Int64
+
+    var id: UUID {
+        book.id
+    }
+
+    var title: String {
+        book.title
+    }
+
+    var groupID: UUID? {
+        book.groupID
+    }
+
+    var importedAt: Date {
+        book.importedAt
+    }
+
+    var lastReadAt: Date? {
+        book.lastReadAt
+    }
+
+    var progressPercentage: Double {
+        book.progressPercentage
+    }
 
     var isUnread: Bool {
         progressPercentage <= 0.0001
@@ -2568,6 +2851,80 @@ private enum StorageByteCountFormatter {
         formatter.isAdaptive = true
         return formatter.string(fromByteCount: max(bytes, 0))
     }
+}
+
+private enum StorageDateFormatter {
+    static func string(from date: Date) -> String {
+        formatter.string(from: date)
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+}
+
+private enum StorageProgressFormatter {
+    static func string(from progress: Double) -> String {
+        NumberFormatter.dedicatedReadingProgress.string(
+            from: NSNumber(value: min(max(progress, 0), 1))
+        ) ?? "0%"
+    }
+}
+
+private enum StorageBookExporter {
+    static func exportURL(for book: Book, fileStore: AppFileStore) throws -> URL {
+        cleanupExportDirectory()
+        let exportDirectory = exportDirectoryURL()
+        try FileManager.default.createDirectory(
+            at: exportDirectory,
+            withIntermediateDirectories: true
+        )
+        let contentURL = try fileStore.url(forRelativePath: book.sourcePath)
+        let destinationURL = exportDirectory.appendingPathComponent(
+            exportFileName(for: book, contentURL: contentURL),
+            isDirectory: false
+        )
+        try FileManager.default.copyItem(at: contentURL, to: destinationURL)
+        return destinationURL
+    }
+
+    private static func cleanupExportDirectory() {
+        try? FileManager.default.removeItem(at: exportDirectoryURL())
+    }
+
+    private static func exportDirectoryURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkExports", isDirectory: true)
+    }
+
+    private static func exportFileName(for book: Book, contentURL: URL) -> String {
+        let rawTitle = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let baseName = sanitizedExportFileName(
+            rawTitle.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : rawTitle
+        )
+        let contentExtension = contentURL.pathExtension
+        let fileExtension = contentExtension.isEmpty ? "txt" : contentExtension
+        return "\(baseName).\(fileExtension)"
+    }
+
+    private static func sanitizedExportFileName(_ fileName: String) -> String {
+        let illegalCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+            .union(.newlines)
+            .union(.controlCharacters)
+        let sanitized = fileName
+            .components(separatedBy: illegalCharacters)
+            .joined(separator: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return sanitized.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : sanitized
+    }
+}
+
+private struct StorageExportPayload: Identifiable, Equatable {
+    let id = UUID()
+    let url: URL
 }
 
 private extension View {

@@ -414,6 +414,12 @@ struct LibraryView: View {
                     repository: services.libraryRepository,
                     fileStore: services.fileStore,
                     settings: viewModel.settings,
+                    onOpenBook: { book in
+                        openBookAfterRouteDismissal(book)
+                    },
+                    onLibraryChanged: {
+                        reloadBooksIfReady()
+                    },
                     onChange: { settings in
                         viewModel.applyLibrarySettings(settings)
                         reloadBooksIfReady()
@@ -1084,7 +1090,7 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
     }
 }
 
-private struct ActivityPresenter: UIViewControllerRepresentable {
+struct ActivityPresenter: UIViewControllerRepresentable {
     let activityItems: [Any]
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
