@@ -346,9 +346,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var pagingGeneration = 0
     private var saveGeneration = 0
     private var settingsSaveGeneration = 0
-    // 拖动 / paging 减速期间,把新加载页的 mutation(reloadData + contentOffset 平移 + 头部修剪)
-    // 暂存到这里,等 scrollView 真正静止后再统一提交,避免 paging snap 错位与"前一页瞬变"。
-    private var pendingPageInsertions: [(page: CollectionReaderPage, atEnd: Bool)] = []
+    // 拖动 / paging 减速期间,把"头部 prepend"暂存到这里,等 scrollView 静止后再提交。
+    // 尾部 append 直接走 insertItems 立即提交(不平移 contentOffset、不改已有 cell 的 indexPath),
+    // 这样滑动期间 pages 可以持续增长,不会撞到 contentSize 边界翻不动。
+    // 头部修剪(trimResidentPagesIfNeeded)在 defer 窗口里被跳过,由 flush 统一补做。
+    private var pendingPagePrepends: [CollectionReaderPage] = []
     private var isMenuVisible = false
     private var isSettingsPanelVisible = false
     private var isAutoReading = false
@@ -1722,7 +1724,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
         pendingRestoreAbsoluteOffset = nil
         pageTask?.cancel()
-        pendingPageInsertions.removeAll()
+        pendingPagePrepends.removeAll()
         let activeGeneration = generation ?? {
             pagingGeneration += 1
             return pagingGeneration
@@ -1884,12 +1886,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                           self.pagingGeneration == generation else {
                         return
                     }
-                    // 若处于"拖动 / paging 减速"窗口,appendPage / prependPage 会把页面挂起,
-                    // 此时保留 pageTask 非 nil 充当忙信号,阻止 loadXxxIfNeeded 在同窗口里重复加载同一页;
-                    // flushPendingPageInsertions 会在静止时统一释放该信号。
-                    if !self.shouldDeferPageMutationForActivePaging {
-                        self.pageTask = nil
-                    }
+                    self.pageTask = nil
                     if insertingAtEnd {
                         self.appendPage(page)
                     } else {
@@ -1914,19 +1911,25 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func appendPage(_ page: CollectionReaderPage) {
         if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset })
-            || pendingPageInsertions.contains(where: { $0.page.startAbsoluteOffset == page.startAbsoluteOffset }) {
+            || pendingPagePrepends.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset }) {
             updateSessionState(isLoadingNextPage: false)
             return
         }
-        if shouldDeferPageMutationForActivePaging {
-            // 仅挂起,不修改 pages / contentOffset / reloadData;pageTask 保持忙信号,等 flush。
-            pendingPageInsertions.append((page, true))
-            return
-        }
+        // 尾部 append 立即提交:用 insertItems 只为新增的 indexPath 生成布局属性,
+        // 不动 contentOffset、不改已有 cell 的 indexPath,paging snap 锚点保持不变。
+        // 这样滑动期间 pages 可以连续增长,不会撞到 contentSize 边界翻不动。
+        let newIndexPath = IndexPath(item: pages.count, section: 0)
         pages.append(page)
-        let removedDistance = trimResidentPagesIfNeeded()
-        collectionView.reloadData()
-        adjustContentOffsetAfterRemovingPrefix(distance: removedDistance)
+        collectionView.insertItems(at: [newIndexPath])
+        // 头部修剪在 defer 窗口里跳过(它会平移 contentOffset 并改 cell indexPath,
+        // 是"前一页瞬变 + 卡半页"的直接元凶)。flush 时统一补做。
+        if !shouldDeferPageMutationForActivePaging {
+            let removedDistance = trimResidentPagesIfNeeded()
+            if removedDistance > 0 {
+                collectionView.reloadData()
+                adjustContentOffsetAfterRemovingPrefix(distance: removedDistance)
+            }
+        }
         updateSessionState(isLoadingNextPage: false)
         if pendingTapTargetPageIndex == page.pageIndex,
            let index = pages.firstIndex(of: page) {
@@ -1937,12 +1940,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func prependPage(_ page: CollectionReaderPage) {
         if pages.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset })
-            || pendingPageInsertions.contains(where: { $0.page.startAbsoluteOffset == page.startAbsoluteOffset }) {
+            || pendingPagePrepends.contains(where: { $0.startAbsoluteOffset == page.startAbsoluteOffset }) {
             updateSessionState(isLoadingNextPage: false)
             return
         }
+        // 头部 prepend 必然要平移 contentOffset(把所有已有 cell 往后挪一页),
+        // 拖动中做这件事一定会破坏 paging snap;挂起到静止时再做。
         if shouldDeferPageMutationForActivePaging {
-            pendingPageInsertions.append((page, false))
+            pendingPagePrepends.append(page)
             return
         }
         let extent = usesVerticalScrolling
@@ -1977,20 +1982,23 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             || collectionView.isDecelerating
     }
 
-    /// scrollView 静止后统一提交挂起的页面;先释放 pageTask 忙信号,再按原顺序走 append / prepend。
+    /// scrollView 静止后统一补做被推迟的两件事:
+    /// 1. 头部修剪(append 路径里被跳过的);2. 提交挂起的 prepend。
     private func flushPendingPageInsertions() {
-        guard !pendingPageInsertions.isEmpty else {
+        if !pages.isEmpty {
+            let removedDistance = trimResidentPagesIfNeeded()
+            if removedDistance > 0 {
+                collectionView.reloadData()
+                adjustContentOffsetAfterRemovingPrefix(distance: removedDistance)
+            }
+        }
+        guard !pendingPagePrepends.isEmpty else {
             return
         }
-        let pending = pendingPageInsertions
-        pendingPageInsertions.removeAll()
-        pageTask = nil
-        for entry in pending {
-            if entry.atEnd {
-                appendPage(entry.page)
-            } else {
-                prependPage(entry.page)
-            }
+        let pending = pendingPagePrepends
+        pendingPagePrepends.removeAll()
+        for page in pending {
+            prependPage(page)
         }
     }
 
