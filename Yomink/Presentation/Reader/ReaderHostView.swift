@@ -33,7 +33,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let bookmarkButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
     private let progressLabel = UILabel()
-    private let progressSlider = UISlider()
+    private let progressSlider = ReaderProgressSlider()
     private let progressTooltipView = UIView()
     private let progressTooltipLabel = UILabel()
     private let previousChapterButton = UIButton(type: .system)
@@ -100,6 +100,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let progressTooltipBottomSpacing: CGFloat = 20
         static let progressTooltipHorizontalPadding: CGFloat = 12
         static let progressTooltipVerticalPadding: CGFloat = 6
+        static let progressTooltipWidth: CGFloat = 140
+        static let progressThumbHitboxDiameter: CGFloat = 44
         static let floatingButtonSize: CGFloat = 42
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
@@ -140,8 +142,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
         static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
         static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
-        static let progressThumbColor = UIColor(red: 0.4, green: 0.4, blue: 0.4, alpha: 1)
-        static let progressThumbInnerStrokeColor = UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1)
+        static let progressThumbColor = UIColor(red: 0.353, green: 0.353, blue: 0.365, alpha: 1)
+        static let progressThumbBorderColor = UIColor(red: 0.557, green: 0.557, blue: 0.576, alpha: 1)
+        static let progressThumbEdgeShadowColor = UIColor.black.withAlphaComponent(0.18)
         static let progressTooltipBackgroundColor = UIColor(red: 0.133, green: 0.133, blue: 0.133, alpha: 1)
         static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
         static let settingsControlSelectedColor = UIColor(red: 0.314, green: 0.314, blue: 0.314, alpha: 1)
@@ -855,11 +858,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         progressTooltipLabel.textColor = .white
         progressTooltipLabel.textAlignment = .center
         progressTooltipLabel.numberOfLines = 1
+        progressTooltipLabel.adjustsFontSizeToFitWidth = true
+        progressTooltipLabel.minimumScaleFactor = 0.86
         progressTooltipLabel.translatesAutoresizingMaskIntoConstraints = false
         progressTooltipView.addSubview(progressTooltipLabel)
 
         NSLayoutConstraint.activate([
             progressTooltipView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            progressTooltipView.widthAnchor.constraint(equalToConstant: Layout.progressTooltipWidth),
             progressTooltipView.bottomAnchor.constraint(
                 equalTo: bottomBar.topAnchor,
                 constant: -Layout.progressTooltipBottomSpacing
@@ -982,35 +988,31 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
-        let shadowPadding: CGFloat = 4
         let size = CGSize(
-            width: diameter + shadowPadding * 2,
-            height: diameter + shadowPadding * 2
+            width: Layout.progressThumbHitboxDiameter,
+            height: Layout.progressThumbHitboxDiameter
         )
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { context in
+            let origin = CGPoint(
+                x: (size.width - diameter) / 2,
+                y: (size.height - diameter) / 2
+            )
             let bounds = CGRect(
-                x: shadowPadding,
-                y: shadowPadding,
+                x: origin.x,
+                y: origin.y,
                 width: diameter,
                 height: diameter
             )
             let cgContext = context.cgContext
-            cgContext.setShadow(
-                offset: CGSize(width: 0, height: 2),
-                blur: 4,
-                color: UIColor.black.withAlphaComponent(0.36).cgColor
-            )
 
+            MenuStyle.progressThumbEdgeShadowColor.setStroke()
+            cgContext.setLineWidth(1)
+            cgContext.strokeEllipse(in: bounds.offsetBy(dx: 0, dy: 1).insetBy(dx: 0.5, dy: 0.5))
             MenuStyle.progressThumbColor.setFill()
             cgContext.fillEllipse(in: bounds)
-            cgContext.setShadow(offset: .zero, blur: 0, color: nil)
 
-            MenuStyle.progressThumbInnerStrokeColor.setStroke()
-            cgContext.setLineWidth(1.5)
-            cgContext.strokeEllipse(in: bounds.insetBy(dx: 5, dy: 5))
-
-            UIColor(white: 0.78, alpha: 0.2).setStroke()
+            MenuStyle.progressThumbBorderColor.setStroke()
             cgContext.setLineWidth(1)
             cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
         }
@@ -1710,7 +1712,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func openPage(
         absoluteOffset: Int,
         generation: Int? = nil,
-        fileStore: AppFileStore? = nil
+        fileStore: AppFileStore? = nil,
+        showsLoadingIndicator: Bool = true
     ) {
         guard !chapters.isEmpty else {
             showLoading(false)
@@ -1719,7 +1722,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         guard collectionView.bounds.width > 1,
               collectionView.bounds.height > 1 else {
             pendingRestoreAbsoluteOffset = absoluteOffset
-            showLoading(true)
+            if showsLoadingIndicator {
+                showLoading(true)
+            }
             return
         }
 
@@ -1742,7 +1747,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let appFileStore = fileStore ?? self.fileStore
         didReachEndOfBook = false
         isLoadingNextPage = true
-        showLoading(true)
+        if showsLoadingIndicator {
+            showLoading(true)
+        }
 
         pageTask = Task { [weak self] in
             do {
@@ -3531,7 +3538,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pagingGeneration += 1
         openPage(
             absoluteOffset: target.chapter.startOffset + target.chapterOffset,
-            generation: pagingGeneration
+            generation: pagingGeneration,
+            showsLoadingIndicator: false
         )
     }
 
@@ -4106,6 +4114,16 @@ private extension NumberFormatter {
         formatter.maximumFractionDigits = 2
         return formatter
     }()
+}
+
+private final class ReaderProgressSlider: UISlider {
+    private let minimumHitSize = CGSize(width: 44, height: 44)
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        let horizontalInset = min((bounds.width - minimumHitSize.width) / 2, 0)
+        let verticalInset = min((bounds.height - minimumHitSize.height) / 2, 0)
+        return bounds.insetBy(dx: horizontalInset, dy: verticalInset).contains(point)
+    }
 }
 
 private extension UIButton {
