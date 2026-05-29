@@ -479,6 +479,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        // 再次扫描所有已注册的 UIHostingController 子类,
+        // 覆盖 SwiftUI 在 reader 打开期间才动态生成的新泛型实参类。
+        HostingControllerHomeIndicatorBridge.ensureInstalledForCurrentlyRegisteredClasses()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
             self?.showHomeIndicatorDiagnosticsAlert()
         }

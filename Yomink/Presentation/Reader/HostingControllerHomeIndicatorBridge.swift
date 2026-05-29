@@ -2,67 +2,97 @@ import SwiftUI
 import UIKit
 import ObjectiveC
 
-/// SwiftUI 的 `UIHostingController` 默认不会把 `prefersHomeIndicatorAutoHidden`
-/// 与 `preferredScreenEdgesDeferringSystemGestures` 转发到内嵌的 UIKit 子控制器，
-/// 导致 `CollectionReaderViewController` 中重写的这两个属性被系统忽略。
+/// SwiftUI 的 `UIHostingController<Content>` 在 Objective-C runtime 中,每个不同
+/// 的泛型实参都是一个**独立的类**(`UIHostingController<AnyView>` 与
+/// `UIHostingController<ModifiedContent<...>>` 不共享方法表)。
 ///
-/// 这里通过运行时方法替换，让所有 `UIHostingController` 的
-/// `childForHomeIndicatorAutoHidden` / `childForScreenEdgesDeferringSystemGestures`
-/// 优先返回 `presentedViewController`，其次返回 `children.last`，
-/// 从而把查询链一路向下传到最内层的 UIKit VC。
+/// 因此不能只 swizzle "UIHostingController" 一个类,必须遍历运行时已注册的全部
+/// 类,把所有从 `UIHostingController` 继承的子类一一注入 child 转发方法。
 ///
-/// 仅替换默认返回 `nil` 的情况；若 hosting controller 子类自己有实现，保持不变。
+/// 注入后的行为:
+/// - `childForHomeIndicatorAutoHidden`
+/// - `childForScreenEdgesDeferringSystemGestures`
+/// 优先返回 `presentedViewController`(modal 链),其次返回 `children.last`
+/// (child VC 链),从而把查询一路向下传到最内层的 UIKit VC
+/// (`CollectionReaderViewController`)。
 enum HostingControllerHomeIndicatorBridge {
     static let install: Void = {
-        installSwizzle(
-            originalSelector: #selector(getter: UIViewController.childForHomeIndicatorAutoHidden),
-            swizzledSelector: #selector(UIHostingControllerHomeIndicatorSwizzle.yomink_childForHomeIndicatorAutoHidden)
-        )
-        installSwizzle(
-            originalSelector: #selector(getter: UIViewController.childForScreenEdgesDeferringSystemGestures),
-            swizzledSelector: #selector(UIHostingControllerHomeIndicatorSwizzle.yomink_childForScreenEdgesDeferringSystemGestures)
-        )
+        installForAllHostingSubclasses()
     }()
 
-    private static func installSwizzle(
-        originalSelector: Selector,
-        swizzledSelector: Selector
-    ) {
-        // 以 UIHostingController<AnyView> 作为基类锚点。其它泛型实参的 hosting
-        // controller 共享同一份 Objective-C 类方法表，替换一次即可。
-        let baseClass: AnyClass = UIHostingController<AnyView>.self
-        guard
-            let originalMethod = class_getInstanceMethod(baseClass, originalSelector),
-            let swizzledMethod = class_getInstanceMethod(
-                UIHostingControllerHomeIndicatorSwizzle.self,
-                swizzledSelector
-            )
-        else {
-            return
-        }
+    /// 供 reader VC 在 viewDidAppear 时再次调用,覆盖 SwiftUI 后续才注册的
+    /// 新泛型 hosting controller 子类。重复对同一个类安装会被 `class_addMethod`
+    /// 的失败分支自然忽略。
+    static func ensureInstalledForCurrentlyRegisteredClasses() {
+        installForAllHostingSubclasses()
+    }
 
-        let didAdd = class_addMethod(
-            baseClass,
-            originalSelector,
-            method_getImplementation(swizzledMethod),
-            method_getTypeEncoding(swizzledMethod)
+    private static func installForAllHostingSubclasses() {
+        let hostingBaseClass: AnyClass = NSClassFromString("SwiftUI.UIHostingController")
+            ?? UIHostingController<AnyView>.superclass()
+            ?? UIViewController.self
+
+        let classCount = objc_getClassList(nil, 0)
+        guard classCount > 0 else { return }
+
+        let allClasses = UnsafeMutablePointer<AnyClass>.allocate(capacity: Int(classCount))
+        defer { allClasses.deallocate() }
+        let autoreleasingPtr = AutoreleasingUnsafeMutablePointer<AnyClass>(allClasses)
+        let actualCount = objc_getClassList(autoreleasingPtr, classCount)
+
+        for i in 0..<Int(actualCount) {
+            let cls: AnyClass = allClasses[i]
+            guard isSubclass(cls, of: hostingBaseClass) else { continue }
+            inject(into: cls)
+        }
+    }
+
+    private static func isSubclass(_ cls: AnyClass, of base: AnyClass) -> Bool {
+        var current: AnyClass? = cls
+        while let c = current {
+            if c === base { return true }
+            current = class_getSuperclass(c)
+        }
+        return false
+    }
+
+    private static func inject(into cls: AnyClass) {
+        injectMethod(
+            into: cls,
+            selector: #selector(getter: UIViewController.childForHomeIndicatorAutoHidden),
+            donorSelector: #selector(YominkHostingChildForwarder.yomink_childForHomeIndicatorAutoHidden)
         )
+        injectMethod(
+            into: cls,
+            selector: #selector(getter: UIViewController.childForScreenEdgesDeferringSystemGestures),
+            donorSelector: #selector(YominkHostingChildForwarder.yomink_childForScreenEdgesDeferringSystemGestures)
+        )
+    }
 
-        if didAdd {
-            // UIHostingController 自身没有重写该 getter,从父类继承。
-            // class_addMethod 把我们的实现挂到 hosting controller 类上,
-            // 直接覆盖父类查找结果,不需要再交换。
-            return
-        }
+    private static func injectMethod(
+        into cls: AnyClass,
+        selector: Selector,
+        donorSelector: Selector
+    ) {
+        guard let donorMethod = class_getInstanceMethod(
+            YominkHostingChildForwarder.self,
+            donorSelector
+        ) else { return }
 
-        // 兜底:若 hosting controller 自己有实现,走 exchange。
-        method_exchangeImplementations(originalMethod, swizzledMethod)
+        let imp = method_getImplementation(donorMethod)
+        let typeEncoding = method_getTypeEncoding(donorMethod)
+
+        // class_addMethod 只在该类自身方法表里没有此 selector 时成功。
+        // 成功 = hosting controller 之前从父类继承(返回 nil),被我们覆盖。
+        // 失败 = 该类自身已有实现(可能是我们之前注入的,或 SwiftUI 自定义),
+        //        保持现状,避免重复替换或破坏 SwiftUI 自己的实现。
+        _ = class_addMethod(cls, selector, imp, typeEncoding)
     }
 }
 
-/// 仅用于承载替换方法实现的占位类。运行时这两个方法会被注入到
-/// `UIHostingController` 的方法表里。
-private final class UIHostingControllerHomeIndicatorSwizzle: UIViewController {
+/// 仅用于承载注入方法的实现。运行时这两个方法体会被复制到每个
+/// UIHostingController 子类的方法表里。
+private final class YominkHostingChildForwarder: UIViewController {
     @objc func yomink_childForHomeIndicatorAutoHidden() -> UIViewController? {
         if let presented = presentedViewController, !presented.isBeingDismissed {
             return presented
