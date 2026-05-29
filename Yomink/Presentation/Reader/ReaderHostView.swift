@@ -1915,26 +1915,31 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             updateSessionState(isLoadingNextPage: false)
             return
         }
-        // 尾部 append 立即提交:用 insertItems 只为新增的 indexPath 生成布局属性,
-        // 不动 contentOffset、不改已有 cell 的 indexPath,paging snap 锚点保持不变。
-        // 这样滑动期间 pages 可以连续增长,不会撞到 contentSize 边界翻不动。
+        // 尾部 append 立即提交,但用 performWithoutAnimation 关闭默认渐入,
+        // 避免快速滑动时刚追到新 cell 还没 fade 完就被瞄到半透明状态。
+        // insertItems 只为新增的 indexPath 生成布局属性,不动 contentOffset、不改已有 cell 的 indexPath,
+        // paging snap 锚点保持不变,pages 在滑动期间可连续增长。
         let newIndexPath = IndexPath(item: pages.count, section: 0)
-        pages.append(page)
-        collectionView.insertItems(at: [newIndexPath])
+        UIView.performWithoutAnimation {
+            self.pages.append(page)
+            self.collectionView.insertItems(at: [newIndexPath])
+        }
         // 头部修剪在 defer 窗口里跳过(它会平移 contentOffset 并改 cell indexPath,
         // 是"前一页瞬变 + 卡半页"的直接元凶)。flush 时统一补做。
-        if !shouldDeferPageMutationForActivePaging {
-            let removedDistance = trimResidentPagesIfNeeded()
-            if removedDistance > 0 {
-                collectionView.reloadData()
-                adjustContentOffsetAfterRemovingPrefix(distance: removedDistance)
-            }
+        if !shouldDeferPageMutationForActivePaging,
+           let plan = planPrefixTrim() {
+            applyPrefixTrim(plan)
         }
         updateSessionState(isLoadingNextPage: false)
         if pendingTapTargetPageIndex == page.pageIndex,
            let index = pages.firstIndex(of: page) {
             pendingTapTargetPageIndex = nil
             turnToPage(at: index, direction: .next)
+        }
+        // 静止状态下显式接力预取:scrollViewDidScroll 此刻不会被触发,
+        // 必须主动延伸链条,否则目录跳转 / 点击翻页后只会装载单张邻页。
+        if !shouldDeferPageMutationForActivePaging {
+            prefetchPagesNearCurrent()
         }
     }
 
@@ -1953,14 +1958,27 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let extent = usesVerticalScrolling
             ? verticalExtent(for: page)
             : pageExtentForCurrentMode()
-        pages.insert(page, at: 0)
-        trimResidentPagesAfterPrepending()
-        collectionView.reloadData()
-        if extent > 0 {
-            let adjusted = usesVerticalScrolling
-                ? CGPoint(x: collectionView.contentOffset.x, y: collectionView.contentOffset.y + extent)
-                : CGPoint(x: collectionView.contentOffset.x + extent, y: collectionView.contentOffset.y)
-            collectionView.setContentOffset(adjusted, animated: false)
+        // 用 insertItems + 同帧 setContentOffset 替代 reloadData:
+        // 不销毁已有可见 cell,杜绝快速点击 / 横滑回弹时的瞬白闪烁。
+        // performWithoutAnimation 同时关闭默认插入动画和 contentOffset 平移动画,保证视觉上原页面不动。
+        UIView.performWithoutAnimation {
+            self.pages.insert(page, at: 0)
+            self.collectionView.insertItems(at: [IndexPath(item: 0, section: 0)])
+            if let plan = self.planSuffixTrim() {
+                self.applySuffixTrim(plan)
+            }
+            if extent > 0 {
+                let adjusted = self.usesVerticalScrolling
+                    ? CGPoint(
+                        x: self.collectionView.contentOffset.x,
+                        y: self.collectionView.contentOffset.y + extent
+                    )
+                    : CGPoint(
+                        x: self.collectionView.contentOffset.x + extent,
+                        y: self.collectionView.contentOffset.y
+                    )
+                self.collectionView.setContentOffset(adjusted, animated: false)
+            }
         }
         updateSessionState(isLoadingNextPage: false)
         if pendingTapTargetPageIndex == page.pageIndex,
@@ -1968,6 +1986,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             pendingTapTargetPageIndex = nil
             turnToPage(at: index, direction: .previous)
         }
+        // 同 appendPage:静止状态下接力预取另一方向(或同方向再装一张),
+        // 是修复目录跳转后链条断裂的关键。
+        prefetchPagesNearCurrent()
     }
 
     /// 仅当处于 paged / curl 且 scrollView 正在拖动或 paging 减速时返回 true。
@@ -1985,12 +2006,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     /// scrollView 静止后统一补做被推迟的两件事:
     /// 1. 头部修剪(append 路径里被跳过的);2. 提交挂起的 prepend。
     private func flushPendingPageInsertions() {
-        if !pages.isEmpty {
-            let removedDistance = trimResidentPagesIfNeeded()
-            if removedDistance > 0 {
-                collectionView.reloadData()
-                adjustContentOffsetAfterRemovingPrefix(distance: removedDistance)
-            }
+        if !pages.isEmpty,
+           let plan = planPrefixTrim() {
+            applyPrefixTrim(plan)
         }
         guard !pendingPagePrepends.isEmpty else {
             return
@@ -2006,41 +2024,72 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         max(0, absoluteOffset - 1)
     }
 
-    private func trimResidentPagesIfNeeded() -> CGFloat {
+    /// 头部修剪计划:确认是否需要裁、裁多少、裁掉多少视觉距离。不修改任何状态。
+    private struct PrefixTrimPlan {
+        let removeCount: Int
+        let removedDistance: CGFloat
+    }
+
+    private func planPrefixTrim() -> PrefixTrimPlan? {
         guard pages.count > Layout.maximumResidentPages,
               let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage),
               currentIndex > 3 else {
-            return 0
+            return nil
         }
         let overflow = pages.count - Layout.maximumResidentPages
         let removableBeforeCurrent = max(0, currentIndex - 3)
         let removeCount = min(overflow, removableBeforeCurrent)
         guard removeCount > 0 else {
-            return 0
+            return nil
         }
         let removedDistance = usesVerticalScrolling
             ? pages.prefix(removeCount).reduce(CGFloat(0)) { result, page in
                 result + verticalExtent(for: page)
             }
             : CGFloat(removeCount) * pageExtentForCurrentMode()
-        pages.removeFirst(removeCount)
-        return removedDistance
+        return PrefixTrimPlan(removeCount: removeCount, removedDistance: removedDistance)
     }
 
-    private func trimResidentPagesAfterPrepending() {
+    /// 用 deleteItems + 同帧 setContentOffset 落盘修剪计划。
+    /// 不再 reloadData,因此当前可见 cell 不会经历"prepareForReuse 清空 → 重 configure"的瞬白。
+    /// 关闭隐式动画,避免被裁的 cell(本就在视口外)的默认 fade-out 在边缘被瞄到。
+    private func applyPrefixTrim(_ plan: PrefixTrimPlan) {
+        let removedIndexPaths = (0..<plan.removeCount).map { IndexPath(item: $0, section: 0) }
+        UIView.performWithoutAnimation {
+            self.pages.removeFirst(plan.removeCount)
+            self.collectionView.deleteItems(at: removedIndexPaths)
+            self.adjustContentOffsetAfterRemovingPrefix(distance: plan.removedDistance)
+        }
+    }
+
+    private struct SuffixTrimPlan {
+        let removeCount: Int
+    }
+
+    private func planSuffixTrim() -> SuffixTrimPlan? {
         guard pages.count > Layout.maximumResidentPages,
               let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage) else {
-            return
+            return nil
         }
         let overflow = pages.count - Layout.maximumResidentPages
         let removableAfterCurrent = max(0, pages.count - currentIndex - 4)
         let removeCount = min(overflow, removableAfterCurrent)
         guard removeCount > 0 else {
-            return
+            return nil
         }
-        pages.removeLast(removeCount)
+        return SuffixTrimPlan(removeCount: removeCount)
+    }
+
+    /// 尾部修剪同样走 deleteItems。被裁的都在视口后方,不影响 contentOffset。
+    private func applySuffixTrim(_ plan: SuffixTrimPlan) {
+        let startIndex = pages.count - plan.removeCount
+        let removedIndexPaths = (startIndex..<pages.count).map { IndexPath(item: $0, section: 0) }
+        UIView.performWithoutAnimation {
+            self.pages.removeLast(plan.removeCount)
+            self.collectionView.deleteItems(at: removedIndexPaths)
+        }
     }
 
     private func adjustContentOffsetAfterRemovingPrefix(distance: CGFloat) {
