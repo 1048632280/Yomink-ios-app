@@ -2408,6 +2408,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         onStatusBarHiddenChange(isHidden)
         setNeedsStatusBarAppearanceUpdate()
         navigationController?.setNeedsStatusBarAppearanceUpdate()
+
+        // 强制系统重新读取小横条隐藏状态和边缘手势延迟设置
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
     }
 
     private func updateReaderChromePreferences() {
