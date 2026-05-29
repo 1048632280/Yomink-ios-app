@@ -477,6 +477,85 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         startInitialLoad()
     }
 
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            self?.showHomeIndicatorDiagnosticsAlert()
+        }
+    }
+
+    private func showHomeIndicatorDiagnosticsAlert() {
+        var lines: [String] = []
+
+        lines.append("===== 设置项 =====")
+        lines.append("autoHideHomeIndicator: \(readerSettings.autoHideHomeIndicator)")
+        lines.append("")
+        lines.append("===== 当前 VC (self) =====")
+        lines.append("类型: \(type(of: self))")
+        lines.append("prefersHomeIndicatorAutoHidden: \(prefersHomeIndicatorAutoHidden)")
+        lines.append("preferredScreenEdgesDeferring: \(preferredScreenEdgesDeferringSystemGestures.rawValue)")
+        lines.append("childForHomeIndicatorAutoHidden: \(String(describing: childForHomeIndicatorAutoHidden))")
+        lines.append("childForScreenEdgesDeferring: \(String(describing: childForScreenEdgesDeferringSystemGestures))")
+        lines.append("")
+
+        // 沿父链向上遍历
+        lines.append("===== VC 父链（自下而上）=====")
+        var currentVC: UIViewController? = self.parent
+        var depth = 1
+        while let vc = currentVC, depth <= 8 {
+            lines.append("[\(depth)] \(type(of: vc))")
+            lines.append("    prefersAutoHidden: \(vc.prefersHomeIndicatorAutoHidden)")
+            lines.append("    deferEdges: \(vc.preferredScreenEdgesDeferringSystemGestures.rawValue)")
+            lines.append("    childForAutoHidden: \(vc.childForHomeIndicatorAutoHidden.map { String(describing: type(of: $0)) } ?? "nil")")
+            lines.append("    childForDefer: \(vc.childForScreenEdgesDeferringSystemGestures.map { String(describing: type(of: $0)) } ?? "nil")")
+            currentVC = vc.parent
+            depth += 1
+        }
+        lines.append("")
+
+        lines.append("===== Navigation / Window =====")
+        if let nav = navigationController {
+            lines.append("navigationController: \(type(of: nav))")
+            lines.append("nav.topViewController: \(nav.topViewController.map { String(describing: type(of: $0)) } ?? "nil")")
+            lines.append("nav.prefersAutoHidden: \(nav.prefersHomeIndicatorAutoHidden)")
+            lines.append("nav.childForAutoHidden: \(nav.childForHomeIndicatorAutoHidden.map { String(describing: type(of: $0)) } ?? "nil")")
+        } else {
+            lines.append("navigationController: nil")
+        }
+
+        if let rootVC = view.window?.rootViewController {
+            lines.append("window.rootVC: \(type(of: rootVC))")
+            lines.append("rootVC.prefersAutoHidden: \(rootVC.prefersHomeIndicatorAutoHidden)")
+            lines.append("rootVC.childForAutoHidden: \(rootVC.childForHomeIndicatorAutoHidden.map { String(describing: type(of: $0)) } ?? "nil")")
+
+            // 找到最终生效的 VC（系统真正读取的那个）
+            var finalVC: UIViewController = rootVC
+            while let child = finalVC.childForHomeIndicatorAutoHidden {
+                finalVC = child
+            }
+            lines.append("")
+            lines.append("===== 系统最终读取的 VC =====")
+            lines.append("finalVC: \(type(of: finalVC))")
+            lines.append("finalVC.prefersAutoHidden: \(finalVC.prefersHomeIndicatorAutoHidden)")
+            lines.append("finalVC.deferEdges: \(finalVC.preferredScreenEdgesDeferringSystemGestures.rawValue)")
+            lines.append("是否就是 self? \(finalVC === self)")
+        } else {
+            lines.append("window.rootVC: nil")
+        }
+
+        let message = lines.joined(separator: "\n")
+        let alert = UIAlertController(
+            title: "小横条诊断",
+            message: message,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: "复制", style: .default) { _ in
+            UIPasteboard.general.string = message
+        })
+        alert.addAction(UIAlertAction(title: "关闭", style: .cancel))
+        present(alert, animated: true)
+    }
+
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         navigationController?.setNavigationBarHidden(true, animated: animated)
