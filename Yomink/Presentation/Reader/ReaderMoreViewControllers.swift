@@ -255,11 +255,19 @@ final class ReaderBookDetailViewController: UIViewController {
         let book = book
         let fileStore = fileStore
         Task { [weak self] in
-            let text = (try? await ReaderBookDetailViewController.readChapterText(
-                book: book,
-                chapter: chapter,
-                fileStore: fileStore
-            )) ?? ""
+            let text: String
+            do {
+                text = try await ReaderChapterTextReader.readTextAsync(
+                    book: book,
+                    chapter: chapter,
+                    fileStore: fileStore
+                )
+            } catch {
+                await MainActor.run {
+                    self?.showError(error)
+                }
+                return
+            }
             let intro = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
             await MainActor.run {
                 guard let self else {
@@ -320,22 +328,6 @@ final class ReaderBookDetailViewController: UIViewController {
         present(alert, animated: true)
     }
 
-    private nonisolated static func readChapterText(
-        book: Book,
-        chapter: Chapter,
-        fileStore: AppFileStore
-    ) async throws -> String {
-        try await Task.detached(priority: .utility) {
-            let url = try fileStore.url(forRelativePath: book.sourcePath)
-            let handle = try FileHandle(forReadingFrom: url)
-            defer {
-                try? handle.close()
-            }
-            try handle.seek(toOffset: UInt64(chapter.startOffset))
-            let data = handle.readData(ofLength: chapter.byteLength)
-            return String(data: data, encoding: .utf8) ?? ""
-        }.value
-    }
 }
 
 @MainActor
@@ -834,6 +826,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     private var state: SearchState = .idle
     private var isClearingSearchTextForCancel = false
     private var scannedChapterCache: SearchChapterCache?
+    private var lastSearchError: Error?
 
     private struct SearchResultSection {
         let chapterID: UUID
@@ -1051,6 +1044,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         searchDebounceTask?.cancel()
         searchTask?.cancel()
         keyword = ""
+        lastSearchError = nil
         isClearingSearchTextForCancel = true
         searchBar.text = nil
         isClearingSearchTextForCancel = false
@@ -1071,6 +1065,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         results = []
         resultSections = []
         scannedChapterCache = nil
+        lastSearchError = nil
         nextScanPosition = .start
         tableView.reloadData()
         guard !keyword.isEmpty else {
@@ -1132,32 +1127,48 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         let cachedChapter = scannedChapterCache
         searchTask?.cancel()
         searchTask = Task { [weak self] in
-            let batch = await Self.scanBatch(
-                book: book,
-                chapters: chapters,
-                startPosition: startPosition,
-                limit: 20,
-                keyword: keyword,
-                filterRules: filterRules,
-                cachedChapter: cachedChapter,
-                fileStore: fileStore
-            )
-            await MainActor.run {
-                guard let self,
-                      self.keyword == keyword
-                else {
-                    return
+            do {
+                let batch = try await Self.scanBatch(
+                    book: book,
+                    chapters: chapters,
+                    startPosition: startPosition,
+                    limit: 20,
+                    keyword: keyword,
+                    filterRules: filterRules,
+                    cachedChapter: cachedChapter,
+                    fileStore: fileStore
+                )
+                await MainActor.run {
+                    guard let self,
+                          self.keyword == keyword
+                    else {
+                        return
+                    }
+                    self.nextScanPosition = batch.nextPosition
+                    self.scannedChapterCache = batch.cachedChapter
+                    self.results.append(contentsOf: batch.results)
+                    self.resultSections = Self.groupedSections(from: self.results)
+                    self.tableView.reloadData()
+                    self.state = batch.nextPosition.chapterIndex >= chapters.count
+                        ? .finished
+                        : .canLoadMore
+                    self.updateFooter()
+                    self.updateBackgroundView()
                 }
-                self.nextScanPosition = batch.nextPosition
-                self.scannedChapterCache = batch.cachedChapter
-                self.results.append(contentsOf: batch.results)
-                self.resultSections = Self.groupedSections(from: self.results)
-                self.tableView.reloadData()
-                self.state = batch.nextPosition.chapterIndex >= chapters.count
-                    ? .finished
-                    : .canLoadMore
-                self.updateFooter()
-                self.updateBackgroundView()
+            } catch is CancellationError {
+            } catch {
+                await MainActor.run {
+                    guard let self,
+                          self.keyword == keyword
+                    else {
+                        return
+                    }
+                    self.lastSearchError = error
+                    self.state = .finished
+                    self.updateFooter()
+                    self.updateBackgroundView()
+                    self.showError(error)
+                }
             }
         }
     }
@@ -1206,6 +1217,10 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     }
 
     private func updateBackgroundView() {
+        guard lastSearchError == nil else {
+            tableView.backgroundView = nil
+            return
+        }
         guard state == .finished,
               results.isEmpty,
               !resultHighlightKeyword.isEmpty
@@ -1249,7 +1264,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         filterRules: [TextFilterRule],
         cachedChapter: SearchChapterCache?,
         fileStore: AppFileStore
-    ) async -> (
+    ) async throws -> (
         results: [ReaderSearchResult],
         nextPosition: SearchPosition,
         cachedChapter: SearchChapterCache?
@@ -1260,8 +1275,9 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         while position.chapterIndex < chapters.count,
               results.count < limit,
               !Task.isCancelled {
+            try Task.checkCancellation()
             let chapter = chapters[position.chapterIndex]
-            let loadedChapter = await filteredChapter(
+            let loadedChapter = try await filteredChapter(
                 at: position.chapterIndex,
                 book: book,
                 chapter: chapter,
@@ -1272,6 +1288,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
             cachedChapter = loadedChapter.cachedChapter
 
             if let filtered = loadedChapter.filtered {
+                try Task.checkCancellation()
                 let matchBatch = matches(
                     keyword: keyword,
                     filtered: filtered,
@@ -1308,7 +1325,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         filterRules: [TextFilterRule],
         fileStore: AppFileStore,
         cache: SearchChapterCache?
-    ) async -> (
+    ) async throws -> (
         filtered: FilteredReaderText?,
         cachedChapter: SearchChapterCache?
     ) {
@@ -1317,13 +1334,12 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
             return (cache.filtered, cache)
         }
 
-        guard let text = try? await readChapterText(
+        let text = try await ReaderChapterTextReader.readTextAsync(
             book: book,
             chapter: chapter,
             fileStore: fileStore
-        ) else {
-            return (nil, nil)
-        }
+        )
+        try Task.checkCancellation()
 
         let filtered = filterRules.isEmpty
             ? ReaderTextFilter.identityFilteredText(for: text)
@@ -1457,22 +1473,6 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         return attributed
     }
 
-    private nonisolated static func readChapterText(
-        book: Book,
-        chapter: Chapter,
-        fileStore: AppFileStore
-    ) async throws -> String {
-        try await Task.detached(priority: .utility) {
-            let url = try fileStore.url(forRelativePath: book.sourcePath)
-            let handle = try FileHandle(forReadingFrom: url)
-            defer {
-                try? handle.close()
-            }
-            try handle.seek(toOffset: UInt64(chapter.startOffset))
-            let data = handle.readData(ofLength: chapter.byteLength)
-            return String(data: data, encoding: .utf8) ?? ""
-        }.value
-    }
 }
 
 struct ReaderSearchResult: Sendable {

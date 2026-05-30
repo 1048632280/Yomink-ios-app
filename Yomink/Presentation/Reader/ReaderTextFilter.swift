@@ -1,5 +1,59 @@
 import Foundation
 
+enum ReaderChapterTextReaderError: LocalizedError {
+    case invalidUTF8Content
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidUTF8Content:
+            return NSLocalizedString("reader.error.invalidUTF8Content", comment: "")
+        }
+    }
+}
+
+enum ReaderChapterTextReader {
+    static func readText(
+        book: Book,
+        chapter: Chapter,
+        fileStore: AppFileStore
+    ) throws -> String {
+        let url = try fileStore.url(forRelativePath: book.sourcePath)
+        let handle = try FileHandle(forReadingFrom: url)
+        defer {
+            try? handle.close()
+        }
+        try handle.seek(toOffset: UInt64(chapter.startOffset))
+        let data = handle.readData(ofLength: chapter.byteLength)
+        guard let text = String(data: data, encoding: .utf8) else {
+            throw ReaderChapterTextReaderError.invalidUTF8Content
+        }
+        return text
+    }
+
+    static func readTextAsync(
+        book: Book,
+        chapter: Chapter,
+        fileStore: AppFileStore,
+        priority: TaskPriority = .utility
+    ) async throws -> String {
+        let task = Task.detached(priority: priority) {
+            try Task.checkCancellation()
+            let text = try readText(
+                book: book,
+                chapter: chapter,
+                fileStore: fileStore
+            )
+            try Task.checkCancellation()
+            return text
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
+    }
+}
+
 struct FilteredReaderText: Sendable {
     let displayText: String
     let originalByteOffsetsByUTF16Index: [Int]
