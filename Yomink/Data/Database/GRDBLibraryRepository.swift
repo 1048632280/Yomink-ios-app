@@ -4,6 +4,10 @@ import OSLog
 
 struct GRDBLibraryRepository: LibraryRepository {
     private let database: AppDatabase
+    private static let settingsLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "Yomink",
+        category: "AppSettings"
+    )
 
     init(database: AppDatabase) {
         self.database = database
@@ -620,11 +624,20 @@ struct GRDBLibraryRepository: LibraryRepository {
             }
 
             guard let data = value.data(using: .utf8) else {
+                Self.settingsLogger.warning(
+                    "Stored app setting is not valid UTF-8: key=\(LibrarySettings.storageKey, privacy: .public)"
+                )
                 return .default
             }
 
-            return (try? JSONDecoder().decode(LibrarySettings.self, from: data))
-                ?? .default
+            do {
+                return try JSONDecoder().decode(LibrarySettings.self, from: data)
+            } catch {
+                Self.settingsLogger.warning(
+                    "Failed to decode app setting: key=\(LibrarySettings.storageKey, privacy: .public), error=\(error.localizedDescription, privacy: .public)"
+                )
+                return .default
+            }
         }
     }
 
@@ -665,11 +678,20 @@ struct GRDBLibraryRepository: LibraryRepository {
             }
 
             guard let data = value.data(using: .utf8) else {
+                Self.settingsLogger.warning(
+                    "Stored app setting is not valid UTF-8: key=\(RandomPickerState.storageKey, privacy: .public)"
+                )
                 return .default
             }
 
-            return (try? JSONDecoder().decode(RandomPickerState.self, from: data).normalized)
-                ?? .default
+            do {
+                return try JSONDecoder().decode(RandomPickerState.self, from: data).normalized
+            } catch {
+                Self.settingsLogger.warning(
+                    "Failed to decode app setting: key=\(RandomPickerState.storageKey, privacy: .public), error=\(error.localizedDescription, privacy: .public)"
+                )
+                return .default
+            }
         }
     }
 
@@ -711,11 +733,20 @@ struct GRDBLibraryRepository: LibraryRepository {
             }
 
             guard let data = value.data(using: .utf8) else {
+                Self.settingsLogger.warning(
+                    "Stored app setting is not valid UTF-8: key=\(ReaderSettings.storageKey, privacy: .public)"
+                )
                 return .default
             }
 
-            return (try? JSONDecoder().decode(ReaderSettings.self, from: data).normalized)
-                ?? .default
+            do {
+                return try JSONDecoder().decode(ReaderSettings.self, from: data).normalized
+            } catch {
+                Self.settingsLogger.warning(
+                    "Failed to decode app setting: key=\(ReaderSettings.storageKey, privacy: .public), error=\(error.localizedDescription, privacy: .public)"
+                )
+                return .default
+            }
         }
     }
 

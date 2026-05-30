@@ -2,6 +2,12 @@ import SwiftUI
 import UIKit
 import QuartzCore
 import CoreText
+import OSLog
+
+private let readerLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "Yomink",
+    category: "Reader"
+)
 
 private final class ReaderSettingsPanelScrollView: UIScrollView {
     override func touchesShouldCancel(in view: UIView) -> Bool {
@@ -347,9 +353,15 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var saveTask: Task<Void, Never>?
     private var settingsSaveTask: Task<Void, Never>?
     private var bookmarkTask: Task<Void, Never>?
+    private var openHistoryTask: Task<Void, Never>?
     private var pagingGeneration = 0
     private var saveGeneration = 0
     private var settingsSaveGeneration = 0
+    private var openHistoryGeneration = 0
+    private var didRecordOpenHistory = false
+    private var openedAt = Date()
+    private var didShowProgressSaveError = false
+    private var didShowSettingsSaveError = false
     // 拖动 / paging 减速期间,把"头部 prepend"暂存到这里,等 scrollView 静止后再提交。
     // 尾部 append 直接走 insertItems 立即提交(不平移 contentOffset、不改已有 cell 的 indexPath),
     // 这样滑动期间 pages 可以持续增长,不会撞到 contentSize 边界翻不动。
@@ -426,7 +438,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pageTask?.cancel()
         saveTask?.cancel()
         settingsSaveTask?.cancel()
-        bookmarkTask?.cancel()
         autoReadDisplayLink?.invalidate()
         autoReadDisplayLink = nil
     }
@@ -1734,12 +1745,18 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         showLoading(true)
         loadTask?.cancel()
         pageTask?.cancel()
+        openHistoryTask?.cancel()
         pendingRestoreAbsoluteOffset = nil
         pagingGeneration += 1
+        openHistoryGeneration += 1
         let generation = pagingGeneration
         let targetBook = book
         let libraryRepository = repository
         let appFileStore = fileStore
+        openedAt = Date()
+        didRecordOpenHistory = false
+        didShowProgressSaveError = false
+        didShowSettingsSaveError = false
 
         loadTask = Task { [weak self] in
             do {
@@ -1753,7 +1770,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                 let loadedFilterRules = try await filterRulesTask
                 let progress = try await progressTask
                 let settings = try await settingsTask
-                try await libraryRepository.markBookOpened(id: targetBook.id, at: Date())
                 guard !Task.isCancelled else {
                     return
                 }
@@ -1855,6 +1871,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     self.collectionView.setContentOffset(self.contentOffset(forPageAt: 0), animated: false)
                     self.showLoading(false)
                     self.updateSessionState(isLoadingNextPage: false)
+                    self.recordBookOpenedIfNeeded()
                     self.prefetchPagesNearCurrent()
                 }
             } catch is CancellationError {
@@ -2750,7 +2767,15 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     return
                 }
                 try await repository.saveReadingProgress(progress)
+                await MainActor.run { [weak self] in
+                    self?.didShowProgressSaveError = false
+                }
+            } catch is CancellationError {
             } catch {
+                readerLogger.error("Failed to save reading progress: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run { [weak self] in
+                    self?.showProgressSaveErrorIfNeeded(error)
+                }
             }
         }
     }
@@ -2761,8 +2786,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         saveTask?.cancel()
         let repository = repository
-        Task {
-            try? await repository.saveReadingProgress(progress)
+        Task { [weak self] in
+            do {
+                try await repository.saveReadingProgress(progress)
+                await MainActor.run {
+                    self?.didShowProgressSaveError = false
+                }
+            } catch is CancellationError {
+            } catch {
+                readerLogger.error("Failed to save reading progress immediately: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    self?.showProgressSaveErrorIfNeeded(error)
+                }
+            }
         }
     }
 
@@ -2770,8 +2806,19 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsSaveTask?.cancel()
         let settings = readerSettings.normalized
         let repository = repository
-        Task {
-            try? await repository.saveReaderSettings(settings)
+        Task { [weak self] in
+            do {
+                try await repository.saveReaderSettings(settings)
+                await MainActor.run {
+                    self?.didShowSettingsSaveError = false
+                }
+            } catch is CancellationError {
+            } catch {
+                readerLogger.error("Failed to save reader settings immediately: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    self?.showSettingsSaveErrorIfNeeded(error)
+                }
+            }
         }
     }
 
@@ -2789,9 +2836,68 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     return
                 }
                 try await repository.saveReaderSettings(settings)
+                await MainActor.run { [weak self] in
+                    self?.didShowSettingsSaveError = false
+                }
+            } catch is CancellationError {
             } catch {
+                readerLogger.error("Failed to save reader settings: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run { [weak self] in
+                    self?.showSettingsSaveErrorIfNeeded(error)
+                }
             }
         }
+    }
+
+    private func recordBookOpenedIfNeeded() {
+        guard !didRecordOpenHistory,
+              let progress = currentProgress else {
+            return
+        }
+        didRecordOpenHistory = true
+        openHistoryGeneration += 1
+        let generation = openHistoryGeneration
+        let repository = repository
+        let bookID = book.id
+        let historyDate = openedAt
+        openHistoryTask?.cancel()
+        openHistoryTask = Task { [weak self] in
+            do {
+                try await repository.saveReadingProgress(progress)
+                try Task.checkCancellation()
+                await MainActor.run {
+                    self?.didShowProgressSaveError = false
+                }
+                try await repository.markBookOpened(id: bookID, at: historyDate)
+            } catch is CancellationError {
+            } catch {
+                readerLogger.error("Failed to record reading history: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    guard let self,
+                          self.openHistoryGeneration == generation else {
+                        return
+                    }
+                    self.didRecordOpenHistory = false
+                    self.showError(error)
+                }
+            }
+        }
+    }
+
+    private func showProgressSaveErrorIfNeeded(_ error: Error) {
+        guard !didShowProgressSaveError else {
+            return
+        }
+        didShowProgressSaveError = true
+        showError(error)
+    }
+
+    private func showSettingsSaveErrorIfNeeded(_ error: Error) {
+        guard !didShowSettingsSaveError else {
+            return
+        }
+        didShowSettingsSaveError = true
+        showError(error)
     }
 
     private func applyReaderSettings(_ settings: ReaderSettings) {
@@ -3484,6 +3590,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func showError(_ error: Error) {
+        guard presentedViewController == nil else {
+            readerLogger.error("Reader error while another controller is presented: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         let alert = UIAlertController(
             title: NSLocalizedString("reader.error.title", comment: ""),
             message: error.localizedDescription,
@@ -3517,13 +3627,42 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
 
         if let currentBookmark {
+            let removedBookmark = currentBookmark
+            let removedBookmarkIndex = bookmarks.firstIndex { $0.id == removedBookmark.id } ?? 0
             bookmarkTask?.cancel()
             self.currentBookmark = nil
-            bookmarks.removeAll { $0.id == currentBookmark.id }
+            bookmarks.removeAll { $0.id == removedBookmark.id }
+            bookmarkButton.isEnabled = false
             updateBookmarkButton()
             let repository = repository
-            bookmarkTask = Task {
-                try? await repository.deleteBookmark(id: currentBookmark.id)
+            bookmarkTask = Task { [weak self] in
+                do {
+                    try await repository.deleteBookmark(id: removedBookmark.id)
+                    await MainActor.run {
+                        self?.bookmarkButton.isEnabled = true
+                        self?.refreshBookmarkState()
+                    }
+                } catch is CancellationError {
+                    await MainActor.run {
+                        self?.bookmarkButton.isEnabled = true
+                        self?.refreshBookmarkState()
+                    }
+                } catch {
+                    readerLogger.error("Failed to delete bookmark: \(error.localizedDescription, privacy: .public)")
+                    await MainActor.run {
+                        guard let self else {
+                            return
+                        }
+                        self.bookmarks.removeAll { $0.id == removedBookmark.id }
+                        self.bookmarks.insert(
+                            removedBookmark,
+                            at: min(removedBookmarkIndex, self.bookmarks.count)
+                        )
+                        self.bookmarkButton.isEnabled = true
+                        self.refreshBookmarkState()
+                        self.showError(error)
+                    }
+                }
             }
             return
         }
@@ -3535,23 +3674,36 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         bookmarkButton.isEnabled = false
         bookmarkTask?.cancel()
         bookmarkTask = Task { [weak self] in
-            let bookmark = try? await repository.createBookmark(
-                bookID: bookID,
-                chapterID: chapter.id,
-                offset: offset,
-                preview: preview
-            )
-            await MainActor.run {
-                guard let self else {
-                    return
-                }
-                self.bookmarkButton.isEnabled = true
-                self.currentBookmark = bookmark
-                if let bookmark {
+            do {
+                let bookmark = try await repository.createBookmark(
+                    bookID: bookID,
+                    chapterID: chapter.id,
+                    offset: offset,
+                    preview: preview
+                )
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.bookmarkButton.isEnabled = true
                     self.bookmarks.removeAll { $0.id == bookmark.id }
                     self.bookmarks.insert(bookmark, at: 0)
+                    self.refreshBookmarkState()
                 }
-                self.updateBookmarkButton()
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.bookmarkButton.isEnabled = true
+                }
+            } catch {
+                readerLogger.error("Failed to create bookmark: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.bookmarkButton.isEnabled = true
+                    self.refreshBookmarkState()
+                    self.showError(error)
+                }
             }
         }
     }
@@ -5179,13 +5331,29 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
     }
 
     private func deleteBookmark(_ bookmark: Bookmark) {
+        let originalBookmarks = bookmarks
         bookmarks.removeAll { $0.id == bookmark.id }
         tableView.reloadData()
         updateBackgroundView()
         onBookmarksChanged(bookmarks)
         let repository = repository
-        Task {
-            try? await repository.deleteBookmark(id: bookmark.id)
+        Task { [weak self] in
+            do {
+                try await repository.deleteBookmark(id: bookmark.id)
+            } catch is CancellationError {
+            } catch {
+                readerLogger.error("Failed to delete bookmark from contents: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.bookmarks = originalBookmarks
+                    self.tableView.reloadData()
+                    self.updateBackgroundView()
+                    self.onBookmarksChanged(self.bookmarks)
+                    self.showError(error)
+                }
+            }
         }
     }
 
@@ -5580,6 +5748,20 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
         let alert = UIAlertController(
             title: NSLocalizedString("reader.error.title", comment: ""),
             message: NSLocalizedString("reader.bookmark.missingChapter", comment: ""),
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
+        present(alert, animated: true)
+    }
+
+    private func showError(_ error: Error) {
+        guard presentedViewController == nil else {
+            readerLogger.error("Reader contents error while another controller is presented: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        let alert = UIAlertController(
+            title: NSLocalizedString("reader.error.title", comment: ""),
+            message: error.localizedDescription,
             preferredStyle: .alert
         )
         alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
