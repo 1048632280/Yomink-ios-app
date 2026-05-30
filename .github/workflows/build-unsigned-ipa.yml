@@ -8,6 +8,7 @@ on:
       - "codex/**"
     paths:
       - "Yomink/**"
+      - "YominkTests/**"
       - "Yomink.xcodeproj/**"
       - ".github/workflows/build-unsigned-ipa.yml"
 
@@ -47,6 +48,15 @@ jobs:
             -resolvePackageDependencies \
             -project "$PROJECT" \
             -scheme "$SCHEME"
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,name=iPhone 16" \
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Archive without code signing
         run: |

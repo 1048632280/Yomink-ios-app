@@ -32,6 +32,7 @@
 		6FBC8473B6E3435693B97401 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 6FBC8473B6E3435693B97400 /* GRDB */; };
 		85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85F65F2A56AB45299E94D800 /* AddBookSidebarView.swift */; };
 		8B07D4912F7D4B7F919E3E01 /* AppFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B07D4912F7D4B7F919E3E00 /* AppFileStore.swift */; };
+		A9C0F1D2E3B44567A8B90001 /* ChapterIndexerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C0F1D2E3B44567A8B90002 /* ChapterIndexerTests.swift */; };
 		A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F4202A2F3446629FBC1E00 /* LibrarySidebarView.swift */; };
 		B606D742219548DD8E4D7D01 /* Book.swift in Sources */ = {isa = PBXBuildFile; fileRef = B606D742219548DD8E4D7D00 /* Book.swift */; };
 		C4F0DD38C39448AE8E0BA101 /* BookGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */; };
@@ -66,6 +67,8 @@
 		5A6C90E4D1A9485B8F9A7600 /* SidebarStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarStyle.swift; sourceTree = "<group>"; };
 		85F65F2A56AB45299E94D800 /* AddBookSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddBookSidebarView.swift; sourceTree = "<group>"; };
 		8B07D4912F7D4B7F919E3E00 /* AppFileStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFileStore.swift; sourceTree = "<group>"; };
+		A9C0F1D2E3B44567A8B90002 /* ChapterIndexerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterIndexerTests.swift; sourceTree = "<group>"; };
+		A9C0F1D2E3B44567A8B90003 /* YominkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YominkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A1F4202A2F3446629FBC1E00 /* LibrarySidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySidebarView.swift; sourceTree = "<group>"; };
 		B606D742219548DD8E4D7D00 /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
 		C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookGroup.swift; sourceTree = "<group>"; };
@@ -81,6 +84,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				6FBC8473B6E3435693B97401 /* GRDB in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9C0F1D2E3B44567A8B90005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -104,6 +114,7 @@
 			isa = PBXGroup;
 			children = (
 				20DCC8B06C9E4D1D8E57414F /* Yomink.app */,
+				A9C0F1D2E3B44567A8B90003 /* YominkTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -170,6 +181,7 @@
 			isa = PBXGroup;
 			children = (
 				1F30C56629B2493EA18C1600 /* Yomink */,
+				A9C0F1D2E3B44567A8B90004 /* YominkTests */,
 				19D3B4727C4547CA87ACD700 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -253,7 +265,25 @@
 			path = Reader;
 			sourceTree = "<group>";
 		};
+		A9C0F1D2E3B44567A8B90004 /* YominkTests */ = {
+			isa = PBXGroup;
+			children = (
+				A9C0F1D2E3B44567A8B90002 /* ChapterIndexerTests.swift */,
+			);
+			path = YominkTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
+
+/* Begin PBXContainerItemProxy section */
+		A9C0F1D2E3B44567A8B90009 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 20DCC8B06C9E4D1D8E57414D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 20DCC8B06C9E4D1D8E57414E;
+			remoteInfo = Yomink;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXNativeTarget section */
 		20DCC8B06C9E4D1D8E57414E /* Yomink */ = {
@@ -276,6 +306,26 @@
 			productReference = 20DCC8B06C9E4D1D8E57414F /* Yomink.app */;
 			productType = "com.apple.product-type.application";
 		};
+		A9C0F1D2E3B44567A8B90008 /* YominkTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A9C0F1D2E3B44567A8B9000D /* Build configuration list for PBXNativeTarget "YominkTests" */;
+			buildPhases = (
+				A9C0F1D2E3B44567A8B90007 /* Sources */,
+				A9C0F1D2E3B44567A8B90005 /* Frameworks */,
+				A9C0F1D2E3B44567A8B90006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A9C0F1D2E3B44567A8B9000A /* PBXTargetDependency */,
+			);
+			name = YominkTests;
+			packageProductDependencies = (
+			);
+			productName = YominkTests;
+			productReference = A9C0F1D2E3B44567A8B90003 /* YominkTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -288,6 +338,10 @@
 				TargetAttributes = {
 					20DCC8B06C9E4D1D8E57414E = {
 						CreatedOnToolsVersion = 16.0;
+					};
+					A9C0F1D2E3B44567A8B90008 = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 20DCC8B06C9E4D1D8E57414E;
 					};
 				};
 			};
@@ -309,6 +363,7 @@
 			projectRoot = "";
 			targets = (
 				20DCC8B06C9E4D1D8E57414E /* Yomink */,
+				A9C0F1D2E3B44567A8B90008 /* YominkTests */,
 			);
 		};
 /* End PBXProject section */
@@ -320,6 +375,13 @@
 			files = (
 				44F43894BCA349048B94BE01 /* Assets.xcassets in Resources */,
 				79E0FD2A01A443B2A7E70101 /* Localizable.strings in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A9C0F1D2E3B44567A8B90006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -361,6 +423,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A9C0F1D2E3B44567A8B90007 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A9C0F1D2E3B44567A8B90001 /* ChapterIndexerTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* Begin PBXVariantGroup section */
 		79E0FD2A01A443B2A7E70102 /* Localizable.strings */ = {
 			isa = PBXVariantGroup;
@@ -373,6 +443,14 @@
 /* End PBXVariantGroup section */
 
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A9C0F1D2E3B44567A8B9000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 20DCC8B06C9E4D1D8E57414E /* Yomink */;
+			targetProxy = A9C0F1D2E3B44567A8B90009 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		20DCC8B06C9E4D1D8E574154 /* Debug */ = {
@@ -546,6 +624,56 @@
 			};
 			name = Release;
 		};
+		A9C0F1D2E3B44567A8B9000B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yomink.reader.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Yomink.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Yomink";
+			};
+			name = Debug;
+		};
+		A9C0F1D2E3B44567A8B9000C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.5;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.yomink.reader.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Yomink.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Yomink";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -563,6 +691,15 @@
 			buildConfigurations = (
 				20DCC8B06C9E4D1D8E574157 /* Debug */,
 				20DCC8B06C9E4D1D8E574158 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A9C0F1D2E3B44567A8B9000D /* Build configuration list for PBXNativeTarget "YominkTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A9C0F1D2E3B44567A8B9000B /* Debug */,
+				A9C0F1D2E3B44567A8B9000C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

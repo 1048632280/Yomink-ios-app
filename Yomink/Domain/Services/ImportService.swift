@@ -24,6 +24,11 @@ struct ImportBookPreview: Equatable, Sendable {
 }
 
 final class ImportService {
+    enum ImportResult: Sendable {
+        case imported(Book)
+        case duplicate(Book)
+    }
+
     enum ImportError: LocalizedError {
         case unsupportedFileType
         case cannotReadFile
@@ -59,6 +64,33 @@ final class ImportService {
     }
 
     @discardableResult
+    func importBookCheckingDuplicate(
+        from sourceURL: URL,
+        metadata: ImportBookMetadata? = nil
+    ) async throws -> ImportResult {
+        let preparedImport = try await prepareImport(
+            from: sourceURL,
+            metadata: metadata
+        )
+        do {
+            try Task.checkCancellation()
+            if let existingBook = try await findExistingBook(
+                contentHash: preparedImport.draft.contentHash
+            ) {
+                cleanUpFailedImport(preparedImport, deletingDatabaseRecord: false)
+                return .duplicate(existingBook)
+            }
+
+            let book = try await libraryRepository.insertImportedBook(preparedImport.draft)
+            try Task.checkCancellation()
+            return .imported(book)
+        } catch {
+            cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
+            throw error
+        }
+    }
+
+    @discardableResult
     func importBook(
         from sourceURL: URL,
         metadata: ImportBookMetadata? = nil
@@ -91,6 +123,10 @@ final class ImportService {
 
     func findExistingBook(for sourceURL: URL) async throws -> Book? {
         let contentHash = try await contentHash(for: sourceURL)
+        return try await findExistingBook(contentHash: contentHash)
+    }
+
+    private func findExistingBook(contentHash: String) async throws -> Book? {
         if let existingBook = try await libraryRepository.findBook(contentHash: contentHash) {
             return existingBook
         }
@@ -165,7 +201,7 @@ final class ImportService {
                 try Task.checkCancellation()
                 let decodedText = try decoder.decode(data)
                 let utf8Data = Data(decodedText.text.utf8)
-                let contentHash = Self.sha256Hex(for: decodedText.text)
+                let contentHash = Self.sha256Hex(for: utf8Data)
                 do {
                     try utf8Data.write(to: contentURL, options: .atomic)
                 } catch {
@@ -240,12 +276,11 @@ final class ImportService {
                 throw ImportError.cannotReadFile
             }
             let decodedText = try decoder.decode(data)
-            return Self.sha256Hex(for: decodedText.text)
+            return Self.sha256Hex(for: Data(decodedText.text.utf8))
         }.value
     }
 
     private func contentHashForReadableFile(at url: URL) async throws -> String {
-        let decoder = decoder
         return try await Task.detached(priority: .utility) {
             let data: Data
             do {
@@ -253,8 +288,7 @@ final class ImportService {
             } catch {
                 throw ImportError.cannotReadFile
             }
-            let decodedText = try decoder.decode(data)
-            return Self.sha256Hex(for: decodedText.text)
+            return Self.sha256Hex(for: data)
         }.value
     }
 
@@ -282,10 +316,6 @@ final class ImportService {
         SHA256.hash(data: data)
             .map { String(format: "%02x", $0) }
             .joined()
-    }
-
-    private static func sha256Hex(for text: String) -> String {
-        sha256Hex(for: Data(text.utf8))
     }
 
     private func cleanUpFailedImport(

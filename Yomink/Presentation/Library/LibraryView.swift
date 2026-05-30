@@ -1279,20 +1279,12 @@ private final class LibraryViewModel: ObservableObject {
 
         Task {
             do {
-                try await repository.deleteBooks(ids: Set(ids))
-                var cleanupError: Error?
                 for id in ids {
-                    do {
-                        try fileStore.removeBookFiles(id: id)
-                    } catch {
-                        cleanupError = cleanupError ?? error
-                    }
+                    try fileStore.removeBookFiles(id: id)
+                    try await repository.deleteBook(id: id)
                 }
                 exitSelection()
                 await loadBooks(repository: repository, scope: scope)
-                if let cleanupError {
-                    showError(cleanupError, title: "library.delete.error.title")
-                }
             } catch {
                 showError(error, title: "library.delete.error.title")
             }

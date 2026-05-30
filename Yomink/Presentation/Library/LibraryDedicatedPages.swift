@@ -1878,20 +1878,11 @@ struct StorageManagementPage: View {
     private func deleteBook(_ book: Book) {
         Task {
             do {
-                try await repository.deleteBooks(ids: Set([book.id]))
-                var cleanupError: Error?
-                do {
-                    try fileStore.removeBookFiles(id: book.id)
-                } catch {
-                    cleanupError = error
-                }
+                try fileStore.removeBookFiles(id: book.id)
+                try await repository.deleteBook(id: book.id)
                 await reloadStorage()
                 await MainActor.run {
                     onLibraryChanged()
-                    if let cleanupError {
-                        errorTitle = "library.delete.error.title"
-                        errorMessage = cleanupError.localizedDescription
-                    }
                 }
             } catch {
                 await MainActor.run {
@@ -3120,18 +3111,17 @@ struct ImportBookEditPage: View {
         )
         Task {
             do {
-                if let existingBook = try await importService.findExistingBook(for: preview.sourceURL) {
-                    isImporting = false
-                    duplicateBook = existingBook
-                    return
-                }
-
-                _ = try await importService.importBook(
+                switch try await importService.importBookCheckingDuplicate(
                     from: preview.sourceURL,
                     metadata: metadata
-                )
-                isImporting = false
-                onImported()
+                ) {
+                case let .duplicate(existingBook):
+                    isImporting = false
+                    duplicateBook = existingBook
+                case .imported(_):
+                    isImporting = false
+                    onImported()
+                }
             } catch {
                 isImporting = false
                 errorMessage = error.localizedDescription

@@ -46,9 +46,10 @@ struct ChapterIndexer: Sendable {
             )
         }
 
-        return chapters.isEmpty
+        let indexedChapters = chapters.isEmpty
             ? Self.pseudoChapters(for: text)
             : chapters
+        return Self.splitOversizedChapters(indexedChapters, in: text)
     }
 
     private static func chapterCandidates(in text: String) -> [ChapterCandidate] {
@@ -279,6 +280,129 @@ struct ChapterIndexer: Sendable {
         )
 
         return chapters
+    }
+
+    private static func splitOversizedChapters(
+        _ chapters: [ImportedChapterDraft],
+        in text: String
+    ) -> [ImportedChapterDraft] {
+        guard chapters.contains(where: { $0.endOffset - $0.startOffset > pseudoChapterByteLength }) else {
+            return chapters
+        }
+
+        var splitChapters: [ImportedChapterDraft] = []
+        var textIndex = text.startIndex
+        var currentOffset = 0
+
+        for chapter in chapters {
+            Self.advance(
+                index: &textIndex,
+                offset: &currentOffset,
+                to: chapter.startOffset,
+                in: text
+            )
+
+            var startOffset = chapter.startOffset
+            var startIndex = textIndex
+            var partIndex = 0
+
+            while chapter.endOffset - startOffset > pseudoChapterByteLength {
+                let (endIndex, endOffset) = Self.chunkEnd(
+                    from: startIndex,
+                    startOffset: startOffset,
+                    chapterEndOffset: chapter.endOffset,
+                    in: text
+                )
+                splitChapters.append(
+                    Self.chapter(
+                        title: splitTitle(for: chapter.title, partIndex: partIndex),
+                        startOffset: startOffset,
+                        endOffset: endOffset,
+                        sortOrder: splitChapters.count,
+                        source: chapter.source
+                    )
+                )
+                currentOffset = endOffset
+                textIndex = endIndex
+                startOffset = endOffset
+                startIndex = endIndex
+                partIndex += 1
+            }
+
+            guard startOffset < chapter.endOffset else {
+                continue
+            }
+
+            splitChapters.append(
+                Self.chapter(
+                    title: splitTitle(for: chapter.title, partIndex: partIndex),
+                    startOffset: startOffset,
+                    endOffset: chapter.endOffset,
+                    sortOrder: splitChapters.count,
+                    source: chapter.source
+                )
+            )
+
+            Self.advance(
+                index: &textIndex,
+                offset: &currentOffset,
+                to: chapter.endOffset,
+                in: text
+            )
+        }
+
+        return splitChapters
+    }
+
+    private static func chunkEnd(
+        from startIndex: String.Index,
+        startOffset: Int,
+        chapterEndOffset: Int,
+        in text: String
+    ) -> (String.Index, Int) {
+        var index = startIndex
+        var offset = startOffset
+
+        while index < text.endIndex {
+            let characterByteCount = String(text[index]).utf8.count
+            let nextOffset = offset + characterByteCount
+            guard nextOffset <= chapterEndOffset else {
+                break
+            }
+            if offset > startOffset,
+               nextOffset - startOffset > pseudoChapterByteLength {
+                break
+            }
+
+            offset = nextOffset
+            index = text.index(after: index)
+
+            if offset - startOffset >= pseudoChapterByteLength {
+                break
+            }
+        }
+
+        return (index, offset)
+    }
+
+    private static func advance(
+        index: inout String.Index,
+        offset: inout Int,
+        to targetOffset: Int,
+        in text: String
+    ) {
+        while index < text.endIndex, offset < targetOffset {
+            offset += String(text[index]).utf8.count
+            index = text.index(after: index)
+        }
+    }
+
+    private static func splitTitle(for title: String, partIndex: Int) -> String {
+        guard partIndex > 0 else {
+            return title
+        }
+
+        return "\(title) (\(partIndex + 1))"
     }
 
     private static func pseudoChapterTitle(sortOrder: Int) -> String {

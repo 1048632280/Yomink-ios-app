@@ -55,7 +55,7 @@ protocol LibraryRepository: Sendable {
     func insertImportedBook(_ draft: ImportedBookDraft) async throws -> Book
 
     /// Removes database rows only.
-    /// Caller must invoke AppFileStore.removeBookFiles(id:) to drop on-disk artifacts.
+    /// Caller should drop on-disk artifacts before deleting rows so failures remain retryable.
     func deleteBook(id: UUID) async throws
     func deleteBooks(ids: Set<UUID>) async throws
 }
