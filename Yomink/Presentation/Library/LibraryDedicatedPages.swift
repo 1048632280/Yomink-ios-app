@@ -2942,6 +2942,7 @@ struct ImportBookEditPage: View {
     @State private var isImporting = false
     @State private var duplicateBook: Book?
     @State private var errorMessage: String?
+    @State private var importTask: Task<Void, Never>?
 
     init(
         preview: ImportBookPreview,
@@ -3023,6 +3024,9 @@ struct ImportBookEditPage: View {
             }
         } message: {
             Text(errorMessage ?? "")
+        }
+        .onDisappear {
+            cancelImportTask()
         }
     }
 
@@ -3109,29 +3113,41 @@ struct ImportBookEditPage: View {
             author: author,
             intro: intro
         )
-        Task {
+        importTask = Task {
             do {
                 switch try await importService.importBookCheckingDuplicate(
                     from: preview.sourceURL,
                     metadata: metadata
                 ) {
                 case let .duplicate(existingBook):
+                    try Task.checkCancellation()
                     isImporting = false
                     duplicateBook = existingBook
                 case .imported(_):
+                    try Task.checkCancellation()
                     isImporting = false
                     onImported()
                 }
+            } catch is CancellationError {
+                isImporting = false
             } catch {
                 isImporting = false
                 errorMessage = error.localizedDescription
             }
+            importTask = nil
         }
     }
 
     private func cancel() {
+        cancelImportTask()
         onCancel()
         dismiss()
+    }
+
+    private func cancelImportTask() {
+        importTask?.cancel()
+        importTask = nil
+        isImporting = false
     }
 }
 

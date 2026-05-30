@@ -1117,6 +1117,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var importErrorMessage: String?
     @Published var importPreview: ImportBookPreview?
     private var currentImportTask: Task<Void, Never>?
+    private var loadGeneration = 0
 
     var isSelecting: Bool {
         isSelectionMode
@@ -1137,21 +1138,34 @@ private final class LibraryViewModel: ObservableObject {
             return
         }
 
+        let generation = nextLoadGeneration()
         do {
             async let fetchedSettings = repository.fetchLibrarySettings()
             async let fetchedGroups = repository.fetchGroups()
-            settings = try await fetchedSettings
-            groups = try await fetchedGroups
-            allBooks = try await repository.fetchBooks(
+            let settings = try await fetchedSettings
+            async let fetchedAllBooks = repository.fetchBooks(
                 scope: .all,
                 sortOrder: settings.sortOrder
             )
-            books = try await repository.fetchBooks(
+            async let fetchedBooks = repository.fetchBooks(
                 scope: scope,
                 sortOrder: settings.sortOrder
             )
+            let groups = try await fetchedGroups
+            let allBooks = try await fetchedAllBooks
+            let books = try await fetchedBooks
+            guard isCurrentLoadGeneration(generation) else {
+                return
+            }
+            self.settings = settings
+            self.groups = groups
+            self.allBooks = allBooks
+            self.books = books
             pruneSelection()
         } catch {
+            guard isCurrentLoadGeneration(generation) else {
+                return
+            }
             showError(error, title: "library.error.title")
         }
     }
@@ -1164,21 +1178,32 @@ private final class LibraryViewModel: ObservableObject {
             return
         }
 
+        let generation = nextLoadGeneration()
+        let sortOrder = settings.sortOrder
         do {
             async let fetchedGroups = repository.fetchGroups()
             async let fetchedAllBooks = repository.fetchBooks(
                 scope: .all,
-                sortOrder: settings.sortOrder
+                sortOrder: sortOrder
             )
             async let fetchedBooks = repository.fetchBooks(
                 scope: scope,
-                sortOrder: settings.sortOrder
+                sortOrder: sortOrder
             )
-            groups = try await fetchedGroups
-            allBooks = try await fetchedAllBooks
-            books = try await fetchedBooks
+            let groups = try await fetchedGroups
+            let allBooks = try await fetchedAllBooks
+            let books = try await fetchedBooks
+            guard isCurrentLoadGeneration(generation) else {
+                return
+            }
+            self.groups = groups
+            self.allBooks = allBooks
+            self.books = books
             pruneSelection()
         } catch {
+            guard isCurrentLoadGeneration(generation) else {
+                return
+            }
             showError(error, title: "library.error.title")
         }
     }
@@ -1405,6 +1430,15 @@ private final class LibraryViewModel: ObservableObject {
     private func pruneSelection() {
         let visibleIDs = Set(books.map(\.id))
         selectedBookIDs.formIntersection(visibleIDs)
+    }
+
+    private func nextLoadGeneration() -> Int {
+        loadGeneration += 1
+        return loadGeneration
+    }
+
+    private func isCurrentLoadGeneration(_ generation: Int) -> Bool {
+        generation == loadGeneration
     }
 }
 

@@ -260,6 +260,7 @@
 "reader.filter.source" = "要过滤的内容";
 "reader.filter.replacement" = "替换为的内容 (可空)";
 "reader.filter.empty" = "暂无过滤规则";
+"reader.filter.error.emptySource" = "过滤内容不能为空";
 "reader.filter.error.ruleNotFound" = "找不到这条过滤规则";
 "reader.touchAreas.previousPage" = "上一页";
 "reader.touchAreas.menu" = "菜单";

@@ -1,5 +1,19 @@
 import Foundation
 
+enum LibraryRepositoryError: LocalizedError, Sendable {
+    case emptyFilterSource
+    case filterRuleNotFound
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyFilterSource:
+            return NSLocalizedString("reader.filter.error.emptySource", comment: "")
+        case .filterRuleNotFound:
+            return NSLocalizedString("reader.filter.error.ruleNotFound", comment: "")
+        }
+    }
+}
+
 protocol LibraryRepository: Sendable {
     func fetchBooks(scope: LibraryScope, sortOrder: LibrarySettings.SortOrder) async throws -> [Book]
     func findBook(contentHash: String) async throws -> Book?

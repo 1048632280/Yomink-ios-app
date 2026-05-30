@@ -421,6 +421,10 @@ struct GRDBLibraryRepository: LibraryRepository {
         replacement: String?
     ) async throws -> TextFilterRule {
         let normalizedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSource.isEmpty else {
+            throw LibraryRepositoryError.emptyFilterSource
+        }
+
         let rule = TextFilterRule(
             id: UUID(),
             bookID: bookID,
@@ -428,9 +432,6 @@ struct GRDBLibraryRepository: LibraryRepository {
             replacement: Self.normalizedOptionalText(replacement),
             createdAt: Date()
         )
-        guard !rule.source.isEmpty else {
-            return rule
-        }
 
         try await database.writer.write { db in
             try db.execute(
@@ -459,6 +460,10 @@ struct GRDBLibraryRepository: LibraryRepository {
         replacement: String?
     ) async throws -> TextFilterRule {
         let normalizedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedSource.isEmpty else {
+            throw LibraryRepositoryError.emptyFilterSource
+        }
+
         let normalizedReplacement = Self.normalizedOptionalText(replacement)
 
         return try await database.writer.write { db in
@@ -486,16 +491,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             ),
                 let rule = TextFilterRule(row: row)
             else {
-                throw NSError(
-                    domain: "Yomink.LibraryRepository",
-                    code: 404,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: NSLocalizedString(
-                            "reader.filter.error.ruleNotFound",
-                            comment: ""
-                        )
-                    ]
-                )
+                throw LibraryRepositoryError.filterRuleNotFound
             }
 
             return rule

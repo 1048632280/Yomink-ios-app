@@ -145,6 +145,11 @@ struct PreviewLibraryRepository: LibraryRepository {
         source: String,
         replacement: String?
     ) async throws -> TextFilterRule {
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            throw LibraryRepositoryError.emptyFilterSource
+        }
+
         TextFilterRule(
             id: UUID(),
             bookID: bookID,
@@ -159,6 +164,11 @@ struct PreviewLibraryRepository: LibraryRepository {
         source: String,
         replacement: String?
     ) async throws -> TextFilterRule {
+        let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !source.isEmpty else {
+            throw LibraryRepositoryError.emptyFilterSource
+        }
+
         TextFilterRule(
             id: id,
             bookID: Self.sampleBookID,

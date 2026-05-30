@@ -1,7 +1,15 @@
 import Foundation
 
 enum DatabaseDateFormatter {
-    private static let formatter: ISO8601DateFormatter = {
+    static func string(from date: Date) -> String {
+        makeFormatter().string(from: date)
+    }
+
+    static func date(from string: String) -> Date? {
+        makeFormatter().date(from: string)
+    }
+
+    private static func makeFormatter() -> ISO8601DateFormatter {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [
             .withInternetDateTime,
@@ -9,14 +17,5 @@ enum DatabaseDateFormatter {
         ]
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         return formatter
-    }()
-
-    static func string(from date: Date) -> String {
-        formatter.string(from: date)
-    }
-
-    static func date(from string: String) -> Date? {
-        formatter.date(from: string)
     }
 }
-
