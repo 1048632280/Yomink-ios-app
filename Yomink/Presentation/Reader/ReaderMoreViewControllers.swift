@@ -1255,6 +1255,16 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         readerPopOrDismiss(animated: true)
     }
 
+    private func showError(_ error: Error) {
+        let alert = UIAlertController(
+            title: NSLocalizedString("reader.error.title", comment: ""),
+            message: error.localizedDescription,
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
+        present(alert, animated: true)
+    }
+
     private nonisolated static func scanBatch(
         book: Book,
         chapters: [Chapter],
