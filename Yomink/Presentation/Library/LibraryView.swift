@@ -291,7 +291,6 @@ struct LibraryView: View {
         case .left:
             if case let .ready(services) = environment.bootstrapState {
                 LibrarySidebarView(
-                    repository: services.libraryRepository,
                     groups: viewModel.groups,
                     books: viewModel.allBooks,
                     selectedScope: selectedScope,
@@ -302,8 +301,11 @@ struct LibraryView: View {
                     closeDrawer()
                     reloadBooks(for: scope)
                 } onSettingsChanged: { settings in
-                    viewModel.applyLibrarySettings(settings)
-                    reloadBooksIfReady()
+                    viewModel.updateLibrarySettings(
+                        settings,
+                        repository: services.libraryRepository,
+                        scope: selectedScope
+                    )
                 } onDisplayOptionChanged: {
                     closeDrawer()
                 } onOpenGroupsPage: {
@@ -421,8 +423,11 @@ struct LibraryView: View {
                         reloadBooksIfReady()
                     },
                     onChange: { settings in
-                        viewModel.applyLibrarySettings(settings)
-                        reloadBooksIfReady()
+                        viewModel.updateLibrarySettings(
+                            settings,
+                            repository: services.libraryRepository,
+                            scope: selectedScope
+                        )
                     }
                 )
             } label: {
@@ -1118,6 +1123,9 @@ private final class LibraryViewModel: ObservableObject {
     @Published var importPreview: ImportBookPreview?
     private var currentImportTask: Task<Void, Never>?
     private var loadGeneration = 0
+    private var settingsSaveTask: Task<Void, Never>?
+    private var settingsSaveGeneration = 0
+    private var persistedSettings = LibrarySettings.default
 
     var isSelecting: Bool {
         isSelectionMode
@@ -1158,6 +1166,7 @@ private final class LibraryViewModel: ObservableObject {
                 return
             }
             self.settings = settings
+            self.persistedSettings = settings
             self.groups = groups
             self.allBooks = allBooks
             self.books = books
@@ -1264,8 +1273,48 @@ private final class LibraryViewModel: ObservableObject {
         selectedBookIDs.removeAll()
     }
 
-    func applyLibrarySettings(_ settings: LibrarySettings) {
+    func updateLibrarySettings(
+        _ settings: LibrarySettings,
+        repository: any LibraryRepository,
+        scope: LibraryScope
+    ) {
+        let previousSettings = self.settings
+        guard settings != previousSettings else {
+            return
+        }
+
         self.settings = settings
+        settingsSaveGeneration += 1
+        let generation = settingsSaveGeneration
+        let previousSaveTask = settingsSaveTask
+        settingsSaveTask = Task {
+            if let previousSaveTask {
+                await previousSaveTask.value
+            }
+            do {
+                try Task.checkCancellation()
+                try await repository.saveLibrarySettings(settings)
+                persistedSettings = settings
+                try Task.checkCancellation()
+                guard isCurrentSettingsSaveGeneration(generation) else {
+                    return
+                }
+                await loadBooks(repository: repository, scope: scope)
+                if isCurrentSettingsSaveGeneration(generation) {
+                    settingsSaveTask = nil
+                }
+            } catch is CancellationError {
+            } catch {
+                guard isCurrentSettingsSaveGeneration(generation) else {
+                    return
+                }
+                if self.settings == settings {
+                    self.settings = persistedSettings
+                }
+                settingsSaveTask = nil
+                showError(error, title: "settings.error.title")
+            }
+        }
     }
 
     func moveSelectedBooks(
@@ -1399,21 +1448,6 @@ private final class LibraryViewModel: ObservableObject {
         }
     }
 
-    private func saveLibrarySettings(repository: (any LibraryRepository)?) {
-        guard let repository else {
-            return
-        }
-
-        let settings = settings
-        Task {
-            do {
-                try await repository.saveLibrarySettings(settings)
-            } catch {
-                showError(error, title: "settings.error.title")
-            }
-        }
-    }
-
     func showError(_ error: Error, title: LocalizedStringKey) {
         importErrorTitle = title
         importErrorMessage = error.localizedDescription
@@ -1439,6 +1473,10 @@ private final class LibraryViewModel: ObservableObject {
 
     private func isCurrentLoadGeneration(_ generation: Int) -> Bool {
         generation == loadGeneration
+    }
+
+    private func isCurrentSettingsSaveGeneration(_ generation: Int) -> Bool {
+        generation == settingsSaveGeneration
     }
 }
 

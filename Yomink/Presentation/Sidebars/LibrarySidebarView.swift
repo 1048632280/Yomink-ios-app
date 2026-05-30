@@ -2,7 +2,6 @@ import SwiftUI
 import UIKit
 
 struct LibrarySidebarView: View {
-    let repository: (any LibraryRepository)?
     let groups: [BookGroup]
     let books: [Book]
     let selectedScope: LibraryScope
@@ -14,10 +13,8 @@ struct LibrarySidebarView: View {
     let onOpenSettingsPage: () -> Void
 
     @State private var librarySettings = LibrarySettings.default
-    @State private var groupErrorMessage: String?
 
     init(
-        repository: (any LibraryRepository)? = nil,
         groups: [BookGroup] = [],
         books: [Book] = [],
         selectedScope: LibraryScope = .ungrouped,
@@ -28,7 +25,6 @@ struct LibrarySidebarView: View {
         onOpenGroupsPage: @escaping () -> Void = {},
         onOpenSettingsPage: @escaping () -> Void = {}
     ) {
-        self.repository = repository
         self.groups = groups
         self.books = books
         self.selectedScope = selectedScope
@@ -97,28 +93,8 @@ struct LibrarySidebarView: View {
             }
             .navigationBarHidden(true)
             .background(SidebarStyle.background)
-            .task {
-                await reloadSettings()
-            }
             .onChange(of: settings) { nextSettings in
                 librarySettings = nextSettings ?? .default
-            }
-            .alert(
-                "groups.error.title",
-                isPresented: Binding(
-                    get: { groupErrorMessage != nil },
-                    set: { isPresented in
-                        if !isPresented {
-                            groupErrorMessage = nil
-                        }
-                    }
-                )
-            ) {
-                Button("common.ok", role: .cancel) {
-                    groupErrorMessage = nil
-                }
-            } message: {
-                Text(groupErrorMessage ?? "")
             }
         }
         .navigationViewStyle(.stack)
@@ -173,44 +149,19 @@ struct LibrarySidebarView: View {
 
     private func toggleViewMode() {
         librarySettings.viewMode = librarySettings.viewMode == .list ? .grid : .list
-        persistLibrarySettings(returningToShelf: true)
+        notifyLibrarySettingsChanged(returningToShelf: true)
     }
 
     private func toggleSortOrder() {
         librarySettings.sortOrder = librarySettings.sortOrder == .lastReadAt ? .importedAt : .lastReadAt
-        persistLibrarySettings(returningToShelf: true)
+        notifyLibrarySettingsChanged(returningToShelf: true)
     }
 
-    private func persistLibrarySettings(returningToShelf: Bool = false) {
+    private func notifyLibrarySettingsChanged(returningToShelf: Bool = false) {
         let settings = librarySettings
         onSettingsChanged(settings)
         if returningToShelf {
             onDisplayOptionChanged()
-        }
-        guard let repository else {
-            return
-        }
-
-        Task {
-            do {
-                try await repository.saveLibrarySettings(settings)
-            } catch {
-                groupErrorMessage = error.localizedDescription
-            }
-        }
-    }
-
-    @MainActor
-    private func reloadSettings() async {
-        guard let repository else {
-            librarySettings = settings ?? .default
-            return
-        }
-
-        if let settings {
-            librarySettings = settings
-        } else if let fetchedSettings = try? await repository.fetchLibrarySettings() {
-            librarySettings = fetchedSettings
         }
     }
 }

@@ -15,8 +15,18 @@ The repository currently contains the initial iOS project scaffold:
 
 ## Build On GitHub Actions
 
-Use the `Build Unsigned IPA` workflow from the Actions tab. It archives the app without code signing and uploads `Yomink-unsigned.ipa` as an artifact.
+Use the `Build Unsigned IPA` workflow from the Actions tab. It resolves Swift packages, builds the Debug simulator target, runs unit tests, archives the Release app without code signing, and uploads `Yomink-unsigned.ipa` as an artifact.
 
 The resulting IPA is unsigned. It is suitable as a CI build artifact and must be signed before installation on a physical device.
 
-Local Windows machines cannot build this project because iOS archive builds require Xcode on macOS.
+## Local Verification
+
+Local Windows machines cannot build this project because iOS builds require Xcode on macOS.
+
+On macOS, run the same core checks before opening a PR:
+
+```sh
+xcodebuild -resolvePackageDependencies -project Yomink.xcodeproj -scheme Yomink
+xcodebuild build -project Yomink.xcodeproj -scheme Yomink -configuration Debug -destination "generic/platform=iOS Simulator" CODE_SIGNING_ALLOWED=NO
+xcodebuild test -project Yomink.xcodeproj -scheme Yomink -configuration Debug -destination "platform=iOS Simulator,name=iPhone 16" CODE_SIGNING_ALLOWED=NO
+```

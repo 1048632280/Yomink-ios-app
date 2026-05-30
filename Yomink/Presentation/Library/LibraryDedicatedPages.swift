@@ -1639,9 +1639,9 @@ struct LibrarySettingsPage: View {
     let onOpenBook: (Book) -> Void
     let onLibraryChanged: () -> Void
     let onChange: (LibrarySettings) -> Void
+    let currentSettings: LibrarySettings
 
     @State private var settings: LibrarySettings
-    @State private var errorMessage: String?
 
     init(
         repository: any LibraryRepository,
@@ -1656,6 +1656,7 @@ struct LibrarySettingsPage: View {
         self.onOpenBook = onOpenBook
         self.onLibraryChanged = onLibraryChanged
         self.onChange = onChange
+        self.currentSettings = settings
         _settings = State(initialValue: settings)
     }
 
@@ -1686,24 +1687,9 @@ struct LibrarySettingsPage: View {
         }
         .onChange(of: settings) { nextSettings in
             onChange(nextSettings)
-            persistSettings(nextSettings)
         }
-        .alert(
-            "settings.error.title",
-            isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        errorMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("common.ok", role: .cancel) {
-                errorMessage = nil
-            }
-        } message: {
-            Text(errorMessage ?? "")
+        .onChange(of: currentSettings) { nextSettings in
+            settings = nextSettings
         }
     }
 
@@ -1752,15 +1738,6 @@ struct LibrarySettingsPage: View {
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
-    private func persistSettings(_ settings: LibrarySettings) {
-        Task {
-            do {
-                try await repository.saveLibrarySettings(settings)
-            } catch {
-                errorMessage = error.localizedDescription
-            }
-        }
-    }
 }
 
 struct StorageManagementPage: View {
