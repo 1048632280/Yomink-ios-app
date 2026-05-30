@@ -150,7 +150,7 @@ struct PreviewLibraryRepository: LibraryRepository {
             throw LibraryRepositoryError.emptyFilterSource
         }
 
-        TextFilterRule(
+        return TextFilterRule(
             id: UUID(),
             bookID: bookID,
             source: source,
@@ -169,7 +169,7 @@ struct PreviewLibraryRepository: LibraryRepository {
             throw LibraryRepositoryError.emptyFilterSource
         }
 
-        TextFilterRule(
+        return TextFilterRule(
             id: id,
             bookID: Self.sampleBookID,
             source: source,
