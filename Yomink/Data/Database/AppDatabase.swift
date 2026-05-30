@@ -59,9 +59,9 @@ final class AppDatabase: @unchecked Sendable {
                 author TEXT,
                 intro TEXT,
                 fileName TEXT NOT NULL,
-                fileSize INTEGER NOT NULL,
+                fileSize INTEGER NOT NULL CHECK (fileSize >= 0),
                 encoding TEXT,
-                wordCount INTEGER NOT NULL DEFAULT 0,
+                wordCount INTEGER NOT NULL DEFAULT 0 CHECK (wordCount >= 0),
                 importedAt TEXT NOT NULL,
                 lastReadAt TEXT,
                 groupId TEXT REFERENCES book_groups(id) ON DELETE SET NULL,
@@ -86,8 +86,8 @@ final class AppDatabase: @unchecked Sendable {
                 bookId TEXT PRIMARY KEY NOT NULL
                     REFERENCES books(id) ON DELETE CASCADE,
                 chapterId TEXT REFERENCES chapters(id) ON DELETE SET NULL,
-                chapterOffset INTEGER NOT NULL DEFAULT 0,
-                globalProgress REAL NOT NULL DEFAULT 0,
+                chapterOffset INTEGER NOT NULL DEFAULT 0 CHECK (chapterOffset >= 0),
+                globalProgress REAL NOT NULL DEFAULT 0 CHECK (globalProgress >= 0 AND globalProgress <= 1),
                 updatedAt TEXT NOT NULL
             )
             """)
@@ -99,9 +99,9 @@ final class AppDatabase: @unchecked Sendable {
                 id TEXT PRIMARY KEY NOT NULL,
                 bookId TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
                 title TEXT NOT NULL,
-                startOffset INTEGER NOT NULL,
-                endOffset INTEGER NOT NULL,
-                sortOrder INTEGER NOT NULL
+                startOffset INTEGER NOT NULL CHECK (startOffset >= 0),
+                endOffset INTEGER NOT NULL CHECK (endOffset >= startOffset),
+                sortOrder INTEGER NOT NULL CHECK (sortOrder >= 0)
             )
             """)
 
@@ -120,7 +120,7 @@ final class AppDatabase: @unchecked Sendable {
                 id TEXT PRIMARY KEY NOT NULL,
                 bookId TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
                 chapterId TEXT REFERENCES chapters(id) ON DELETE SET NULL,
-                offset INTEGER NOT NULL,
+                offset INTEGER NOT NULL CHECK (offset >= 0),
                 preview TEXT NOT NULL,
                 createdAt TEXT NOT NULL
             )
@@ -152,8 +152,8 @@ final class AppDatabase: @unchecked Sendable {
             try db.execute(sql: """
             CREATE TABLE filter_rules (
                 id TEXT PRIMARY KEY NOT NULL,
-                bookId TEXT REFERENCES books(id) ON DELETE CASCADE,
-                source TEXT NOT NULL,
+                bookId TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                source TEXT NOT NULL CHECK (length(trim(source)) > 0),
                 replacement TEXT,
                 createdAt TEXT NOT NULL
             )
@@ -169,7 +169,7 @@ final class AppDatabase: @unchecked Sendable {
                 id TEXT PRIMARY KEY NOT NULL,
                 bookId TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
                 chapterId TEXT REFERENCES chapters(id) ON DELETE SET NULL,
-                offset INTEGER NOT NULL,
+                offset INTEGER NOT NULL CHECK (offset >= 0),
                 readAt TEXT NOT NULL
             )
             """)
@@ -196,6 +196,7 @@ final class AppDatabase: @unchecked Sendable {
             try db.execute(sql: """
             ALTER TABLE chapters
             ADD COLUMN source TEXT NOT NULL DEFAULT 'pseudo'
+                CHECK (source IN ('regex', 'pseudo'))
             """)
         }
 
@@ -208,6 +209,207 @@ final class AppDatabase: @unchecked Sendable {
             try db.execute(sql: """
             CREATE INDEX books_contentHash_index
             ON books(contentHash)
+            """)
+        }
+
+        migrator.registerMigration("v4_add_data_bounds_guards") { db in
+            try db.execute(sql: """
+            UPDATE books
+            SET fileSize = 0
+            WHERE fileSize < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE books
+            SET wordCount = 0
+            WHERE wordCount < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_progress
+            SET chapterOffset = 0
+            WHERE chapterOffset < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_progress
+            SET globalProgress = 0
+            WHERE globalProgress < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_progress
+            SET globalProgress = 1
+            WHERE globalProgress > 1
+            """)
+
+            try db.execute(sql: """
+            UPDATE chapters
+            SET startOffset = 0
+            WHERE startOffset < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE chapters
+            SET endOffset = startOffset
+            WHERE endOffset < startOffset
+            """)
+
+            try db.execute(sql: """
+            UPDATE chapters
+            SET sortOrder = 0
+            WHERE sortOrder < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE chapters
+            SET source = 'pseudo'
+            WHERE source NOT IN ('regex', 'pseudo')
+            """)
+
+            try db.execute(sql: """
+            UPDATE bookmarks
+            SET offset = 0
+            WHERE offset < 0
+            """)
+
+            try db.execute(sql: """
+            DELETE FROM filter_rules
+            WHERE bookId IS NULL
+                OR length(trim(source)) = 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE filter_rules
+            SET source = trim(source)
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_history
+            SET offset = 0
+            WHERE offset < 0
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER books_bounds_insert
+            BEFORE INSERT ON books
+            WHEN NEW.fileSize < 0
+                OR NEW.wordCount < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid book bounds');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER books_bounds_update
+            BEFORE UPDATE OF fileSize, wordCount ON books
+            WHEN NEW.fileSize < 0
+                OR NEW.wordCount < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid book bounds');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER reading_progress_bounds_insert
+            BEFORE INSERT ON reading_progress
+            WHEN NEW.chapterOffset < 0
+                OR NEW.globalProgress < 0
+                OR NEW.globalProgress > 1
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid reading progress bounds');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER reading_progress_bounds_update
+            BEFORE UPDATE OF chapterOffset, globalProgress ON reading_progress
+            WHEN NEW.chapterOffset < 0
+                OR NEW.globalProgress < 0
+                OR NEW.globalProgress > 1
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid reading progress bounds');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER chapters_bounds_insert
+            BEFORE INSERT ON chapters
+            WHEN NEW.startOffset < 0
+                OR NEW.endOffset < NEW.startOffset
+                OR NEW.sortOrder < 0
+                OR NEW.source NOT IN ('regex', 'pseudo')
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid chapter bounds');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER chapters_bounds_update
+            BEFORE UPDATE OF startOffset, endOffset, sortOrder, source ON chapters
+            WHEN NEW.startOffset < 0
+                OR NEW.endOffset < NEW.startOffset
+                OR NEW.sortOrder < 0
+                OR NEW.source NOT IN ('regex', 'pseudo')
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid chapter bounds');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER bookmarks_bounds_insert
+            BEFORE INSERT ON bookmarks
+            WHEN NEW.offset < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid bookmark offset');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER bookmarks_bounds_update
+            BEFORE UPDATE OF offset ON bookmarks
+            WHEN NEW.offset < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid bookmark offset');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER filter_rules_bounds_insert
+            BEFORE INSERT ON filter_rules
+            WHEN NEW.bookId IS NULL
+                OR length(trim(NEW.source)) = 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid filter rule');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER filter_rules_bounds_update
+            BEFORE UPDATE OF bookId, source ON filter_rules
+            WHEN NEW.bookId IS NULL
+                OR length(trim(NEW.source)) = 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid filter rule');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER reading_history_bounds_insert
+            BEFORE INSERT ON reading_history
+            WHEN NEW.offset < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid reading history offset');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER reading_history_bounds_update
+            BEFORE UPDATE OF offset ON reading_history
+            WHEN NEW.offset < 0
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid reading history offset');
+            END
             """)
         }
 

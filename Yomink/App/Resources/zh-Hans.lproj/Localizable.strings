@@ -40,6 +40,8 @@
 "search.error.title" = "搜索失败";
 
 "bootstrap.error.message" = "初始化失败：%@";
+"bootstrap.loading.message" = "正在初始化...";
+"bootstrap.retry" = "重试初始化";
 
 "common.close" = "关闭";
 "common.back" = "返回";

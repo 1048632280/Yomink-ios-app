@@ -532,6 +532,9 @@ struct GRDBLibraryRepository: LibraryRepository {
     }
 
     func saveReadingProgress(_ progress: ReadingProgress) async throws {
+        let normalizedChapterOffset = max(progress.chapterOffset, 0)
+        let normalizedGlobalProgress = min(max(progress.globalProgress, 0), 1)
+
         try await database.writer.write { db in
             try db.execute(
                 sql: """
@@ -548,8 +551,8 @@ struct GRDBLibraryRepository: LibraryRepository {
                 arguments: [
                     progress.bookID.uuidString,
                     progress.chapterID?.uuidString,
-                    progress.chapterOffset,
-                    min(max(progress.globalProgress, 0), 1),
+                    normalizedChapterOffset,
+                    normalizedGlobalProgress,
                     DatabaseDateFormatter.string(from: Date())
                 ]
             )
@@ -786,6 +789,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             )
             let chapterID: String? = progressRow?["chapterId"]
             let chapterOffset: Int64 = progressRow?["chapterOffset"] ?? 0
+            let normalizedChapterOffset = max(chapterOffset, 0)
             let dateString = DatabaseDateFormatter.string(from: date)
 
             try db.execute(
@@ -809,7 +813,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                     UUID().uuidString,
                     id.uuidString,
                     chapterID,
-                    chapterOffset,
+                    normalizedChapterOffset,
                     dateString
                 ]
             )
@@ -817,15 +821,20 @@ struct GRDBLibraryRepository: LibraryRepository {
     }
 
     func insertImportedBook(_ draft: ImportedBookDraft) async throws -> Book {
+        let normalizedFileSize = max(draft.fileSize, 0)
+        let normalizedWordCount = max(draft.wordCount, 0)
+        let normalizedChapters = draft.chapters.enumerated().map { index, chapter in
+            Self.normalizedImportedChapter(chapter, fallbackSortOrder: index)
+        }
         let record = BookRecord(
             id: draft.id.uuidString,
             title: draft.title,
             author: draft.author,
             intro: draft.intro,
             fileName: draft.fileName,
-            fileSize: draft.fileSize,
+            fileSize: normalizedFileSize,
             encoding: draft.encoding,
-            wordCount: draft.wordCount,
+            wordCount: normalizedWordCount,
             importedAt: DatabaseDateFormatter.string(from: draft.importedAt),
             lastReadAt: nil,
             groupId: nil,
@@ -836,7 +845,7 @@ struct GRDBLibraryRepository: LibraryRepository {
         )
         let progress = ReadingProgressRecord(
             bookId: draft.id.uuidString,
-            chapterId: draft.chapters.first?.id.uuidString,
+            chapterId: normalizedChapters.first?.id.uuidString,
             chapterOffset: 0,
             globalProgress: 0,
             updatedAt: DatabaseDateFormatter.string(from: draft.importedAt)
@@ -844,7 +853,7 @@ struct GRDBLibraryRepository: LibraryRepository {
 
         return try await database.writer.write { db in
             try record.insert(db)
-            for chapter in draft.chapters {
+            for chapter in normalizedChapters {
                 try db.execute(
                     sql: """
                     INSERT INTO chapters (
@@ -871,9 +880,9 @@ struct GRDBLibraryRepository: LibraryRepository {
                 author: draft.author,
                 intro: draft.intro,
                 fileName: draft.fileName,
-                fileSize: draft.fileSize,
+                fileSize: normalizedFileSize,
                 encoding: draft.encoding,
-                wordCount: draft.wordCount,
+                wordCount: normalizedWordCount,
                 importedAt: draft.importedAt,
                 lastReadAt: nil,
                 groupID: nil,
@@ -923,6 +932,23 @@ struct GRDBLibraryRepository: LibraryRepository {
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_")
         return "%\(escaped)%"
+    }
+
+    private static func normalizedImportedChapter(
+        _ chapter: ImportedChapterDraft,
+        fallbackSortOrder: Int
+    ) -> ImportedChapterDraft {
+        let startOffset = max(chapter.startOffset, 0)
+        let endOffset = max(chapter.endOffset, startOffset)
+        let sortOrder = chapter.sortOrder >= 0 ? chapter.sortOrder : fallbackSortOrder
+        return ImportedChapterDraft(
+            id: chapter.id,
+            title: chapter.title,
+            startOffset: startOffset,
+            endOffset: endOffset,
+            sortOrder: sortOrder,
+            source: chapter.source
+        )
     }
 }
 

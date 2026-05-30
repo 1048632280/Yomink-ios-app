@@ -271,7 +271,7 @@ struct LibraryView: View {
         switch environment.bootstrapState {
         case let .ready(services):
             return services.libraryRepository
-        case .failed:
+        case .bootstrapping, .failed:
             return nil
         }
     }
@@ -280,7 +280,7 @@ struct LibraryView: View {
         switch environment.bootstrapState {
         case let .ready(services):
             return services.fileStore
-        case .failed:
+        case .bootstrapping, .failed:
             return nil
         }
     }
@@ -514,9 +514,27 @@ struct LibraryView: View {
     @ViewBuilder
     private var contentView: some View {
         switch environment.bootstrapState {
+        case .bootstrapping:
+            VStack(spacing: 12) {
+                ProgressView()
+                Text("bootstrap.loading.message")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                Spacer(minLength: 0)
+            }
         case let .failed(bootstrapError):
             VStack(spacing: 16) {
                 bootstrapErrorView(bootstrapError)
+                Button {
+                    environment.retryBootstrap()
+                } label: {
+                    Label {
+                        Text("bootstrap.retry")
+                    } icon: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+                .buttonStyle(.borderedProminent)
                 Spacer(minLength: 0)
             }
         case .ready:
@@ -733,6 +751,8 @@ struct LibraryView: View {
 
     private var bootstrapTaskID: String {
         switch environment.bootstrapState {
+        case .bootstrapping:
+            return "bootstrapping"
         case .ready:
             return "ready-\(selectedScope.settingsKey)"
         case let .failed(message):
