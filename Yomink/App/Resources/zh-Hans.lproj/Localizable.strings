@@ -1,12 +1,10 @@
 "app.title" = "Yomink";
-"library.title" = "书架";
 "library.sidebar.open" = "打开分组";
 "library.search.open" = "搜索";
 "library.add.open" = "添加";
 "library.drawer.close" = "关闭侧边栏";
 "library.empty.title" = "还没有导入书籍";
 "library.empty.message" = "导入 TXT 后，Yomink 会转换为 UTF-8 正文文件并保存在书架中。";
-"library.count" = "%d 本书";
 "library.viewMode.toggle" = "切换书架视图";
 "library.sort.menu" = "排序";
 "library.sort.lastReadAt" = "最近阅读";
@@ -53,7 +51,6 @@
 "common.cancel" = "取消";
 "common.save" = "保存";
 
-"add.title" = "添加";
 "add.import.file" = "从文件导入";
 "add.reading.history" = "足迹";
 "history.clear" = "清空";
@@ -144,9 +141,6 @@
 "groups.reorder" = "调整排序";
 "groups.error.title" = "分组操作失败";
 
-"reader.placeholder.title" = "阅读器核心容器";
-"reader.placeholder.message" = "UIKit 阅读器已接入分页、滚动、进度和阅读设置。";
-"reader.book.placeholder.message" = "导入链路已完成，正文文件：%@";
 "reader.loading" = "正在打开书籍...";
 "reader.close" = "返回书架";
 "reader.bookmark.add" = "添加书签";

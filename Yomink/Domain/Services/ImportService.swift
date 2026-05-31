@@ -13,14 +13,6 @@ struct ImportBookPreview: Equatable, Sendable {
     var title: String
     var author: String?
     var intro: String?
-
-    var metadata: ImportBookMetadata {
-        ImportBookMetadata(
-            title: title,
-            author: author,
-            intro: intro
-        )
-    }
 }
 
 final class ImportService {

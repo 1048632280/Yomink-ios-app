@@ -2631,8 +2631,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         String(
             format: NSLocalizedString("reader.progress.format", comment: ""),
             chapter.title,
-            NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(chapterProgress, 0), 1))) ?? "0%",
-            NumberFormatter.readerPercent.string(from: NSNumber(value: min(max(globalProgress, 0), 1))) ?? "0%"
+            ReadingProgressFormatter.percentString(from: chapterProgress),
+            ReadingProgressFormatter.percentString(from: globalProgress)
         )
     }
 
@@ -2642,9 +2642,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     ) -> String {
         String(
             format: NSLocalizedString("reader.progress.tooltip.format", comment: ""),
-            NumberFormatter.readerProgressTooltipPercent.string(
-                from: NSNumber(value: min(max(chapterProgress, 0), 1))
-            ) ?? "0.00%",
+            ReadingProgressFormatter.tooltipPercentString(from: chapterProgress),
             pageIndex + 1
         )
     }
@@ -2698,9 +2696,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             batteryState: UIDevice.current.batteryState,
             timeText: Self.widgetTimeFormatter.string(from: Date()),
             pageProgressText: "\(page.localPageIndex + 1)/\(max(page.chapterPageCount, 1))",
-            globalProgressText: NumberFormatter.readerPercent.string(
-                from: NSNumber(value: page.globalProgress)
-            ) ?? "0%"
+            globalProgressText: ReadingProgressFormatter.percentString(from: page.globalProgress)
         )
     }
 
@@ -4369,24 +4365,6 @@ extension UIViewController {
 struct ReaderContentTarget {
     let chapterID: UUID
     let offset: Int
-}
-
-private extension NumberFormatter {
-    static let readerPercent: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .percent
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 1
-        return formatter
-    }()
-
-    static let readerProgressTooltipPercent: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .percent
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        return formatter
-    }()
 }
 
 private final class ReaderProgressSlider: UISlider {

@@ -257,6 +257,173 @@ final class AppFileStoreDeletionStagingTests: XCTestCase {
     }
 }
 
+final class BookExportServiceTests: XCTestCase {
+    func testExportURLsDeduplicatesFileNamesForSameTitle() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            BookExportService.cleanupExportDirectory()
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let firstBook = try makeBook(title: "Same", content: "first", fileStore: fileStore)
+        let secondBook = try makeBook(title: "Same", content: "second", fileStore: fileStore)
+
+        let urls = try BookExportService.exportURLs(
+            for: [firstBook, secondBook],
+            fileStore: fileStore
+        )
+
+        XCTAssertEqual(urls.map(\.lastPathComponent), ["Same.txt", "Same 2.txt"])
+        XCTAssertEqual(try String(contentsOf: urls[0], encoding: .utf8), "first")
+        XCTAssertEqual(try String(contentsOf: urls[1], encoding: .utf8), "second")
+    }
+
+    private func makeBook(
+        title: String,
+        content: String,
+        fileStore: AppFileStore
+    ) throws -> Book {
+        let bookID = UUID()
+        let contentURL = fileStore.contentURL(for: bookID)
+        try FileManager.default.createDirectory(
+            at: fileStore.bookDirectoryURL(for: bookID),
+            withIntermediateDirectories: true
+        )
+        try Data(content.utf8).write(to: contentURL, options: .atomic)
+
+        return Book(
+            id: bookID,
+            title: title,
+            author: nil,
+            intro: nil,
+            fileName: contentURL.lastPathComponent,
+            fileSize: Int64(content.utf8.count),
+            encoding: "utf-8",
+            wordCount: content.count,
+            importedAt: Date(timeIntervalSince1970: 0),
+            lastReadAt: nil,
+            groupID: nil,
+            progressPercentage: 0,
+            contentHash: nil,
+            sourcePath: try fileStore.relativePath(for: contentURL)
+        )
+    }
+}
+
+final class ReadingHistoryLimitTests: XCTestCase {
+    func testFetchReadingHistoryReturnsEmptyWhenLimitIsNotPositive() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let bookID = UUID()
+
+        _ = try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: bookID,
+                title: "History",
+                author: nil,
+                intro: nil,
+                fileName: "history.txt",
+                fileSize: 10,
+                encoding: "utf-8",
+                wordCount: 2,
+                contentHash: "hash-\(UUID().uuidString)",
+                chapters: [],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "Books/\(bookID.uuidString.lowercased())/content.txt"
+            )
+        )
+        try await repository.markBookOpened(id: bookID, at: Date(timeIntervalSince1970: 1))
+
+        let positiveHistory = try await repository.fetchReadingHistory(limit: 1)
+        let zeroLimitHistory = try await repository.fetchReadingHistory(limit: 0)
+        let negativeLimitHistory = try await repository.fetchReadingHistory(limit: -1)
+
+        XCTAssertEqual(positiveHistory.count, 1)
+        XCTAssertTrue(zeroLimitHistory.isEmpty)
+        XCTAssertTrue(negativeLimitHistory.isEmpty)
+    }
+
+    func testPreviewReadingHistoryReturnsEmptyWhenLimitIsNotPositive() async throws {
+        let repository = PreviewLibraryRepository()
+
+        let positiveHistory = try await repository.fetchReadingHistory(limit: 1)
+        let zeroLimitHistory = try await repository.fetchReadingHistory(limit: 0)
+        let negativeLimitHistory = try await repository.fetchReadingHistory(limit: -1)
+
+        XCTAssertEqual(positiveHistory.count, 1)
+        XCTAssertTrue(zeroLimitHistory.isEmpty)
+        XCTAssertTrue(negativeLimitHistory.isEmpty)
+    }
+}
+
+final class BookSearchEscapingTests: XCTestCase {
+    func testSearchBooksTreatsPercentAndUnderscoreAsLiteralCharacters() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+
+        _ = try await insertBook(
+            title: "100% Real",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+        _ = try await insertBook(
+            title: "100x Real",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+        _ = try await insertBook(
+            title: "Under_score",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+        _ = try await insertBook(
+            title: "UnderXscore",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+
+        let percentResults = try await repository.searchBooks(
+            keyword: "100%",
+            sortOrder: .importedAt
+        )
+        let underscoreResults = try await repository.searchBooks(
+            keyword: "Under_",
+            sortOrder: .importedAt
+        )
+
+        XCTAssertEqual(percentResults.map(\.title), ["100% Real"])
+        XCTAssertEqual(underscoreResults.map(\.title), ["Under_score"])
+    }
+
+    private func insertBook(
+        title: String,
+        contentHash: String,
+        repository: GRDBLibraryRepository
+    ) async throws -> Book {
+        let bookID = UUID()
+        return try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: bookID,
+                title: title,
+                author: nil,
+                intro: nil,
+                fileName: "\(bookID.uuidString).txt",
+                fileSize: 10,
+                encoding: "utf-8",
+                wordCount: 2,
+                contentHash: contentHash,
+                chapters: [],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "Books/\(bookID.uuidString.lowercased())/content.txt"
+            )
+        )
+    }
+}
+
 final class ImportServiceDuplicateTests: XCTestCase {
     func testDuplicateImportDoesNotCreateSecondBookDirectory() async throws {
         let rootURL = FileManager.default.temporaryDirectory

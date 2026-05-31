@@ -49,11 +49,9 @@ final class AppEnvironment: ObservableObject {
                 atomically: true,
                 encoding: .utf8
             )
-            let database = try AppDatabase.inMemory()
             let repository = PreviewLibraryRepository()
             let services = AppServices(
                 fileStore: fileStore,
-                database: database,
                 libraryRepository: repository,
                 importService: ImportService(
                     fileStore: fileStore,
@@ -113,7 +111,6 @@ final class AppEnvironment: ObservableObject {
         let repository = GRDBLibraryRepository(database: database)
         return AppServices(
             fileStore: fileStore,
-            database: database,
             libraryRepository: repository,
             importService: ImportService(
                 fileStore: fileStore,

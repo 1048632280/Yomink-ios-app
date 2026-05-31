@@ -1557,9 +1557,7 @@ private struct RandomPickerBookCard: View {
     }
 
     private var progressText: String {
-        NumberFormatter.dedicatedReadingProgress.string(
-            from: NSNumber(value: min(max(book.progressPercentage, 0), 1))
-        ) ?? "0%"
+        ReadingProgressFormatter.percentString(from: book.progressPercentage)
     }
 }
 
@@ -1801,7 +1799,12 @@ struct StorageManagementPage: View {
             await reloadStorage()
         }
         .sheet(item: $exportPayload) { payload in
-            ActivityPresenter(activityItems: [payload.url as Any])
+            ActivityPresenter(
+                activityItems: [payload.url as Any],
+                onComplete: {
+                    BookExportService.cleanupExportDirectory()
+                }
+            )
         }
         .alert(
             errorTitle,
@@ -1844,7 +1847,7 @@ struct StorageManagementPage: View {
 
     private func exportBook(_ book: Book) {
         do {
-            let url = try StorageBookExporter.exportURL(for: book, fileStore: fileStore)
+            let url = try BookExportService.exportURL(for: book, fileStore: fileStore)
             exportPayload = StorageExportPayload(url: url)
         } catch {
             errorTitle = "library.export.error.title"
@@ -2368,7 +2371,7 @@ private struct StorageBookDetailPage: View {
 
             StorageBookDetailRow(
                 title: "storage.book.progress",
-                value: StorageProgressFormatter.string(from: bookUsage.progressPercentage)
+                value: ReadingProgressFormatter.percentString(from: bookUsage.progressPercentage)
             )
             SettingsPageStyle.separator
 
@@ -2844,32 +2847,33 @@ private enum StorageDateFormatter {
     }()
 }
 
-private enum StorageProgressFormatter {
-    static func string(from progress: Double) -> String {
-        NumberFormatter.dedicatedReadingProgress.string(
-            from: NSNumber(value: min(max(progress, 0), 1))
-        ) ?? "0%"
-    }
-}
-
-private enum StorageBookExporter {
+enum BookExportService {
     static func exportURL(for book: Book, fileStore: AppFileStore) throws -> URL {
+        let urls = try exportURLs(for: [book], fileStore: fileStore)
+        return urls[0]
+    }
+
+    static func exportURLs(for books: [Book], fileStore: AppFileStore) throws -> [URL] {
         cleanupExportDirectory()
         let exportDirectory = exportDirectoryURL()
         try FileManager.default.createDirectory(
             at: exportDirectory,
             withIntermediateDirectories: true
         )
-        let contentURL = try fileStore.url(forRelativePath: book.sourcePath)
-        let destinationURL = exportDirectory.appendingPathComponent(
-            exportFileName(for: book, contentURL: contentURL),
-            isDirectory: false
-        )
-        try FileManager.default.copyItem(at: contentURL, to: destinationURL)
-        return destinationURL
+
+        var usedFileNames: Set<String> = []
+        return try books.map { book in
+            let contentURL = try fileStore.url(forRelativePath: book.sourcePath)
+            let destinationURL = exportDirectory.appendingPathComponent(
+                exportFileName(for: book, contentURL: contentURL, usedFileNames: &usedFileNames),
+                isDirectory: false
+            )
+            try FileManager.default.copyItem(at: contentURL, to: destinationURL)
+            return destinationURL
+        }
     }
 
-    private static func cleanupExportDirectory() {
+    static func cleanupExportDirectory() {
         try? FileManager.default.removeItem(at: exportDirectoryURL())
     }
 
@@ -2878,14 +2882,25 @@ private enum StorageBookExporter {
             .appendingPathComponent("YominkExports", isDirectory: true)
     }
 
-    private static func exportFileName(for book: Book, contentURL: URL) -> String {
+    private static func exportFileName(
+        for book: Book,
+        contentURL: URL,
+        usedFileNames: inout Set<String>
+    ) -> String {
         let rawTitle = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
         let baseName = sanitizedExportFileName(
             rawTitle.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : rawTitle
         )
         let contentExtension = contentURL.pathExtension
         let fileExtension = contentExtension.isEmpty ? "txt" : contentExtension
-        return "\(baseName).\(fileExtension)"
+        var candidate = "\(baseName).\(fileExtension)"
+        var suffix = 2
+        while usedFileNames.contains(candidate) {
+            candidate = "\(baseName) \(suffix).\(fileExtension)"
+            suffix += 1
+        }
+        usedFileNames.insert(candidate)
+        return candidate
     }
 
     private static func sanitizedExportFileName(_ fileName: String) -> String {
@@ -3909,16 +3924,6 @@ private enum DedicatedPageStyle {
             .fill(Color(.systemGray4))
             .frame(height: 0.5)
     }
-}
-
-private extension NumberFormatter {
-    static let dedicatedReadingProgress: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .percent
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 1
-        return formatter
-    }()
 }
 
 private extension String {

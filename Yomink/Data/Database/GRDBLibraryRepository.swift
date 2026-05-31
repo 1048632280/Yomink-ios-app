@@ -9,6 +9,47 @@ struct GRDBLibraryRepository: LibraryRepository {
         category: "AppSettings"
     )
 
+    private enum BookQuery {
+        static let selectedColumns = "books.*, COALESCE(reading_progress.globalProgress, 0) AS progressPercentage"
+        static let progressJoin = """
+        LEFT JOIN reading_progress
+            ON reading_progress.bookId = books.id
+        """
+
+        static func booksSQL(
+            where whereClause: String? = nil,
+            sortOrder: LibrarySettings.SortOrder? = nil,
+            limit: Int? = nil
+        ) -> String {
+            var sql = """
+            SELECT
+                \(selectedColumns)
+            FROM books
+            \(progressJoin)
+            """
+
+            if let whereClause = whereClause {
+                sql += "\nWHERE \(whereClause)"
+            }
+            if let sortOrder = sortOrder {
+                sql += "\n\(orderClause(for: sortOrder))"
+            }
+            if let limit = limit {
+                sql += "\nLIMIT \(limit)"
+            }
+            return sql
+        }
+
+        static func orderClause(for sortOrder: LibrarySettings.SortOrder) -> String {
+            switch sortOrder {
+            case .lastReadAt:
+                return "ORDER BY books.lastReadAt DESC, books.importedAt DESC"
+            case .importedAt:
+                return "ORDER BY books.importedAt DESC"
+            }
+        }
+    }
+
     init(database: AppDatabase) {
         self.database = database
     }
@@ -22,17 +63,11 @@ struct GRDBLibraryRepository: LibraryRepository {
         return try await database.writer.read { db in
             guard let row = try Row.fetchOne(
                 db,
-                sql: """
-                SELECT
-                    books.*,
-                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
-                FROM books
-                LEFT JOIN reading_progress
-                    ON reading_progress.bookId = books.id
-                WHERE books.contentHash = ?
-                ORDER BY books.importedAt DESC
-                LIMIT 1
-                """,
+                sql: BookQuery.booksSQL(
+                    where: "books.contentHash = ?",
+                    sortOrder: .importedAt,
+                    limit: 1
+                ),
                 arguments: [normalizedHash]
             ) else {
                 return nil
@@ -46,36 +81,26 @@ struct GRDBLibraryRepository: LibraryRepository {
         sortOrder: LibrarySettings.SortOrder = .lastReadAt
     ) async throws -> [Book] {
         try await database.writer.read { db in
-            var sql = """
-            SELECT
-                books.*,
-                COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
-            FROM books
-            LEFT JOIN reading_progress
-                ON reading_progress.bookId = books.id
-            """
+            let whereClause: String?
             let arguments: StatementArguments
 
             switch scope {
             case .all:
+                whereClause = nil
                 arguments = []
-                break
             case .ungrouped:
-                sql += "\nWHERE books.groupId IS NULL"
+                whereClause = "books.groupId IS NULL"
                 arguments = []
             case let .group(groupID):
-                sql += "\nWHERE books.groupId = ?"
+                whereClause = "books.groupId = ?"
                 arguments = [groupID.uuidString]
             }
 
-            switch sortOrder {
-            case .lastReadAt:
-                sql += "\nORDER BY books.lastReadAt DESC, books.importedAt DESC"
-            case .importedAt:
-                sql += "\nORDER BY books.importedAt DESC"
-            }
-
-            let rows = try Row.fetchAll(db, sql: sql, arguments: arguments)
+            let rows = try Row.fetchAll(
+                db,
+                sql: BookQuery.booksSQL(where: whereClause, sortOrder: sortOrder),
+                arguments: arguments
+            )
             return rows.compactMap(Book.init(row:))
         }
     }
@@ -90,26 +115,12 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
 
         return try await database.writer.read { db in
-            var sql = """
-            SELECT
-                books.*,
-                COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
-            FROM books
-            LEFT JOIN reading_progress
-                ON reading_progress.bookId = books.id
-            WHERE books.title LIKE ? ESCAPE '\\'
-            """
-
-            switch sortOrder {
-            case .lastReadAt:
-                sql += "\nORDER BY books.lastReadAt DESC, books.importedAt DESC"
-            case .importedAt:
-                sql += "\nORDER BY books.importedAt DESC"
-            }
-
             let rows = try Row.fetchAll(
                 db,
-                sql: sql,
+                sql: BookQuery.booksSQL(
+                    where: #"books.title LIKE ? ESCAPE '\'"#,
+                    sortOrder: sortOrder
+                ),
                 arguments: [Self.likePattern(for: normalizedKeyword)]
             )
             return rows.compactMap(Book.init(row:))
@@ -293,15 +304,7 @@ struct GRDBLibraryRepository: LibraryRepository {
 
             guard let row = try Row.fetchOne(
                 db,
-                sql: """
-                SELECT
-                    books.*,
-                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
-                FROM books
-                LEFT JOIN reading_progress
-                    ON reading_progress.bookId = books.id
-                WHERE books.id = ?
-                """,
+                sql: BookQuery.booksSQL(where: "books.id = ?"),
                 arguments: [id.uuidString]
             ),
                 let book = Book(row: row)
@@ -560,6 +563,10 @@ struct GRDBLibraryRepository: LibraryRepository {
     }
 
     func fetchReadingHistory(limit: Int) async throws -> [ReadingHistoryItem] {
+        guard limit > 0 else {
+            return []
+        }
+
         try await database.writer.read { db in
             let rows = try Row.fetchAll(
                 db,
@@ -569,15 +576,13 @@ struct GRDBLibraryRepository: LibraryRepository {
                     reading_history.offset,
                     reading_history.readAt,
                     chapters.title AS chapterTitle,
-                    books.*,
-                    COALESCE(reading_progress.globalProgress, 0) AS progressPercentage
+                    \(BookQuery.selectedColumns)
                 FROM reading_history
                 INNER JOIN books
                     ON books.id = reading_history.bookId
                 LEFT JOIN chapters
                     ON chapters.id = reading_history.chapterId
-                LEFT JOIN reading_progress
-                    ON reading_progress.bookId = books.id
+                \(BookQuery.progressJoin)
                 WHERE reading_history.id = (
                     SELECT latest.id
                     FROM reading_history latest
@@ -588,7 +593,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                 ORDER BY reading_history.readAt DESC
                 LIMIT ?
                 """,
-                arguments: [max(limit, 1)]
+                arguments: [limit]
             )
             return rows.compactMap(ReadingHistoryItem.init(row:))
         }

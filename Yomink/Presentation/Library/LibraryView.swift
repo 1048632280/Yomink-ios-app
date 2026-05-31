@@ -149,7 +149,12 @@ struct LibraryView: View {
                 .frame(width: 0, height: 0)
             }
             .sheet(item: $exportPayload) { payload in
-                ActivityPresenter(activityItems: payload.urls.map { $0 as Any })
+                ActivityPresenter(
+                    activityItems: payload.urls.map { $0 as Any },
+                    onComplete: {
+                        BookExportService.cleanupExportDirectory()
+                    }
+                )
             }
             .onChange(of: isImportPickerPresented) { isPresented in
                 guard case let .ready(services) = environment.bootstrapState else {
@@ -559,8 +564,6 @@ struct LibraryView: View {
     private var bookListView: some View {
         List(viewModel.books) { book in
             BookShelfItemButton(
-                book: book,
-                isSelecting: viewModel.isSelecting,
                 isSelected: viewModel.selectedBookIDs.contains(book.id),
                 content: {
                     BookRowView(
@@ -607,8 +610,6 @@ struct LibraryView: View {
             ) {
                 ForEach(viewModel.books) { book in
                     BookShelfItemButton(
-                        book: book,
-                        isSelecting: viewModel.isSelecting,
                         isSelected: viewModel.selectedBookIDs.contains(book.id),
                         content: {
                             BookGridItemView(
@@ -1117,9 +1118,17 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
 
 struct ActivityPresenter: UIViewControllerRepresentable {
     let activityItems: [Any]
+    var onComplete: () -> Void = {}
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        let viewController = UIActivityViewController(
+            activityItems: activityItems,
+            applicationActivities: nil
+        )
+        viewController.completionWithItemsHandler = { _, _, _, _ in
+            onComplete()
+        }
+        return viewController
     }
 
     func updateUIViewController(
@@ -1412,63 +1421,10 @@ private final class LibraryViewModel: ObservableObject {
     }
 
     func exportURLs(fileStore: AppFileStore) throws -> [URL] {
-        cleanupExportDirectory()
-        let exportDirectory = exportDirectoryURL()
-        try FileManager.default.createDirectory(
-            at: exportDirectory,
-            withIntermediateDirectories: true
+        try BookExportService.exportURLs(
+            for: books.filter { selectedBookIDs.contains($0.id) },
+            fileStore: fileStore
         )
-        var usedFileNames: Set<String> = []
-        return try books
-            .filter { selectedBookIDs.contains($0.id) }
-            .map { book in
-                let contentURL = try fileStore.url(forRelativePath: book.sourcePath)
-                let fileName = exportFileName(for: book, contentURL: contentURL, usedFileNames: &usedFileNames)
-                let destinationURL = exportDirectory.appendingPathComponent(fileName, isDirectory: false)
-                try FileManager.default.copyItem(at: contentURL, to: destinationURL)
-                return destinationURL
-            }
-    }
-
-    func cleanupExportDirectory() {
-        try? FileManager.default.removeItem(at: exportDirectoryURL())
-    }
-
-    private func exportDirectoryURL() -> URL {
-        FileManager.default.temporaryDirectory
-            .appendingPathComponent("YominkExports", isDirectory: true)
-    }
-
-    private func exportFileName(
-        for book: Book,
-        contentURL: URL,
-        usedFileNames: inout Set<String>
-    ) -> String {
-        let rawTitle = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let baseName = sanitizedExportFileName(
-            rawTitle.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : rawTitle
-        )
-        let contentExtension = contentURL.pathExtension
-        let fileExtension = contentExtension.isEmpty ? "txt" : contentExtension
-        var candidate = "\(baseName).\(fileExtension)"
-        var suffix = 2
-        while usedFileNames.contains(candidate) {
-            candidate = "\(baseName) \(suffix).\(fileExtension)"
-            suffix += 1
-        }
-        usedFileNames.insert(candidate)
-        return candidate
-    }
-
-    private func sanitizedExportFileName(_ fileName: String) -> String {
-        let illegalCharacters = CharacterSet(charactersIn: "/\\?%*|\"<>:")
-            .union(.newlines)
-            .union(.controlCharacters)
-        let sanitized = fileName
-            .components(separatedBy: illegalCharacters)
-            .joined(separator: "_")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return sanitized.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : sanitized
     }
 
     private func prepareImportPreview(
@@ -1534,8 +1490,6 @@ private struct BookShelfItemButton<Content: View>: View {
     private let longPressAction: () -> Void
 
     init(
-        book: Book,
-        isSelecting: Bool,
         isSelected: Bool,
         @ViewBuilder content: @escaping () -> Content,
         action: @escaping () -> Void,
@@ -1633,7 +1587,7 @@ private struct BookRowView: View {
     }
 
     private var progressText: String {
-        NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
+        ReadingProgressFormatter.percentString(from: clampedProgress)
     }
 }
 
@@ -1687,7 +1641,7 @@ private struct BookGridItemView: View {
     }
 
     private var progressText: String {
-        let progress = NumberFormatter.readingProgress.string(from: NSNumber(value: clampedProgress)) ?? "0%"
+        let progress = ReadingProgressFormatter.percentString(from: clampedProgress)
         return String(
             format: NSLocalizedString("library.grid.progress", comment: ""),
             progress
@@ -1765,7 +1719,7 @@ private struct PreciseProgressBar: View {
     }
 
     private var progressText: String {
-        NumberFormatter.readingProgress.string(from: NSNumber(value: min(max(value, 0), 1))) ?? "0%"
+        ReadingProgressFormatter.percentString(from: value)
     }
 }
 
@@ -1804,12 +1758,32 @@ private extension String {
     }
 }
 
-private extension NumberFormatter {
-    static let readingProgress: NumberFormatter = {
+enum ReadingProgressFormatter {
+    static func percentString(from progress: Double) -> String {
+        percentFormatter.string(from: NSNumber(value: clamped(progress))) ?? "0%"
+    }
+
+    static func tooltipPercentString(from progress: Double) -> String {
+        tooltipPercentFormatter.string(from: NSNumber(value: clamped(progress))) ?? "0.00%"
+    }
+
+    private static func clamped(_ progress: Double) -> Double {
+        min(max(progress, 0), 1)
+    }
+
+    private static let percentFormatter: NumberFormatter = {
         let formatter = NumberFormatter()
         formatter.numberStyle = .percent
         formatter.minimumFractionDigits = 0
         formatter.maximumFractionDigits = 1
+        return formatter
+    }()
+
+    private static let tooltipPercentFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .percent
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
         return formatter
     }()
 }

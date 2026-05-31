@@ -2,16 +2,16 @@
 
 Yomink is a native iOS TXT reader targeting iOS 15.5 and later. The app is designed as a local-only, lightweight reader with SwiftUI for product screens, UIKit for the high-performance reading surface, GRDB for SQLite storage, and the iOS file system for book content.
 
-## Phase 0
+## Current Status
 
-The repository currently contains the initial iOS project scaffold:
+The app currently includes the core local reader workflow:
 
-- `Yomink.xcodeproj`
-- SwiftUI app entry point
-- UIKit reader host placeholder
-- GRDB database bootstrap and first migration
-- App sandbox file-store bootstrap
-- GitHub Actions workflow for producing an unsigned IPA
+- TXT import with UTF-8/GBK/GB2312 decoding and local file storage.
+- Library list/grid views, grouping, sorting, multi-select move/delete/export, and global title search.
+- UIKit reader surface with paged/scroll modes, progress, bookmarks, catalog, content search, filters, reading settings, and auto-read controls.
+- Storage management, reading history, random picker, and app bootstrap retry handling.
+- GRDB-backed local persistence and XCTest coverage for the highest-risk import, reader, database, and storage paths.
+- GitHub Actions workflow for Debug simulator build/test and unsigned Release IPA archive.
 
 ## Build On GitHub Actions
 

@@ -630,7 +630,7 @@ Library/Application Support/
 - 设置变化后页面正确重排。
 - 章节跳转准确。
 
-暂缓记录：
+历史暂缓记录（后续修复以 `docs/review-notes.md` 为准）：
 
 - 滚动模式下字体/主题切换仍依赖 `UITextView` 在主线程完成当前章节布局；若真机 Instruments 显示设置切换阻塞帧，再评估异步 attributed string 构造或 TextKit 方向优化。
 - 当前左右平移翻页先采用旧页滑出后切换内容的 MVP 动画；后续需要补双文本层/双视图过渡，让新页连续进入，再考虑仿真翻页效果。
@@ -722,7 +722,7 @@ Library/Application Support/
 - 低端设备 iOS 15.5 兼容验证。
 - Instruments 内存、CPU、Energy 诊断。
 - 清理无用权限和网络能力。
-- 收口 Phase 3 暂缓记录中的优化项：滚动模式 attributedText 构造异步化、字号 leading-edge debounce、滚动期间预取冷却。（补：之前 review 留下的 TODO）
+- 回归评估 Phase 3 历史暂缓项：滚动模式 attributedText 构造异步化、字号 leading-edge debounce、滚动期间预取冷却。（当前以 `docs/review-notes.md` 中的性能/结构条目跟踪，不再作为临时待办）
 - FTS5 中文分词在真机上的索引耗时与召回评估，如不达标则把按章节扫描 fallback 路径转正。（补：§5.5）
 
 验收：

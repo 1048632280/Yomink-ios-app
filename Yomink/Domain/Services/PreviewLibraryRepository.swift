@@ -192,6 +192,10 @@ struct PreviewLibraryRepository: LibraryRepository {
     func saveReadingProgress(_ progress: ReadingProgress) async throws {}
 
     func fetchReadingHistory(limit: Int) async throws -> [ReadingHistoryItem] {
+        guard limit > 0 else {
+            return []
+        }
+
         let books = try await fetchBooks(scope: .all, sortOrder: .lastReadAt)
         return books.prefix(limit).map { book in
             ReadingHistoryItem(
