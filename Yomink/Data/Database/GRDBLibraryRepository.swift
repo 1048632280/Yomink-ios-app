@@ -567,7 +567,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             return []
         }
 
-        try await database.writer.read { db in
+        return try await database.writer.read { db in
             let rows = try Row.fetchAll(
                 db,
                 sql: """
