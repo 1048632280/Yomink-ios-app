@@ -252,7 +252,7 @@ struct ChapterIndexer: Sendable {
         for character in text {
             let characterByteCount = String(character).utf8.count
             if currentOffset > chapterStartOffset,
-               currentOffset + characterByteCount - chapterStartOffset > pseudoChapterByteLength {
+               currentOffset + characterByteCount - chapterStartOffset > oversizedChapterByteLength {
                 let sortOrder = chapters.count
                 chapters.append(
                     chapter(
@@ -282,11 +282,11 @@ struct ChapterIndexer: Sendable {
         return chapters
     }
 
-    private static func splitOversizedChapters(
+    static func splitOversizedChapters(
         _ chapters: [ImportedChapterDraft],
         in text: String
     ) -> [ImportedChapterDraft] {
-        guard chapters.contains(where: { $0.endOffset - $0.startOffset > pseudoChapterByteLength }) else {
+        guard chapters.contains(where: { $0.endOffset - $0.startOffset > oversizedChapterByteLength }) else {
             return chapters
         }
 
@@ -306,7 +306,7 @@ struct ChapterIndexer: Sendable {
             var startIndex = textIndex
             var partIndex = 0
 
-            while chapter.endOffset - startOffset > pseudoChapterByteLength {
+            while chapter.endOffset - startOffset > oversizedChapterByteLength {
                 let (endIndex, endOffset) = Self.chunkEnd(
                     from: startIndex,
                     startOffset: startOffset,
@@ -370,14 +370,14 @@ struct ChapterIndexer: Sendable {
                 break
             }
             if offset > startOffset,
-               nextOffset - startOffset > pseudoChapterByteLength {
+               nextOffset - startOffset > oversizedChapterByteLength {
                 break
             }
 
             offset = nextOffset
             index = text.index(after: index)
 
-            if offset - startOffset >= pseudoChapterByteLength {
+            if offset - startOffset >= oversizedChapterByteLength {
                 break
             }
         }
@@ -483,7 +483,7 @@ struct ChapterIndexer: Sendable {
     private static let prefaceTitle = NSLocalizedString("chapter.preface", comment: "")
     private static let maximumTitleCharacterCount = 50
     private static let minimumNumberedTitleCandidates = 3
-    private static let pseudoChapterByteLength = 128 * 1_024
+    static let oversizedChapterByteLength = 128 * 1_024
     private static let normalizedWhitespaceScalar = UnicodeScalar(" ")
     private static let lineFeedScalarValue: UInt32 = 0x000A
     private static let carriageReturnScalarValue: UInt32 = 0x000D

@@ -1855,8 +1855,18 @@ struct StorageManagementPage: View {
     private func deleteBook(_ book: Book) {
         Task {
             do {
-                try fileStore.removeBookFiles(id: book.id)
-                try await repository.deleteBook(id: book.id)
+                let stagedURL = try fileStore.stageBookFilesForDeletion(id: book.id)
+                do {
+                    try await repository.deleteBook(id: book.id)
+                    if let stagedURL {
+                        try? fileStore.removeStagedBookFiles(stagedURL)
+                    }
+                } catch {
+                    if let stagedURL {
+                        try? fileStore.restoreStagedBookFiles(stagedURL, id: book.id)
+                    }
+                    throw error
+                }
                 await reloadStorage()
                 await MainActor.run {
                     onLibraryChanged()

@@ -66,9 +66,9 @@ final class AppFileStore: @unchecked Sendable {
         self.databaseURL = databaseURL
     }
 
-    static func preview() throws -> AppFileStore {
+    static func preview(rootURL: URL? = nil) throws -> AppFileStore {
         let fileManager = FileManager.default
-        let rootURL = fileManager.temporaryDirectory
+        let rootURL = rootURL ?? fileManager.temporaryDirectory
             .appendingPathComponent("YominkPreview", isDirectory: true)
         let booksURL = rootURL.appendingPathComponent("Books", isDirectory: true)
         let supportURL = rootURL.appendingPathComponent("ApplicationSupport", isDirectory: true)
@@ -99,6 +99,77 @@ final class AppFileStore: @unchecked Sendable {
 
     func removeBookFiles(id bookID: UUID) throws {
         try Self.removeBookFiles(at: bookDirectoryURL(for: bookID))
+    }
+
+    func stageBookFilesForDeletion(id bookID: UUID) throws -> URL? {
+        let bookDirectoryURL = bookDirectoryURL(for: bookID)
+        guard FileManager.default.fileExists(atPath: bookDirectoryURL.path) else {
+            return nil
+        }
+
+        let deletionStagingURL = deletionStagingURL()
+        try FileManager.default.createDirectory(
+            at: deletionStagingURL,
+            withIntermediateDirectories: true
+        )
+
+        let stagedURL = deletionStagingURL.appendingPathComponent(
+            "\(bookID.uuidString.lowercased())-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.moveItem(at: bookDirectoryURL, to: stagedURL)
+        return stagedURL
+    }
+
+    func restoreStagedBookFiles(_ stagedURL: URL, id bookID: UUID) throws {
+        let bookDirectoryURL = bookDirectoryURL(for: bookID)
+        if FileManager.default.fileExists(atPath: bookDirectoryURL.path) {
+            try FileManager.default.removeItem(at: bookDirectoryURL)
+        }
+        try FileManager.default.moveItem(at: stagedURL, to: bookDirectoryURL)
+        try removeEmptyDeletionStagingDirectoryIfNeeded()
+    }
+
+    func removeStagedBookFiles(_ stagedURL: URL) throws {
+        guard FileManager.default.fileExists(atPath: stagedURL.path) else {
+            return
+        }
+        try FileManager.default.removeItem(at: stagedURL)
+        try removeEmptyDeletionStagingDirectoryIfNeeded()
+    }
+
+    func recoverStagedBookDeletions(validBookIDs: Set<UUID>) throws {
+        let stagingURL = deletionStagingURL()
+        guard FileManager.default.fileExists(atPath: stagingURL.path) else {
+            return
+        }
+
+        let stagedURLs = try FileManager.default.contentsOfDirectory(
+            at: stagingURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        )
+        for stagedURL in stagedURLs {
+            let values = try stagedURL.resourceValues(forKeys: [.isDirectoryKey])
+            guard values.isDirectory == true else {
+                try removeStagedBookFiles(stagedURL)
+                continue
+            }
+
+            guard let bookID = Self.bookID(fromStagedDeletionURL: stagedURL) else {
+                try removeStagedBookFiles(stagedURL)
+                continue
+            }
+
+            let bookDirectoryURL = bookDirectoryURL(for: bookID)
+            if validBookIDs.contains(bookID),
+               !FileManager.default.fileExists(atPath: bookDirectoryURL.path) {
+                try restoreStagedBookFiles(stagedURL, id: bookID)
+            } else {
+                try removeStagedBookFiles(stagedURL)
+            }
+        }
+
+        try removeEmptyDeletionStagingDirectoryIfNeeded()
     }
 
     static func removeBookFiles(at bookDirectoryURL: URL) throws {
@@ -154,5 +225,33 @@ final class AppFileStore: @unchecked Sendable {
             at: applicationSupportURL,
             withIntermediateDirectories: true
         )
+    }
+
+    private func deletionStagingURL() -> URL {
+        booksURL.appendingPathComponent(".deleting", isDirectory: true)
+    }
+
+    private func removeEmptyDeletionStagingDirectoryIfNeeded() throws {
+        let stagingURL = deletionStagingURL()
+        guard FileManager.default.fileExists(atPath: stagingURL.path) else {
+            return
+        }
+
+        let contents = try FileManager.default.contentsOfDirectory(
+            at: stagingURL,
+            includingPropertiesForKeys: nil
+        )
+        if contents.isEmpty {
+            try FileManager.default.removeItem(at: stagingURL)
+        }
+    }
+
+    private static func bookID(fromStagedDeletionURL stagedURL: URL) -> UUID? {
+        let name = stagedURL.lastPathComponent
+        guard name.count > 36 else {
+            return nil
+        }
+        let idString = String(name.prefix(36))
+        return UUID(uuidString: idString)
     }
 }

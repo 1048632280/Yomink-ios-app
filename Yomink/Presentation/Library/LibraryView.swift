@@ -1373,9 +1373,35 @@ private final class LibraryViewModel: ObservableObject {
 
         Task {
             do {
-                for id in ids {
-                    try fileStore.removeBookFiles(id: id)
-                    try await repository.deleteBook(id: id)
+                var stagedFiles: [(id: UUID, stagedURL: URL?)] = []
+                do {
+                    for id in ids {
+                        let stagedURL = try fileStore.stageBookFilesForDeletion(id: id)
+                        stagedFiles.append((id: id, stagedURL: stagedURL))
+                    }
+                } catch {
+                    for entry in stagedFiles.reversed() {
+                        if let stagedURL = entry.stagedURL {
+                            try? fileStore.restoreStagedBookFiles(stagedURL, id: entry.id)
+                        }
+                    }
+                    throw error
+                }
+
+                do {
+                    try await repository.deleteBooks(ids: Set(ids))
+                    for entry in stagedFiles {
+                        if let stagedURL = entry.stagedURL {
+                            try? fileStore.removeStagedBookFiles(stagedURL)
+                        }
+                    }
+                } catch {
+                    for entry in stagedFiles.reversed() {
+                        if let stagedURL = entry.stagedURL {
+                            try? fileStore.restoreStagedBookFiles(stagedURL, id: entry.id)
+                        }
+                    }
+                    throw error
                 }
                 exitSelection()
                 await loadBooks(repository: repository, scope: scope)

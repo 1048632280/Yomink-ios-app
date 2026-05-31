@@ -68,19 +68,21 @@ final class ImportService {
         from sourceURL: URL,
         metadata: ImportBookMetadata? = nil
     ) async throws -> ImportResult {
-        let preparedImport = try await prepareImport(
+        let candidate = try await prepareImportCandidate(
             from: sourceURL,
             metadata: metadata
         )
+        try Task.checkCancellation()
+
+        if let existingBook = try await findExistingBook(
+            contentHash: candidate.contentHash
+        ) {
+            return .duplicate(existingBook)
+        }
+
+        let preparedImport = try await finalizeImport(from: candidate)
         do {
             try Task.checkCancellation()
-            if let existingBook = try await findExistingBook(
-                contentHash: preparedImport.draft.contentHash
-            ) {
-                cleanUpFailedImport(preparedImport, deletingDatabaseRecord: false)
-                return .duplicate(existingBook)
-            }
-
             let book = try await libraryRepository.insertImportedBook(preparedImport.draft)
             try Task.checkCancellation()
             return .imported(book)
@@ -95,10 +97,12 @@ final class ImportService {
         from sourceURL: URL,
         metadata: ImportBookMetadata? = nil
     ) async throws -> Book {
-        let preparedImport = try await prepareImport(
+        let candidate = try await prepareImportCandidate(
             from: sourceURL,
             metadata: metadata
         )
+        try Task.checkCancellation()
+        let preparedImport = try await finalizeImport(from: candidate)
         do {
             try Task.checkCancellation()
             let book = try await libraryRepository.insertImportedBook(preparedImport.draft)
@@ -146,13 +150,12 @@ final class ImportService {
         return nil
     }
 
-    private func prepareImport(
+    private func prepareImportCandidate(
         from sourceURL: URL,
         metadata: ImportBookMetadata?
-    ) async throws -> PreparedImport {
+    ) async throws -> ImportPreparationCandidate {
         let fileStore = fileStore
         let decoder = decoder
-        let chapterIndexer = chapterIndexer
         let sourceDisplayPath = sourceURL.path
         let sourceFileName = sourceURL.lastPathComponent
         let sourceTitle = Self.normalizedTitle(
@@ -176,34 +179,57 @@ final class ImportService {
             }
 
             let bookID = UUID()
-            let bookDirectoryURL = fileStore.bookDirectoryURL(for: bookID)
             let contentURL = fileStore.contentURL(for: bookID)
             let contentPath = try fileStore.relativePath(for: contentURL)
 
+            let data: Data
+            do {
+                data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+            } catch {
+                throw ImportError.cannotReadFile
+            }
+            try Task.checkCancellation()
+            let decodedText = try decoder.decode(data)
+            let utf8Data = Data(decodedText.text.utf8)
+            let contentHash = Self.sha256Hex(for: utf8Data)
+
+            return ImportPreparationCandidate(
+                bookID: bookID,
+                bookDirectoryURL: fileStore.bookDirectoryURL(for: bookID),
+                contentURL: contentURL,
+                contentPath: contentPath,
+                sourceDisplayPath: sourceDisplayPath,
+                sourceFileName: sourceFileName,
+                sourceTitle: sourceTitle,
+                sourceAuthor: sourceAuthor,
+                sourceIntro: sourceIntro,
+                decodedText: decodedText,
+                utf8Data: utf8Data,
+                contentHash: contentHash
+            )
+        }.value
+    }
+
+    private func finalizeImport(
+        from candidate: ImportPreparationCandidate
+    ) async throws -> PreparedImport {
+        let chapterIndexer = chapterIndexer
+        return try await Task.detached(priority: .userInitiated) {
+            let fileManager = FileManager.default
+
             do {
                 try fileManager.createDirectory(
-                    at: bookDirectoryURL,
+                    at: candidate.bookDirectoryURL,
                     withIntermediateDirectories: true
                 )
             } catch {
-                try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
                 throw ImportError.cannotReadFile
             }
 
             do {
                 try Task.checkCancellation()
-                let data: Data
                 do {
-                    data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
-                } catch {
-                    throw ImportError.cannotReadFile
-                }
-                try Task.checkCancellation()
-                let decodedText = try decoder.decode(data)
-                let utf8Data = Data(decodedText.text.utf8)
-                let contentHash = Self.sha256Hex(for: utf8Data)
-                do {
-                    try utf8Data.write(to: contentURL, options: .atomic)
+                    try candidate.utf8Data.write(to: candidate.contentURL, options: .atomic)
                 } catch {
                     throw ImportError.cannotWriteUTF8Content
                 }
@@ -211,26 +237,26 @@ final class ImportService {
 
                 let importedAt = Date()
                 let draft = ImportedBookDraft(
-                    id: bookID,
-                    title: sourceTitle,
-                    author: sourceAuthor,
-                    intro: sourceIntro,
-                    fileName: sourceFileName,
-                    fileSize: Int64(utf8Data.count),
-                    encoding: decodedText.encodingName,
-                    wordCount: Self.visibleCharacterCount(in: decodedText.text),
-                    contentHash: contentHash,
-                    chapters: chapterIndexer.indexChapters(for: decodedText.text),
+                    id: candidate.bookID,
+                    title: candidate.sourceTitle,
+                    author: candidate.sourceAuthor,
+                    intro: candidate.sourceIntro,
+                    fileName: candidate.sourceFileName,
+                    fileSize: Int64(candidate.utf8Data.count),
+                    encoding: candidate.decodedText.encodingName,
+                    wordCount: Self.visibleCharacterCount(in: candidate.decodedText.text),
+                    contentHash: candidate.contentHash,
+                    chapters: chapterIndexer.indexChapters(for: candidate.decodedText.text),
                     importedAt: importedAt,
-                    importSourceDisplayPath: sourceDisplayPath,
-                    sourcePath: contentPath
+                    importSourceDisplayPath: candidate.sourceDisplayPath,
+                    sourcePath: candidate.contentPath
                 )
                 return PreparedImport(
                     draft: draft,
-                    bookDirectoryURL: bookDirectoryURL
+                    bookDirectoryURL: candidate.bookDirectoryURL
                 )
             } catch {
-                try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
+                try? AppFileStore.removeBookFiles(at: candidate.bookDirectoryURL)
                 throw error
             }
         }.value
@@ -345,4 +371,19 @@ final class ImportService {
 private struct PreparedImport {
     let draft: ImportedBookDraft
     let bookDirectoryURL: URL
+}
+
+private struct ImportPreparationCandidate: Sendable {
+    let bookID: UUID
+    let bookDirectoryURL: URL
+    let contentURL: URL
+    let contentPath: String
+    let sourceDisplayPath: String
+    let sourceFileName: String
+    let sourceTitle: String
+    let sourceAuthor: String?
+    let sourceIntro: String?
+    let decodedText: TXTTextDecoder.DecodedText
+    let utf8Data: Data
+    let contentHash: String
 }
