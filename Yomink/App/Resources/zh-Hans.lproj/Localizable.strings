@@ -291,3 +291,4 @@
 "import.error.unsupportedEncoding" = "暂不支持这个文件的编码。请使用 UTF-8、GBK 或 GB2312 TXT。";
 "import.error.cannotReadFile" = "无法读取或复制这个文件。";
 "import.error.cannotWriteUTF8Content" = "无法写入 UTF-8 正文文件。";
+"import.error.emptyContent" = "文件内容为空，无法导入。";

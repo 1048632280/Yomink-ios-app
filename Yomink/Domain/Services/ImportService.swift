@@ -21,10 +21,11 @@ final class ImportService {
         case duplicate(Book)
     }
 
-    enum ImportError: LocalizedError {
+    enum ImportError: LocalizedError, Equatable {
         case unsupportedFileType
         case cannotReadFile
         case cannotWriteUTF8Content
+        case emptyContent
 
         var errorDescription: String? {
             switch self {
@@ -34,6 +35,8 @@ final class ImportService {
                 return NSLocalizedString("import.error.cannotReadFile", comment: "")
             case .cannotWriteUTF8Content:
                 return NSLocalizedString("import.error.cannotWriteUTF8Content", comment: "")
+            case .emptyContent:
+                return NSLocalizedString("import.error.emptyContent", comment: "")
             }
         }
     }
@@ -79,7 +82,7 @@ final class ImportService {
             try Task.checkCancellation()
             return .imported(book)
         } catch {
-            cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
+            await cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
             throw error
         }
     }
@@ -101,7 +104,7 @@ final class ImportService {
             try Task.checkCancellation()
             return book
         } catch {
-            cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
+            await cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
             throw error
         }
     }
@@ -182,6 +185,9 @@ final class ImportService {
             }
             try Task.checkCancellation()
             let decodedText = try decoder.decode(data)
+            guard Self.containsVisibleContent(decodedText.text) else {
+                throw ImportError.emptyContent
+            }
             let utf8Data = Data(decodedText.text.utf8)
             let contentHash = Self.sha256Hex(for: utf8Data)
 
@@ -339,7 +345,7 @@ final class ImportService {
     private func cleanUpFailedImport(
         _ preparedImport: PreparedImport,
         deletingDatabaseRecord: Bool
-    ) {
+    ) async {
         let bookID = preparedImport.draft.id
         let bookDirectoryURL = preparedImport.bookDirectoryURL
         try? AppFileStore.removeBookFiles(at: bookDirectoryURL)
@@ -349,14 +355,17 @@ final class ImportService {
         }
 
         let libraryRepository = libraryRepository
-        _ = Task.detached {
-            // Cancellation can arrive after DB insertion; cleanup must not inherit it.
+        await Task.detached {
             try? await libraryRepository.deleteBook(id: bookID)
-        }
+        }.value
     }
 
     private static func visibleCharacterCount(in text: String) -> Int {
         text.unicodeScalars.lazy.filter { !$0.properties.isWhitespace }.count
+    }
+
+    private static func containsVisibleContent(_ text: String) -> Bool {
+        text.unicodeScalars.contains { !$0.properties.isWhitespace }
     }
 }
 

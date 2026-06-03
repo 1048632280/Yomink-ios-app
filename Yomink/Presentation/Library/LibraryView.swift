@@ -152,7 +152,7 @@ struct LibraryView: View {
                 ActivityPresenter(
                     activityItems: payload.urls.map { $0 as Any },
                     onComplete: {
-                        BookExportService.cleanupExportDirectory()
+                        BookExportService.cleanupExportDirectory(payload.directoryURL)
                     }
                 )
             }
@@ -843,11 +843,14 @@ struct LibraryView: View {
         }
 
         do {
-            let urls = try viewModel.exportURLs(fileStore: fileStore)
-            guard !urls.isEmpty else {
+            let export = try viewModel.exportURLs(fileStore: fileStore)
+            guard !export.urls.isEmpty else {
                 return
             }
-            exportPayload = ExportPayload(urls: urls)
+            exportPayload = ExportPayload(
+                urls: export.urls,
+                directoryURL: export.directoryURL
+            )
             viewModel.exitSelection()
         } catch {
             viewModel.showError(error, title: "library.export.error.title")
@@ -1420,7 +1423,7 @@ private final class LibraryViewModel: ObservableObject {
         }
     }
 
-    func exportURLs(fileStore: AppFileStore) throws -> [URL] {
+    func exportURLs(fileStore: AppFileStore) throws -> BookExportService.ExportedFiles {
         try BookExportService.exportURLs(
             for: books.filter { selectedBookIDs.contains($0.id) },
             fileStore: fileStore
@@ -2176,6 +2179,7 @@ private enum SearchBarStyle {
 private struct ExportPayload: Identifiable, Equatable {
     let id = UUID()
     let urls: [URL]
+    let directoryURL: URL
 }
 
 private struct PendingBookDeletion: Identifiable {

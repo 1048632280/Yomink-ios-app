@@ -438,6 +438,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pageTask?.cancel()
         saveTask?.cancel()
         settingsSaveTask?.cancel()
+        bookmarkTask?.cancel()
+        openHistoryTask?.cancel()
         autoReadDisplayLink?.invalidate()
         autoReadDisplayLink = nil
     }
@@ -2782,7 +2784,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         saveTask?.cancel()
         let repository = repository
-        Task { [weak self] in
+        saveTask = Task { [weak self] in
             do {
                 try await repository.saveReadingProgress(progress)
                 await MainActor.run {
@@ -2802,7 +2804,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         settingsSaveTask?.cancel()
         let settings = readerSettings.normalized
         let repository = repository
-        Task { [weak self] in
+        settingsSaveTask = Task { [weak self] in
             do {
                 try await repository.saveReaderSettings(settings)
                 await MainActor.run {
@@ -6352,8 +6354,8 @@ private enum CollectionReaderPaginator {
             let pageStartOffset: Int
             let pageEndOffset: Int
             if isPlaceholderPage {
-                pageStartOffset = chapterOffset
-                pageEndOffset = chapter.byteLength
+                pageStartOffset = min(chapterOffset, max(chapter.byteLength - 1, 0))
+                pageEndOffset = max(pageStartOffset + 1, chapter.byteLength)
             } else {
                 pageStartOffset = filtered.originalByteOffset(
                     atDisplayUTF16Index: page.startDisplayUTF16Index
@@ -6364,10 +6366,12 @@ private enum CollectionReaderPaginator {
                 )
             }
             let startAbsoluteOffset = chapter.startOffset + pageStartOffset
-            let endAbsoluteOffset = min(
-                chapter.startOffset + pageEndOffset,
-                chapter.endOffset
-            )
+            let endAbsoluteOffset = isPlaceholderPage
+                ? max(chapter.startOffset + pageEndOffset, startAbsoluteOffset + 1)
+                : min(
+                    chapter.startOffset + pageEndOffset,
+                    chapter.endOffset
+                )
             let pageIndex = forcedPageIndex ?? localPageIndex
             let pageText = page.attributedText.string
             let totalByteLength = max(chapters.last?.endOffset ?? chapter.endOffset, 1)

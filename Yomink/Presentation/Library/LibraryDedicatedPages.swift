@@ -1802,7 +1802,7 @@ struct StorageManagementPage: View {
             ActivityPresenter(
                 activityItems: [payload.url as Any],
                 onComplete: {
-                    BookExportService.cleanupExportDirectory()
+                    BookExportService.cleanupExportDirectory(payload.directoryURL)
                 }
             )
         }
@@ -1847,8 +1847,11 @@ struct StorageManagementPage: View {
 
     private func exportBook(_ book: Book) {
         do {
-            let url = try BookExportService.exportURL(for: book, fileStore: fileStore)
-            exportPayload = StorageExportPayload(url: url)
+            let export = try BookExportService.exportURL(for: book, fileStore: fileStore)
+            exportPayload = StorageExportPayload(
+                url: export.url,
+                directoryURL: export.directoryURL
+            )
         } catch {
             errorTitle = "library.export.error.title"
             errorMessage = error.localizedDescription
@@ -2848,13 +2851,22 @@ private enum StorageDateFormatter {
 }
 
 enum BookExportService {
-    static func exportURL(for book: Book, fileStore: AppFileStore) throws -> URL {
-        let urls = try exportURLs(for: [book], fileStore: fileStore)
-        return urls[0]
+    struct ExportedFiles {
+        let urls: [URL]
+        let directoryURL: URL
     }
 
-    static func exportURLs(for books: [Book], fileStore: AppFileStore) throws -> [URL] {
-        cleanupExportDirectory()
+    struct ExportedFile {
+        let url: URL
+        let directoryURL: URL
+    }
+
+    static func exportURL(for book: Book, fileStore: AppFileStore) throws -> ExportedFile {
+        let export = try exportURLs(for: [book], fileStore: fileStore)
+        return ExportedFile(url: export.urls[0], directoryURL: export.directoryURL)
+    }
+
+    static func exportURLs(for books: [Book], fileStore: AppFileStore) throws -> ExportedFiles {
         let exportDirectory = exportDirectoryURL()
         try FileManager.default.createDirectory(
             at: exportDirectory,
@@ -2862,7 +2874,7 @@ enum BookExportService {
         )
 
         var usedFileNames: Set<String> = []
-        return try books.map { book in
+        let urls = try books.map { book in
             let contentURL = try fileStore.url(forRelativePath: book.sourcePath)
             let destinationURL = exportDirectory.appendingPathComponent(
                 exportFileName(for: book, contentURL: contentURL, usedFileNames: &usedFileNames),
@@ -2871,15 +2883,16 @@ enum BookExportService {
             try FileManager.default.copyItem(at: contentURL, to: destinationURL)
             return destinationURL
         }
+        return ExportedFiles(urls: urls, directoryURL: exportDirectory)
     }
 
-    static func cleanupExportDirectory() {
-        try? FileManager.default.removeItem(at: exportDirectoryURL())
+    static func cleanupExportDirectory(_ directoryURL: URL) {
+        try? FileManager.default.removeItem(at: directoryURL)
     }
 
     private static func exportDirectoryURL() -> URL {
         FileManager.default.temporaryDirectory
-            .appendingPathComponent("YominkExports", isDirectory: true)
+            .appendingPathComponent("YominkExports-\(UUID().uuidString)", isDirectory: true)
     }
 
     private static func exportFileName(
@@ -2918,6 +2931,7 @@ enum BookExportService {
 private struct StorageExportPayload: Identifiable, Equatable {
     let id = UUID()
     let url: URL
+    let directoryURL: URL
 }
 
 private extension View {

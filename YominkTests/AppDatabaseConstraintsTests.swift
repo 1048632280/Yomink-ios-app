@@ -384,21 +384,50 @@ final class BookExportServiceTests: XCTestCase {
             .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
         let fileStore = try AppFileStore.preview(rootURL: rootURL)
         defer {
-            BookExportService.cleanupExportDirectory()
             try? FileManager.default.removeItem(at: rootURL)
         }
 
         let firstBook = try makeBook(title: "Same", content: "first", fileStore: fileStore)
         let secondBook = try makeBook(title: "Same", content: "second", fileStore: fileStore)
 
-        let urls = try BookExportService.exportURLs(
+        let export = try BookExportService.exportURLs(
             for: [firstBook, secondBook],
             fileStore: fileStore
         )
+        defer {
+            BookExportService.cleanupExportDirectory(export.directoryURL)
+        }
+        let urls = export.urls
 
         XCTAssertEqual(urls.map(\.lastPathComponent), ["Same.txt", "Same 2.txt"])
         XCTAssertEqual(try String(contentsOf: urls[0], encoding: .utf8), "first")
         XCTAssertEqual(try String(contentsOf: urls[1], encoding: .utf8), "second")
+    }
+
+    func testSeparateExportsUseIndependentDirectories() throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let book = try makeBook(title: "Export", content: "body", fileStore: fileStore)
+        let firstExport = try BookExportService.exportURLs(for: [book], fileStore: fileStore)
+        let secondExport = try BookExportService.exportURLs(for: [book], fileStore: fileStore)
+        defer {
+            BookExportService.cleanupExportDirectory(firstExport.directoryURL)
+            BookExportService.cleanupExportDirectory(secondExport.directoryURL)
+        }
+
+        XCTAssertNotEqual(firstExport.directoryURL, secondExport.directoryURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: firstExport.urls[0].path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondExport.urls[0].path))
+
+        BookExportService.cleanupExportDirectory(firstExport.directoryURL)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: firstExport.urls[0].path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: secondExport.urls[0].path))
     }
 
     private func makeBook(
@@ -591,5 +620,41 @@ final class ImportServiceDuplicateTests: XCTestCase {
 
         XCTAssertEqual(books.count, 1)
         XCTAssertEqual(bookDirectories.count, 1)
+    }
+
+    func testEmptyTextImportIsRejectedWithoutCreatingBookDirectory() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let database = try AppDatabase(fileStore: fileStore)
+        let repository = GRDBLibraryRepository(database: database)
+        let importService = ImportService(
+            fileStore: fileStore,
+            libraryRepository: repository
+        )
+        let sourceURL = rootURL.appendingPathComponent("empty.txt", isDirectory: false)
+        try Data(" \n\t ".utf8).write(to: sourceURL, options: .atomic)
+
+        do {
+            _ = try await importService.importBookCheckingDuplicate(from: sourceURL)
+            XCTFail("Empty text import should fail")
+        } catch let error as ImportService.ImportError {
+            XCTAssertEqual(error, .emptyContent)
+        }
+
+        let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
+        let bookDirectories = try FileManager.default.contentsOfDirectory(
+            at: fileStore.booksURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ).filter { url in
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            return values?.isDirectory == true && url.lastPathComponent != ".deleting"
+        }
+
+        XCTAssertTrue(books.isEmpty)
+        XCTAssertTrue(bookDirectories.isEmpty)
     }
 }
