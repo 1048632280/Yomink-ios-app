@@ -6,15 +6,66 @@ struct Book: Identifiable, Equatable, Sendable {
     var author: String?
     var intro: String?
     var fileName: String
-    var fileSize: Int64
+    var fileSize: Int64 {
+        didSet {
+            fileSize = max(fileSize, 0)
+        }
+    }
     var encoding: String?
-    var wordCount: Int
+    var wordCount: Int {
+        didSet {
+            wordCount = max(wordCount, 0)
+        }
+    }
     var importedAt: Date
     var lastReadAt: Date?
     var groupID: UUID?
-    var progressPercentage: Double
+    var progressPercentage: Double {
+        didSet {
+            progressPercentage = Self.normalizedProgress(progressPercentage)
+        }
+    }
     var contentHash: String?
     var sourcePath: String
+
+    init(
+        id: UUID,
+        title: String,
+        author: String?,
+        intro: String?,
+        fileName: String,
+        fileSize: Int64,
+        encoding: String?,
+        wordCount: Int,
+        importedAt: Date,
+        lastReadAt: Date?,
+        groupID: UUID?,
+        progressPercentage: Double,
+        contentHash: String?,
+        sourcePath: String
+    ) {
+        self.id = id
+        self.title = title
+        self.author = author
+        self.intro = intro
+        self.fileName = fileName
+        self.fileSize = max(fileSize, 0)
+        self.encoding = encoding
+        self.wordCount = max(wordCount, 0)
+        self.importedAt = importedAt
+        self.lastReadAt = lastReadAt
+        self.groupID = groupID
+        self.progressPercentage = Self.normalizedProgress(progressPercentage)
+        self.contentHash = contentHash
+        self.sourcePath = sourcePath
+    }
+
+    private static func normalizedProgress(_ value: Double) -> Double {
+        guard value.isFinite else {
+            return 0
+        }
+        return min(max(value, 0), 1)
+    }
 }
 
 enum LibraryScope: Equatable, Sendable {

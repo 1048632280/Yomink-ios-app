@@ -22,6 +22,10 @@
 		6B3A34F5F32A4F6D9B390101 /* GRDBLibraryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B3A34F5F32A4F6D9B390100 /* GRDBLibraryRepository.swift */; };
 		79E0FD2A01A443B2A7E70101 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 79E0FD2A01A443B2A7E70102 /* Localizable.strings */; };
 		30D7C7B0C8EF4E1BAA23AC01 /* ReadingProgressRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D7C7B0C8EF4E1BAA23AC00 /* ReadingProgressRecord.swift */; };
+		A24F0C9D3B7A4F2F9C1D0101 /* Chapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0100 /* Chapter.swift */; };
+		A24F0C9D3B7A4F2F9C1D0201 /* Bookmark.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0200 /* Bookmark.swift */; };
+		A24F0C9D3B7A4F2F9C1D0301 /* TextFilterRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0300 /* TextFilterRule.swift */; };
+		A24F0C9D3B7A4F2F9C1D0401 /* ReaderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0400 /* ReaderSettings.swift */; };
 		44F43894BCA349048B94BE01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44F43894BCA349048B94BE00 /* Assets.xcassets */; };
 		4F67893D9CA54B9192994201 /* LibraryDedicatedPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F67893D9CA54B9192994200 /* LibraryDedicatedPages.swift */; };
 		5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5687B1CC7E93495893E4D400 /* ReadingProgress.swift */; };
@@ -59,6 +63,10 @@
 		6B3A34F5F32A4F6D9B390100 /* GRDBLibraryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDBLibraryRepository.swift; sourceTree = "<group>"; };
 		79E0FD2A01A443B2A7E70100 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = Resources/zh-Hans.lproj/Localizable.strings; sourceTree = "<group>"; };
 		30D7C7B0C8EF4E1BAA23AC00 /* ReadingProgressRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgressRecord.swift; sourceTree = "<group>"; };
+		A24F0C9D3B7A4F2F9C1D0100 /* Chapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chapter.swift; sourceTree = "<group>"; };
+		A24F0C9D3B7A4F2F9C1D0200 /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
+		A24F0C9D3B7A4F2F9C1D0300 /* TextFilterRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFilterRule.swift; sourceTree = "<group>"; };
+		A24F0C9D3B7A4F2F9C1D0400 /* ReaderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettings.swift; sourceTree = "<group>"; };
 		44F43894BCA349048B94BE00 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		4F67893D9CA54B9192994200 /* LibraryDedicatedPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDedicatedPages.swift; sourceTree = "<group>"; };
 		5687B1CC7E93495893E4D400 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
@@ -105,6 +113,7 @@
 				E1350E99DB3744C987F0F000 /* YominkApp.swift */,
 				0647F539C60C4F0A9FF45E00 /* AppEnvironment.swift */,
 				34EF6FA4C7EA4BC4A7FC0100 /* AppServices.swift */,
+				7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */,
 				D4DFEFA8E01247F58D8C2100 /* Info.plist */,
 				44F43894BCA349048B94BE00 /* Assets.xcassets */,
 				79E0FD2A01A443B2A7E70102 /* Localizable.strings */,
@@ -222,6 +231,10 @@
 				B606D742219548DD8E4D7D00 /* Book.swift */,
 				C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */,
 				5687B1CC7E93495893E4D400 /* ReadingProgress.swift */,
+				A24F0C9D3B7A4F2F9C1D0100 /* Chapter.swift */,
+				A24F0C9D3B7A4F2F9C1D0200 /* Bookmark.swift */,
+				A24F0C9D3B7A4F2F9C1D0300 /* TextFilterRule.swift */,
+				A24F0C9D3B7A4F2F9C1D0400 /* ReaderSettings.swift */,
 				D2F4B31F390D4524B2507900 /* ImportedBookDraft.swift */,
 			);
 			path = Models;
@@ -262,7 +275,6 @@
 				19DE8485AE524998BBFE7B00 /* ReaderHostView.swift */,
 				1FA3D8E4177B4B7CAB7C7D00 /* ReaderMoreViewControllers.swift */,
 				5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */,
-				7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */,
 			);
 			path = Reader;
 			sourceTree = "<group>";
@@ -408,6 +420,10 @@
 				B606D742219548DD8E4D7D01 /* Book.swift in Sources */,
 				C4F0DD38C39448AE8E0BA101 /* BookGroup.swift in Sources */,
 				5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */,
+				A24F0C9D3B7A4F2F9C1D0101 /* Chapter.swift in Sources */,
+				A24F0C9D3B7A4F2F9C1D0201 /* Bookmark.swift in Sources */,
+				A24F0C9D3B7A4F2F9C1D0301 /* TextFilterRule.swift in Sources */,
+				A24F0C9D3B7A4F2F9C1D0401 /* ReaderSettings.swift in Sources */,
 				D2F4B31F390D4524B2507901 /* ImportedBookDraft.swift in Sources */,
 				1355AB9E42B44F6C84F4A101 /* LibraryRepository.swift in Sources */,
 				5C91D62936DB4A23B5099401 /* ImportService.swift in Sources */,

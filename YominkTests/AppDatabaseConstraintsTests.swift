@@ -209,6 +209,127 @@ final class AppDatabaseConstraintsTests: XCTestCase {
     }
 }
 
+final class DomainModelBoundsTests: XCTestCase {
+    func testBookProgressAndSizeBoundsAreNormalized() {
+        let id = UUID()
+        var book = Book(
+            id: id,
+            title: "Bounds",
+            author: nil,
+            intro: nil,
+            fileName: "bounds.txt",
+            fileSize: -10,
+            encoding: "utf-8",
+            wordCount: -2,
+            importedAt: Date(timeIntervalSince1970: 0),
+            lastReadAt: nil,
+            groupID: nil,
+            progressPercentage: 1.5,
+            contentHash: nil,
+            sourcePath: "Books/\(id.uuidString.lowercased())/content.txt"
+        )
+
+        XCTAssertEqual(book.fileSize, 0)
+        XCTAssertEqual(book.wordCount, 0)
+        XCTAssertEqual(book.progressPercentage, 1)
+
+        book.fileSize = -1
+        book.wordCount = -1
+        book.progressPercentage = .nan
+
+        XCTAssertEqual(book.fileSize, 0)
+        XCTAssertEqual(book.wordCount, 0)
+        XCTAssertEqual(book.progressPercentage, 0)
+    }
+
+    func testReaderOffsetsAndProgressBoundsAreNormalized() {
+        let bookID = UUID()
+        var progress = ReadingProgress(
+            bookID: bookID,
+            chapterID: nil,
+            chapterOffset: -1,
+            globalProgress: 2
+        )
+        var chapter = Chapter(
+            id: UUID(),
+            bookID: bookID,
+            title: "Chapter",
+            startOffset: -10,
+            endOffset: -20,
+            sortOrder: -1,
+            source: .pseudo
+        )
+        var bookmark = Bookmark(
+            id: UUID(),
+            bookID: bookID,
+            chapterID: nil,
+            offset: -1,
+            preview: "",
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(progress.chapterOffset, 0)
+        XCTAssertEqual(progress.globalProgress, 1)
+        XCTAssertEqual(chapter.startOffset, 0)
+        XCTAssertEqual(chapter.endOffset, 0)
+        XCTAssertEqual(chapter.sortOrder, 0)
+        XCTAssertEqual(bookmark.offset, 0)
+
+        progress.chapterOffset = -5
+        progress.globalProgress = -Double.infinity
+        chapter.startOffset = 50
+        chapter.endOffset = 10
+        chapter.sortOrder = -3
+        bookmark.offset = -7
+
+        XCTAssertEqual(progress.chapterOffset, 0)
+        XCTAssertEqual(progress.globalProgress, 0)
+        XCTAssertEqual(chapter.startOffset, 50)
+        XCTAssertEqual(chapter.endOffset, 50)
+        XCTAssertEqual(chapter.sortOrder, 0)
+        XCTAssertEqual(bookmark.offset, 0)
+    }
+
+    func testImportedDraftBoundsAreNormalized() {
+        let bookID = UUID()
+        let chapter = ImportedChapterDraft(
+            id: UUID(),
+            title: "Chapter",
+            startOffset: -10,
+            endOffset: -20,
+            sortOrder: -1,
+            source: .regex
+        )
+        var draft = ImportedBookDraft(
+            id: bookID,
+            title: "Draft",
+            author: nil,
+            intro: nil,
+            fileName: "draft.txt",
+            fileSize: -10,
+            encoding: "utf-8",
+            wordCount: -2,
+            contentHash: "hash",
+            chapters: [chapter],
+            importedAt: Date(timeIntervalSince1970: 0),
+            importSourceDisplayPath: nil,
+            sourcePath: "Books/\(bookID.uuidString.lowercased())/content.txt"
+        )
+
+        XCTAssertEqual(draft.fileSize, 0)
+        XCTAssertEqual(draft.wordCount, 0)
+        XCTAssertEqual(draft.chapters[0].startOffset, 0)
+        XCTAssertEqual(draft.chapters[0].endOffset, 0)
+        XCTAssertEqual(draft.chapters[0].sortOrder, 0)
+
+        draft.fileSize = -1
+        draft.wordCount = -1
+
+        XCTAssertEqual(draft.fileSize, 0)
+        XCTAssertEqual(draft.wordCount, 0)
+    }
+}
+
 final class AppFileStoreDeletionStagingTests: XCTestCase {
     func testStagedDeletionRecoveryRestoresFilesForExistingBook() throws {
         let rootURL = FileManager.default.temporaryDirectory
