@@ -110,3 +110,16 @@ rg -n "deleteBook|deleteBooks|saveReadingProgress|Task\\.detached|fatalError" Yo
 - `fatalError("init(coder:) has not been implemented")` 均位于 `@available(*, unavailable)` 的 UIKit coder 初始化器，属于常规写法，暂不作为问题。
 - SwiftPM 仅发现 GRDB 7.10.0，当前数据库层实际使用，未发现明显无用依赖。
 - `docs/review-notes.md` 处于删除状态，本次按用户要求忽略。
+
+## 第一批必须修进展
+
+| 来源 | 问题 | 当前状态 |
+| --- | --- | --- |
+| P-001/R-001 | 阅读器最后进度/设置保存不可追踪 | 已修复，待 Xcode 验证 |
+| D-002/DM-002/P-002/R-002 | 空 TXT、0 字节章节、过滤后空章节可能打不开 | 已修复，待 Xcode 验证 |
+| DM-001/P-006 | 导入取消后的清理可能造成 DB/文件不一致 | 已修复，待 Xcode 验证 |
+| D-001 | 并发重复导入缺少数据库唯一约束 | 已修复，待 Xcode 验证 |
+| R-003/P-003 | 导出共用临时目录互相删除 | 已修复，待 Xcode 验证 |
+| A-001 | HostingControllerHomeIndicatorBridge class list 越界风险 | 已修复，待 Xcode 验证 |
+| P-005 | 过滤规则删除失败被吞，UI/DB 分叉 | 已修复，待 Xcode 验证 |
+| DM-003 | 旧书查重遇到坏 sourcePath 会阻断新导入 | 已修复，待 Xcode 验证 |

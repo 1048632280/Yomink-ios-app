@@ -81,6 +81,13 @@ final class ImportService {
             let book = try await libraryRepository.insertImportedBook(preparedImport.draft)
             try Task.checkCancellation()
             return .imported(book)
+        } catch let error as LibraryRepositoryError {
+            if case .duplicateBookContent(let existingBook) = error {
+                await cleanUpFailedImport(preparedImport, deletingDatabaseRecord: false)
+                return .duplicate(existingBook)
+            }
+            await cleanUpFailedImport(preparedImport, deletingDatabaseRecord: false)
+            throw error
         } catch {
             await cleanUpFailedImport(preparedImport, deletingDatabaseRecord: error is CancellationError)
             throw error
@@ -135,7 +142,9 @@ final class ImportService {
             sortOrder: .importedAt
         )
         for book in books where book.contentHash == nil {
-            let url = try fileStore.url(forRelativePath: book.sourcePath)
+            guard let url = try? fileStore.url(forRelativePath: book.sourcePath) else {
+                continue
+            }
             guard let hash = try? await contentHashForReadableFile(at: url),
                   hash == contentHash else {
                 continue

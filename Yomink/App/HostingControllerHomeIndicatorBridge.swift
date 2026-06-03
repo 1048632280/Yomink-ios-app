@@ -46,7 +46,7 @@ enum HostingControllerHomeIndicatorBridge {
             classCount
         )
 
-        for i in 0..<Int(actualCount) {
+        for i in 0..<min(Int(actualCount), Int(classCount)) {
             let cls: AnyClass = buffer[i]
             guard isHostingControllerClass(cls) else { continue }
             inject(into: cls)

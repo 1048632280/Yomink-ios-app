@@ -50,29 +50,33 @@ struct GRDBLibraryRepository: LibraryRepository {
         }
     }
 
-    init(database: AppDatabase) {
-        self.database = database
-    }
-
-    func findBook(contentHash: String) async throws -> Book? {
+    private static func fetchBook(_ db: Database, contentHash: String) throws -> Book? {
         let normalizedHash = contentHash.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalizedHash.isEmpty else {
             return nil
         }
 
+        guard let row = try Row.fetchOne(
+            db,
+            sql: BookQuery.booksSQL(
+                where: "books.contentHash = ?",
+                sortOrder: .importedAt,
+                limit: 1
+            ),
+            arguments: [normalizedHash]
+        ) else {
+            return nil
+        }
+        return Book(row: row)
+    }
+
+    init(database: AppDatabase) {
+        self.database = database
+    }
+
+    func findBook(contentHash: String) async throws -> Book? {
         return try await database.writer.read { db in
-            guard let row = try Row.fetchOne(
-                db,
-                sql: BookQuery.booksSQL(
-                    where: "books.contentHash = ?",
-                    sortOrder: .importedAt,
-                    limit: 1
-                ),
-                arguments: [normalizedHash]
-            ) else {
-                return nil
-            }
-            return Book(row: row)
+            try Self.fetchBook(db, contentHash: contentHash)
         }
     }
 
@@ -831,33 +835,52 @@ struct GRDBLibraryRepository: LibraryRepository {
         let normalizedChapters = draft.chapters.enumerated().map { index, chapter in
             Self.normalizedImportedChapter(chapter, fallbackSortOrder: index)
         }
-        let record = BookRecord(
-            id: draft.id.uuidString,
-            title: draft.title,
-            author: draft.author,
-            intro: draft.intro,
-            fileName: draft.fileName,
-            fileSize: normalizedFileSize,
-            encoding: draft.encoding,
-            wordCount: normalizedWordCount,
-            importedAt: DatabaseDateFormatter.string(from: draft.importedAt),
-            lastReadAt: nil,
-            groupId: nil,
-            contentHash: draft.contentHash,
-            importSourceDisplayPath: draft.importSourceDisplayPath,
-            sourceBookmark: nil,
-            sourcePath: draft.sourcePath
-        )
+        let importedAt = DatabaseDateFormatter.string(from: draft.importedAt)
         let progress = ReadingProgressRecord(
             bookId: draft.id.uuidString,
             chapterId: normalizedChapters.first?.id.uuidString,
             chapterOffset: 0,
             globalProgress: 0,
-            updatedAt: DatabaseDateFormatter.string(from: draft.importedAt)
+            updatedAt: importedAt
         )
 
         return try await database.writer.write { db in
-            try record.insert(db)
+            try db.execute(
+                sql: """
+                INSERT INTO books (
+                    id, title, author, intro, fileName, fileSize, encoding, wordCount,
+                    importedAt, lastReadAt, groupId, contentHash, importSourceDisplayPath,
+                    sourceBookmark, sourcePath
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?)
+                ON CONFLICT(contentHash) DO NOTHING
+                """,
+                arguments: [
+                    draft.id.uuidString,
+                    draft.title,
+                    draft.author,
+                    draft.intro,
+                    draft.fileName,
+                    normalizedFileSize,
+                    draft.encoding,
+                    normalizedWordCount,
+                    importedAt,
+                    draft.contentHash,
+                    draft.importSourceDisplayPath,
+                    draft.sourcePath
+                ]
+            )
+            let didInsert = try Row.fetchOne(
+                db,
+                sql: "SELECT 1 FROM books WHERE id = ?",
+                arguments: [draft.id.uuidString]
+            ) != nil
+            guard didInsert else {
+                if let existingBook = try Self.fetchBook(db, contentHash: draft.contentHash) {
+                    throw LibraryRepositoryError.duplicateBookContent(existingBook)
+                }
+                throw LibraryRepositoryError.duplicateBookContentMissingExistingBook
+            }
             for chapter in normalizedChapters {
                 try db.execute(
                     sql: """

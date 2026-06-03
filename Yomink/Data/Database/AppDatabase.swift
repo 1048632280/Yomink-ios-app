@@ -418,6 +418,29 @@ final class AppDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v5_unique_book_content_hash") { db in
+            try db.execute(sql: """
+            DROP INDEX IF EXISTS books_contentHash_index
+            """)
+
+            try db.execute(sql: """
+            UPDATE books
+            SET contentHash = NULL
+            WHERE contentHash IS NOT NULL
+                AND rowid NOT IN (
+                    SELECT MIN(rowid)
+                    FROM books
+                    WHERE contentHash IS NOT NULL
+                    GROUP BY contentHash
+                )
+            """)
+
+            try db.execute(sql: """
+            CREATE UNIQUE INDEX books_contentHash_unique_index
+            ON books(contentHash)
+            """)
+        }
+
         return migrator
     }
 

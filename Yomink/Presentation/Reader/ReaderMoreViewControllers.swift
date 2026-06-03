@@ -644,14 +644,35 @@ final class ReaderFilterRulesViewController: UITableViewController {
                 return
             }
             let rule = self.rules[indexPath.row]
-            self.rules.remove(at: indexPath.row)
-            self.tableView.deleteRows(at: [indexPath], with: .automatic)
-            self.updateEmptyState()
-            self.onRulesChanged(self.rules)
-            Task {
-                try? await self.repository.deleteFilterRule(id: rule.id)
+            Task { [weak self] in
+                guard let self else {
+                    await MainActor.run {
+                        completion(false)
+                    }
+                    return
+                }
+                do {
+                    try await self.repository.deleteFilterRule(id: rule.id)
+                    await MainActor.run {
+                        guard let currentIndex = self.rules.firstIndex(where: { $0.id == rule.id }) else {
+                            completion(false)
+                            return
+                        }
+                        self.rules.remove(at: currentIndex)
+                        self.tableView.deleteRows(
+                            at: [IndexPath(row: currentIndex, section: indexPath.section)],
+                            with: .automatic
+                        )
+                        self.updateEmptyState()
+                        self.onRulesChanged(self.rules)
+                        completion(true)
+                    }
+                } catch {
+                    await MainActor.run {
+                        completion(false)
+                    }
+                }
             }
-            completion(true)
         }
         return UISwipeActionsConfiguration(actions: [action])
     }

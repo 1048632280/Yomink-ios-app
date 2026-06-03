@@ -3,6 +3,8 @@ import Foundation
 enum LibraryRepositoryError: LocalizedError, Sendable {
     case emptyFilterSource
     case filterRuleNotFound
+    case duplicateBookContent(Book)
+    case duplicateBookContentMissingExistingBook
 
     var errorDescription: String? {
         switch self {
@@ -10,6 +12,10 @@ enum LibraryRepositoryError: LocalizedError, Sendable {
             return NSLocalizedString("reader.filter.error.emptySource", comment: "")
         case .filterRuleNotFound:
             return NSLocalizedString("reader.filter.error.ruleNotFound", comment: "")
+        case .duplicateBookContent:
+            return NSLocalizedString("import.duplicate.message", comment: "")
+        case .duplicateBookContentMissingExistingBook:
+            return NSLocalizedString("import.error.cannotReadFile", comment: "")
         }
     }
 }

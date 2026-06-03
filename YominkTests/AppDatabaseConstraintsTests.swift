@@ -44,6 +44,63 @@ final class AppDatabaseConstraintsTests: XCTestCase {
         XCTAssertEqual(chapters.first?.sortOrder, 0)
     }
 
+    func testImportedBookContentHashIsUnique() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let contentHash = "hash-\(UUID().uuidString)"
+        let firstID = UUID()
+        let secondID = UUID()
+
+        let firstBook = try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: firstID,
+                title: "First",
+                author: nil,
+                intro: nil,
+                fileName: "first.txt",
+                fileSize: 1,
+                encoding: "utf-8",
+                wordCount: 1,
+                contentHash: contentHash,
+                chapters: [],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "Books/\(firstID.uuidString.lowercased())/content.txt"
+            )
+        )
+
+        do {
+            _ = try await repository.insertImportedBook(
+                ImportedBookDraft(
+                    id: secondID,
+                    title: "Second",
+                    author: nil,
+                    intro: nil,
+                    fileName: "second.txt",
+                    fileSize: 1,
+                    encoding: "utf-8",
+                    wordCount: 1,
+                    contentHash: contentHash,
+                    chapters: [],
+                    importedAt: Date(timeIntervalSince1970: 1),
+                    importSourceDisplayPath: nil,
+                    sourcePath: "Books/\(secondID.uuidString.lowercased())/content.txt"
+                )
+            )
+            XCTFail("Duplicate content hash should fail")
+        } catch let error as LibraryRepositoryError {
+            switch error {
+            case .duplicateBookContent(let existingBook):
+                XCTAssertEqual(existingBook.id, firstBook.id)
+            default:
+                XCTFail("Unexpected repository error: \(error)")
+            }
+        }
+
+        let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
+        XCTAssertEqual(books.count, 1)
+    }
+
     func testReadingProgressBoundsAreNormalizedBeforePersisting() async throws {
         let database = try AppDatabase.inMemory()
         let repository = GRDBLibraryRepository(database: database)
@@ -622,6 +679,48 @@ final class ImportServiceDuplicateTests: XCTestCase {
         XCTAssertEqual(bookDirectories.count, 1)
     }
 
+    func testConcurrentDuplicateImportKeepsSingleBook() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let database = try AppDatabase(fileStore: fileStore)
+        let repository = GRDBLibraryRepository(database: database)
+        let importService = ImportService(
+            fileStore: fileStore,
+            libraryRepository: repository
+        )
+        let sourceURL = rootURL.appendingPathComponent("concurrent.txt", isDirectory: false)
+        try Data("Chapter 1\nBody".utf8).write(to: sourceURL, options: .atomic)
+
+        async let firstResult = importService.importBookCheckingDuplicate(from: sourceURL)
+        async let secondResult = importService.importBookCheckingDuplicate(from: sourceURL)
+        let first = try await firstResult
+        let second = try await secondResult
+        let results = [first, second]
+        let importedCount = results.filter { result in
+            if case .imported = result {
+                return true
+            }
+            return false
+        }.count
+
+        let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
+        let bookDirectories = try FileManager.default.contentsOfDirectory(
+            at: fileStore.booksURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ).filter { url in
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            return values?.isDirectory == true && url.lastPathComponent != ".deleting"
+        }
+
+        XCTAssertGreaterThanOrEqual(importedCount, 1)
+        XCTAssertEqual(books.count, 1)
+        XCTAssertEqual(bookDirectories.count, 1)
+    }
+
     func testEmptyTextImportIsRejectedWithoutCreatingBookDirectory() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
@@ -656,5 +755,55 @@ final class ImportServiceDuplicateTests: XCTestCase {
 
         XCTAssertTrue(books.isEmpty)
         XCTAssertTrue(bookDirectories.isEmpty)
+    }
+
+    func testLegacyUnreadableDuplicateCandidateIsSkipped() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let database = try AppDatabase(fileStore: fileStore)
+        let repository = GRDBLibraryRepository(database: database)
+        let importService = ImportService(
+            fileStore: fileStore,
+            libraryRepository: repository
+        )
+        let legacyBookID = UUID()
+        _ = try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: legacyBookID,
+                title: "Legacy",
+                author: nil,
+                intro: nil,
+                fileName: "legacy.txt",
+                fileSize: 1,
+                encoding: "utf-8",
+                wordCount: 1,
+                contentHash: "legacy-\(UUID().uuidString)",
+                chapters: [],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "../bad.txt"
+            )
+        )
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE books SET contentHash = NULL WHERE id = ?",
+                arguments: [legacyBookID.uuidString]
+            )
+        }
+        let sourceURL = rootURL.appendingPathComponent("new.txt", isDirectory: false)
+        try Data("Chapter 1\nNew".utf8).write(to: sourceURL, options: .atomic)
+
+        let result = try await importService.importBookCheckingDuplicate(from: sourceURL)
+        guard case .imported = result else {
+            XCTFail("Unreadable legacy sourcePath should not block import")
+            return
+        }
+
+        let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
+        XCTAssertEqual(books.count, 2)
     }
 }
