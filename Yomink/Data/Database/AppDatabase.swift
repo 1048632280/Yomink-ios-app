@@ -198,10 +198,11 @@ final class AppDatabase: @unchecked Sendable {
         }
 
         migrator.registerMigration("v2_add_chapter_source") { db in
+            // Older iOS SQLite builds reject ADD COLUMN with a CHECK constraint.
+            // v4 installs triggers that enforce the same valid values after migration.
             try db.execute(sql: """
             ALTER TABLE chapters
             ADD COLUMN source TEXT NOT NULL DEFAULT 'pseudo'
-                CHECK (source IN ('regex', 'pseudo'))
             """)
         }
 

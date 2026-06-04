@@ -44,6 +44,53 @@ final class AppDatabaseConstraintsTests: XCTestCase {
         XCTAssertEqual(chapters.first?.sortOrder, 0)
     }
 
+    func testChapterSourceTriggerRejectsInvalidValuesAfterMigration() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let bookID = UUID()
+        let chapterID = UUID()
+
+        _ = try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: bookID,
+                title: "Source",
+                author: nil,
+                intro: nil,
+                fileName: "source.txt",
+                fileSize: 10,
+                encoding: "utf-8",
+                wordCount: 2,
+                contentHash: "hash-\(UUID().uuidString)",
+                chapters: [
+                    ImportedChapterDraft(
+                        id: chapterID,
+                        title: "Chapter",
+                        startOffset: 0,
+                        endOffset: 10,
+                        sortOrder: 0,
+                        source: .pseudo
+                    )
+                ],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "Books/\(bookID.uuidString.lowercased())/content.txt"
+            )
+        )
+
+        do {
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: "UPDATE chapters SET source = 'invalid' WHERE id = ?",
+                    arguments: [chapterID.uuidString]
+                )
+            }
+            XCTFail("Invalid chapter source should fail")
+        } catch {
+            let chapters = try await repository.fetchChapters(bookID: bookID)
+            XCTAssertEqual(chapters.first?.source, .pseudo)
+        }
+    }
+
     func testImportedBookContentHashIsUnique() async throws {
         let database = try AppDatabase.inMemory()
         let repository = GRDBLibraryRepository(database: database)
