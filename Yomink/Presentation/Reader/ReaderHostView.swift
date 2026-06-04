@@ -1825,6 +1825,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pendingRestoreAbsoluteOffset = nil
         pageTask?.cancel()
         pendingPagePrepends.removeAll()
+        pendingTapTargetPageIndex = nil
         let activeGeneration = generation ?? {
             pagingGeneration += 1
             return pagingGeneration
@@ -1920,7 +1921,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             updateSessionState(isLoadingNextPage: false)
             return
         }
-
         if scrollAfterLoading {
             pendingTapTargetPageIndex = lastPage.pageIndex + 1
         }
@@ -2063,28 +2063,32 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let extent = usesVerticalScrolling
             ? verticalExtent(for: page)
             : pageExtentForCurrentMode()
+        let preservedCurrentPage = currentPage
         // 用 insertItems + 同帧 setContentOffset 替代 reloadData:
         // 不销毁已有可见 cell,杜绝快速点击 / 横滑回弹时的瞬白闪烁。
         // performWithoutAnimation 同时关闭默认插入动画和 contentOffset 平移动画,保证视觉上原页面不动。
         UIView.performWithoutAnimation {
-            self.pages.insert(page, at: 0)
-            self.collectionView.insertItems(at: [IndexPath(item: 0, section: 0)])
-            if let plan = self.planSuffixTrim() {
-                self.applySuffixTrim(plan)
-            }
-            if extent > 0 {
-                let adjusted = self.usesVerticalScrolling
-                    ? CGPoint(
-                        x: self.collectionView.contentOffset.x,
-                        y: self.collectionView.contentOffset.y + extent
-                    )
-                    : CGPoint(
-                        x: self.collectionView.contentOffset.x + extent,
-                        y: self.collectionView.contentOffset.y
-                    )
-                self.collectionView.setContentOffset(adjusted, animated: false)
+            self.performProgrammaticPageMutation {
+                self.pages.insert(page, at: 0)
+                self.collectionView.insertItems(at: [IndexPath(item: 0, section: 0)])
+                if let plan = self.planSuffixTrim() {
+                    self.applySuffixTrim(plan)
+                }
+                if extent > 0 {
+                    let adjusted = self.usesVerticalScrolling
+                        ? CGPoint(
+                            x: self.collectionView.contentOffset.x,
+                            y: self.collectionView.contentOffset.y + extent
+                        )
+                        : CGPoint(
+                            x: self.collectionView.contentOffset.x + extent,
+                            y: self.collectionView.contentOffset.y
+                        )
+                    self.collectionView.setContentOffset(adjusted, animated: false)
+                }
             }
         }
+        restoreCurrentPageAfterProgrammaticMutation(preservedCurrentPage)
         updateSessionState(isLoadingNextPage: false)
         if pendingTapTargetPageIndex == page.pageIndex,
            let index = pages.firstIndex(of: page) {
@@ -2129,25 +2133,29 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             )
         }
         let insertedIndexPaths = pending.indices.map { IndexPath(item: $0, section: 0) }
+        let preservedCurrentPage = currentPage
         UIView.performWithoutAnimation {
-            self.pages.insert(contentsOf: pending, at: 0)
-            self.collectionView.insertItems(at: insertedIndexPaths)
-            if let plan = self.planSuffixTrim() {
-                self.applySuffixTrim(plan)
-            }
-            if extent > 0 {
-                let adjusted = self.usesVerticalScrolling
-                    ? CGPoint(
-                        x: self.collectionView.contentOffset.x,
-                        y: self.collectionView.contentOffset.y + extent
-                    )
-                    : CGPoint(
-                        x: self.collectionView.contentOffset.x + extent,
-                        y: self.collectionView.contentOffset.y
-                    )
-                self.collectionView.setContentOffset(adjusted, animated: false)
+            self.performProgrammaticPageMutation {
+                self.pages.insert(contentsOf: pending, at: 0)
+                self.collectionView.insertItems(at: insertedIndexPaths)
+                if let plan = self.planSuffixTrim() {
+                    self.applySuffixTrim(plan)
+                }
+                if extent > 0 {
+                    let adjusted = self.usesVerticalScrolling
+                        ? CGPoint(
+                            x: self.collectionView.contentOffset.x,
+                            y: self.collectionView.contentOffset.y + extent
+                        )
+                        : CGPoint(
+                            x: self.collectionView.contentOffset.x + extent,
+                            y: self.collectionView.contentOffset.y
+                        )
+                    self.collectionView.setContentOffset(adjusted, animated: false)
+                }
             }
         }
+        restoreCurrentPageAfterProgrammaticMutation(preservedCurrentPage)
         updateSessionState(isLoadingNextPage: false)
     }
 
@@ -2188,9 +2196,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private func applyPrefixTrim(_ plan: PrefixTrimPlan) {
         let removedIndexPaths = (0..<plan.removeCount).map { IndexPath(item: $0, section: 0) }
         UIView.performWithoutAnimation {
-            self.pages.removeFirst(plan.removeCount)
-            self.collectionView.deleteItems(at: removedIndexPaths)
-            self.adjustContentOffsetAfterRemovingPrefix(distance: plan.removedDistance)
+            self.performProgrammaticPageMutation {
+                self.pages.removeFirst(plan.removeCount)
+                self.collectionView.deleteItems(at: removedIndexPaths)
+                self.adjustContentOffsetAfterRemovingPrefix(distance: plan.removedDistance)
+            }
         }
     }
 
@@ -2234,6 +2244,24 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         collectionView.setContentOffset(adjusted, animated: false)
     }
 
+    private func performProgrammaticPageMutation(_ mutation: () -> Void) {
+        let wasApplyingProgrammaticScroll = isApplyingProgrammaticScroll
+        isApplyingProgrammaticScroll = true
+        defer {
+            isApplyingProgrammaticScroll = wasApplyingProgrammaticScroll
+        }
+        mutation()
+    }
+
+    private func restoreCurrentPageAfterProgrammaticMutation(_ page: CollectionReaderPage?) {
+        guard let page,
+              pages.contains(page) else {
+            updateCurrentPageFromVisiblePage()
+            return
+        }
+        currentPage = page
+    }
+
     private func prefetchPagesNearCurrent() {
         guard let currentPage,
               let index = pages.firstIndex(of: currentPage) else {
@@ -2242,13 +2270,33 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let leadingCount = index + pendingPagePrepends.count
         let trailingCount = pages.count - index - 1
 
-        if leadingCount <= Layout.horizontalPrefetchDistance {
+        let needsLeading = leadingCount <= Layout.horizontalPrefetchDistance
+        let needsTrailing = trailingCount <= Layout.horizontalPrefetchDistance
+
+        if needsLeading && needsTrailing {
+            if trailingCount <= leadingCount {
+                loadNextPageIfNeeded()
+                if pageTask != nil {
+                    return
+                }
+                loadPreviousPageIfNeeded()
+            } else {
+                loadPreviousPageIfNeeded()
+                if pageTask != nil {
+                    return
+                }
+                loadNextPageIfNeeded()
+            }
+            return
+        }
+
+        if needsLeading {
             loadPreviousPageIfNeeded()
             if pageTask != nil {
                 return
             }
         }
-        if trailingCount <= Layout.horizontalPrefetchDistance {
+        if needsTrailing {
             loadNextPageIfNeeded()
         }
     }
@@ -3151,6 +3199,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func moveToNextPage() {
+        updateCurrentPageFromVisiblePage()
         guard let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage) else {
             return
@@ -3164,6 +3213,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     private func moveToPreviousPage() {
+        updateCurrentPageFromVisiblePage()
         guard let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage) else {
             return
@@ -3603,6 +3653,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     private func jumpTo(_ target: ReaderContentTarget) {
         stopAutoReading(restoreLayout: true, animated: false)
+        setMenuVisible(false, animated: false)
         guard let chapter = chapters.first(where: { $0.id == target.chapterID }) else {
             return
         }
