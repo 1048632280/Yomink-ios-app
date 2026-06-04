@@ -1924,10 +1924,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if scrollAfterLoading {
             pendingTapTargetPageIndex = lastPage.pageIndex + 1
         }
+        let targetLocalPageIndex = lastPage.localPageIndex + 1 < lastPage.chapterPageCount
+            ? lastPage.localPageIndex + 1
+            : nil
         loadPage(
             absoluteOffset: lastPage.endAbsoluteOffset,
             pageIndex: lastPage.pageIndex + 1,
-            insertingAtEnd: true
+            insertingAtEnd: true,
+            targetLocalPageIndex: targetLocalPageIndex
         )
     }
 
@@ -1941,18 +1945,23 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if scrollAfterLoading {
             pendingTapTargetPageIndex = firstPage.pageIndex - 1
         }
+        let targetLocalPageIndex = firstPage.localPageIndex > 0
+            ? firstPage.localPageIndex - 1
+            : nil
         let targetOffset = previousPageStartOffset(before: firstPage.startAbsoluteOffset)
         loadPage(
             absoluteOffset: targetOffset,
             pageIndex: firstPage.pageIndex - 1,
-            insertingAtEnd: false
+            insertingAtEnd: false,
+            targetLocalPageIndex: targetLocalPageIndex
         )
     }
 
     private func loadPage(
         absoluteOffset: Int,
         pageIndex: Int,
-        insertingAtEnd: Bool
+        insertingAtEnd: Bool,
+        targetLocalPageIndex: Int? = nil
     ) {
         let requestOffset = min(max(absoluteOffset, 0), max(chapters.last?.endOffset ?? 1, 1) - 1)
         let generation = pagingGeneration
@@ -1981,6 +1990,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     safeAreaInsets: safeAreaInsets,
                     widgetInsets: widgetInsets,
                     isVerticalViewport: isVerticalViewport,
+                    targetLocalPageIndex: targetLocalPageIndex,
                     fileStore: appFileStore
                 )
                 try Task.checkCancellation()
@@ -6336,6 +6346,7 @@ private enum CollectionReaderPaginator {
         safeAreaInsets: UIEdgeInsets,
         widgetInsets: UIEdgeInsets,
         isVerticalViewport: Bool,
+        targetLocalPageIndex: Int? = nil,
         fileStore: AppFileStore
     ) async throws -> CollectionReaderPage {
         try await Task.detached(priority: .userInitiated) {
@@ -6390,9 +6401,11 @@ private enum CollectionReaderPaginator {
             let displayIndex = isPlaceholderPage
                 ? 0
                 : filtered.displayUTF16Index(containingOriginalByteOffset: chapterOffset)
-            let localPageIndex = paginator.pageIndex(
-                containingDisplayUTF16Index: displayIndex
-            )
+            let localPageIndex = targetLocalPageIndex
+                .map { min(max($0, 0), max(paginator.pageCount - 1, 0)) }
+                ?? paginator.pageIndex(
+                    containingDisplayUTF16Index: displayIndex
+                )
             let page = paginator.page(at: localPageIndex)
             let chapterPageStartOffsets: [Int] = isPlaceholderPage
                 ? [0]
