@@ -14,7 +14,6 @@ struct LibraryView: View {
     @State private var activeRoute: LibraryRoute?
     @State private var exportPayload: ExportPayload?
     @State private var pendingBookDeletion: PendingBookDeletion?
-    @State private var importBatchSummary: ImportBatchSummary?
     @State private var isReaderStatusBarHidden = false
     @State private var pendingReaderBook: Book?
     @State private var pendingReaderOpenID = UUID()
@@ -164,8 +163,7 @@ struct LibraryView: View {
                     viewModel.handleBatchImportResult(
                         result,
                         importService: services.importService,
-                        onCompleted: { summary in
-                            importBatchSummary = summary
+                        onCompleted: {
                             reloadBooksIfReady()
                         }
                     )
@@ -219,12 +217,12 @@ struct LibraryView: View {
             } message: {
                 Text(viewModel.importErrorMessage ?? "")
             }
-            .alert(item: $importBatchSummary) { summary in
+            .alert(item: $viewModel.batchImportResult) { result in
                 Alert(
                     title: Text("import.batch.result.title"),
-                    message: Text(verbatim: summary.resultMessage),
+                    message: Text(verbatim: result.message),
                     dismissButton: .default(Text("common.ok")) {
-                        importBatchSummary = nil
+                        viewModel.clearBatchImportResult()
                     }
                 )
             }
@@ -812,17 +810,25 @@ struct LibraryView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .frame(height: 38)
 
                 if let currentFileName = viewModel.batchImportProgress?.currentFileName {
                     Text(verbatim: currentFileName)
                         .font(.footnote)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
-                        .truncationMode(.middle)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: 240)
+                } else {
+                    Text(verbatim: "")
+                        .font(.footnote)
+                        .lineLimit(1)
                         .frame(maxWidth: 240)
                 }
             }
             .padding(20)
+            .frame(width: 300, height: 172)
             .background(.regularMaterial)
             .cornerRadius(8)
         }
@@ -1241,6 +1247,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var importErrorMessage: String?
     @Published var importPreview: ImportBookPreview?
     @Published var batchImportProgress: ImportBatchProgress?
+    @Published var batchImportResult: ImportBatchResultAlert?
     private var currentImportTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var settingsSaveTask: Task<Void, Never>?
@@ -1266,6 +1273,13 @@ private final class LibraryViewModel: ObservableObject {
         switch progress.phase {
         case .scanning:
             return NSLocalizedString("import.batch.scanning", comment: "")
+        case .downloading:
+            let displayCount = min(progress.processedCount + 1, progress.totalCount)
+            return String(
+                format: NSLocalizedString("import.batch.downloading", comment: ""),
+                displayCount,
+                progress.totalCount
+            )
         case .importing:
             let displayCount = min(
                 progress.processedCount + (progress.currentFileName == nil ? 0 : 1),
@@ -1380,7 +1394,7 @@ private final class LibraryViewModel: ObservableObject {
     func handleBatchImportResult(
         _ result: Result<[URL], Error>,
         importService: ImportService,
-        onCompleted: @escaping (ImportBatchSummary) -> Void
+        onCompleted: @escaping () -> Void
     ) {
         guard !isImporting else {
             return
@@ -1590,9 +1604,10 @@ private final class LibraryViewModel: ObservableObject {
     private func startBatchImport(
         in directoryURL: URL,
         importService: ImportService,
-        onCompleted: @escaping (ImportBatchSummary) -> Void
+        onCompleted: @escaping () -> Void
     ) {
         isImporting = true
+        batchImportResult = nil
         batchImportProgress = ImportBatchProgress(
             phase: .scanning,
             processedCount: 0,
@@ -1606,11 +1621,11 @@ private final class LibraryViewModel: ObservableObject {
                         self.batchImportProgress = progress
                     }
                 }
-                try Task.checkCancellation()
                 batchImportProgress = nil
                 isImporting = false
                 currentImportTask = nil
-                onCompleted(summary)
+                batchImportResult = ImportBatchResultAlert(summary: summary)
+                onCompleted()
             } catch is CancellationError {
                 batchImportProgress = nil
                 isImporting = false
@@ -1635,6 +1650,10 @@ private final class LibraryViewModel: ObservableObject {
 
     func clearImportPreview() {
         importPreview = nil
+    }
+
+    func clearBatchImportResult() {
+        batchImportResult = nil
     }
 
     private func pruneSelection() {
@@ -2373,34 +2392,27 @@ private struct PendingBookDeletion: Identifiable {
     }
 }
 
-extension ImportBatchSummary: Identifiable {
-    var id: String {
-        [
-            String(totalCount),
-            String(importedCount),
-            String(duplicateCount),
-            String(failedCount),
-            failures.map(\.fileName).joined(separator: "|")
-        ].joined(separator: "-")
-    }
+struct ImportBatchResultAlert: Identifiable {
+    let id = UUID()
+    let summary: ImportBatchSummary
 
-    var resultMessage: String {
+    var message: String {
         var lines = [
             String(
                 format: NSLocalizedString("import.batch.result.summary", comment: ""),
-                totalCount,
-                importedCount,
-                duplicateCount,
-                failedCount
+                summary.totalCount,
+                summary.importedCount,
+                summary.duplicateCount,
+                summary.failedCount
             )
         ]
 
-        if totalCount == 0 {
+        if summary.totalCount == 0 {
             lines.append(NSLocalizedString("import.batch.result.empty", comment: ""))
         }
 
-        if !failures.isEmpty {
-            let visibleFailures = failures.prefix(5).map { failure in
+        if !summary.failures.isEmpty {
+            let visibleFailures = summary.failures.prefix(5).map { failure in
                 String(
                     format: NSLocalizedString("import.batch.result.failureLine", comment: ""),
                     failure.fileName,
@@ -2411,7 +2423,7 @@ extension ImportBatchSummary: Identifiable {
             lines.append(NSLocalizedString("import.batch.result.failures", comment: ""))
             lines.append(contentsOf: visibleFailures)
 
-            let remainingCount = failures.count - visibleFailures.count
+            let remainingCount = summary.failures.count - visibleFailures.count
             if remainingCount > 0 {
                 lines.append(
                     String(

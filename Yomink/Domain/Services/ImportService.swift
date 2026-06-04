@@ -17,6 +17,7 @@ struct ImportBookPreview: Equatable, Sendable {
 
 enum ImportBatchProgressPhase: Equatable, Sendable {
     case scanning
+    case downloading
     case importing
 }
 
@@ -81,6 +82,8 @@ final class ImportService {
     private let libraryRepository: any LibraryRepository
     private let decoder: TXTTextDecoder
     private let chapterIndexer: ChapterIndexer
+    private static let ubiquitousDownloadTimeout: TimeInterval = 180
+    private static let ubiquitousDownloadPollInterval: TimeInterval = 0.25
 
     init(
         fileStore: AppFileStore,
@@ -156,7 +159,7 @@ final class ImportService {
         try await validateImportSource(sourceURL)
         return ImportBookPreview(
             sourceURL: sourceURL,
-            fileName: sourceURL.lastPathComponent,
+            fileName: Self.sourceFileName(from: sourceURL),
             title: Self.title(from: sourceURL),
             author: nil,
             intro: nil
@@ -199,13 +202,25 @@ final class ImportService {
 
         for (index, sourceURL) in sourceURLs.enumerated() {
             try Task.checkCancellation()
+            if await needsUbiquitousDownload(sourceURL),
+               let progress = progress {
+                await progress(
+                    ImportBatchProgress(
+                        phase: .downloading,
+                        processedCount: index,
+                        totalCount: sourceURLs.count,
+                        currentFileName: Self.sourceFileName(from: sourceURL)
+                    )
+                )
+            }
+
             if let progress = progress {
                 await progress(
                     ImportBatchProgress(
                         phase: .importing,
                         processedCount: index,
                         totalCount: sourceURLs.count,
-                        currentFileName: sourceURL.lastPathComponent
+                        currentFileName: Self.sourceFileName(from: sourceURL)
                     )
                 )
             }
@@ -222,7 +237,7 @@ final class ImportService {
             } catch {
                 summary.failures.append(
                     ImportBatchFailure(
-                        fileName: sourceURL.lastPathComponent,
+                        fileName: Self.sourceFileName(from: sourceURL),
                         errorDescription: error.localizedDescription
                     )
                 )
@@ -264,13 +279,15 @@ final class ImportService {
 
             let resourceKeys: [URLResourceKey] = [
                 .isRegularFileKey,
-                .isDirectoryKey
+                .isDirectoryKey,
+                .isPackageKey,
+                .isUbiquitousItemKey,
+                .ubiquitousItemDownloadingStatusKey
             ]
             guard let enumerator = fileManager.enumerator(
                 at: directoryURL,
                 includingPropertiesForKeys: resourceKeys,
                 options: [
-                    .skipsHiddenFiles,
                     .skipsPackageDescendants
                 ],
                 errorHandler: { _, _ in true }
@@ -287,7 +304,9 @@ final class ImportService {
                 }
 
                 let values = try? fileURL.resourceValues(forKeys: Set(resourceKeys))
-                guard values?.isRegularFile == true else {
+                guard values?.isDirectory != true,
+                      values?.isPackage != true
+                else {
                     continue
                 }
 
@@ -329,7 +348,7 @@ final class ImportService {
         let fileStore = fileStore
         let decoder = decoder
         let sourceDisplayPath = sourceURL.path
-        let sourceFileName = sourceURL.lastPathComponent
+        let sourceFileName = Self.sourceFileName(from: sourceURL)
         let sourceTitle = Self.normalizedTitle(
             metadata?.title,
             fallback: Self.title(from: sourceURL)
@@ -349,13 +368,15 @@ final class ImportService {
                 throw ImportError.unsupportedFileType
             }
 
+            try Self.downloadUbiquitousItemIfNeeded(sourceURL)
+
             let bookID = UUID()
             let contentURL = fileStore.contentURL(for: bookID)
             let contentPath = try fileStore.relativePath(for: contentURL)
 
             let data: Data
             do {
-                data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+                data = try Self.readDataCoordinated(from: sourceURL)
             } catch {
                 throw ImportError.cannotReadFile
             }
@@ -449,6 +470,8 @@ final class ImportService {
                 throw ImportError.unsupportedFileType
             }
 
+            try Self.downloadUbiquitousItemIfNeeded(sourceURL)
+
             guard FileManager.default.isReadableFile(atPath: sourceURL.path) else {
                 throw ImportError.cannotReadFile
             }
@@ -469,15 +492,122 @@ final class ImportService {
                 throw ImportError.unsupportedFileType
             }
 
+            try Self.downloadUbiquitousItemIfNeeded(sourceURL)
+
             let data: Data
             do {
-                data = try Data(contentsOf: sourceURL, options: .mappedIfSafe)
+                data = try Self.readDataCoordinated(from: sourceURL)
             } catch {
                 throw ImportError.cannotReadFile
             }
             let decodedText = try decoder.decode(data)
             return Self.sha256Hex(for: Data(decodedText.text.utf8))
         }.value
+    }
+
+    private func needsUbiquitousDownload(_ sourceURL: URL) async -> Bool {
+        (try? await Task.detached(priority: .utility) {
+            let accessGranted = sourceURL.startAccessingSecurityScopedResource()
+            defer {
+                if accessGranted {
+                    sourceURL.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            let values = try sourceURL.resourceValues(
+                forKeys: [
+                    .isUbiquitousItemKey,
+                    .ubiquitousItemDownloadingStatusKey
+                ]
+            )
+            guard values.isUbiquitousItem == true else {
+                return false
+            }
+
+            return !Self.isUbiquitousItemAvailable(values.ubiquitousItemDownloadingStatus)
+        }.value) ?? false
+    }
+
+    private static func downloadUbiquitousItemIfNeeded(_ sourceURL: URL) throws {
+        let fileManager = FileManager.default
+        let initialValues = try? sourceURL.resourceValues(
+            forKeys: [
+                .isUbiquitousItemKey,
+                .ubiquitousItemDownloadingStatusKey
+            ]
+        )
+        guard initialValues?.isUbiquitousItem == true else {
+            return
+        }
+
+        if isUbiquitousItemAvailable(initialValues?.ubiquitousItemDownloadingStatus) {
+            return
+        }
+
+        do {
+            try fileManager.startDownloadingUbiquitousItem(at: sourceURL)
+        } catch {
+            throw ImportError.cannotReadFile
+        }
+
+        let deadline = Date().addingTimeInterval(ubiquitousDownloadTimeout)
+        while Date() < deadline {
+            try Task.checkCancellation()
+
+            let values = try? sourceURL.resourceValues(
+                forKeys: [
+                    .ubiquitousItemDownloadingStatusKey,
+                    .ubiquitousItemDownloadingErrorKey
+                ]
+            )
+            if values?.ubiquitousItemDownloadingError != nil {
+                throw ImportError.cannotReadFile
+            }
+            if isUbiquitousItemAvailable(values?.ubiquitousItemDownloadingStatus) {
+                return
+            }
+
+            Thread.sleep(forTimeInterval: ubiquitousDownloadPollInterval)
+        }
+
+        throw ImportError.cannotReadFile
+    }
+
+    private static func isUbiquitousItemAvailable(
+        _ status: URLUbiquitousItemDownloadingStatus?
+    ) -> Bool {
+        status == .current || status == .downloaded
+    }
+
+    private static func readDataCoordinated(from sourceURL: URL) throws -> Data {
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        var coordinatorError: NSError?
+        var readResult: Result<Data, Error>?
+
+        coordinator.coordinate(
+            readingItemAt: sourceURL,
+            options: [],
+            error: &coordinatorError
+        ) { coordinatedURL in
+            do {
+                readResult = .success(
+                    try Data(contentsOf: coordinatedURL, options: .mappedIfSafe)
+                )
+            } catch {
+                readResult = .failure(error)
+            }
+        }
+
+        if coordinatorError != nil {
+            throw ImportError.cannotReadFile
+        }
+
+        switch readResult {
+        case let .success(data):
+            return data
+        case .failure, .none:
+            throw ImportError.cannotReadFile
+        }
     }
 
     private func contentHashForReadableFile(at url: URL) async throws -> String {
@@ -493,13 +623,32 @@ final class ImportService {
     }
 
     private static func isSupportedTextFile(_ url: URL) -> Bool {
-        url.pathExtension.lowercased() == "txt"
+        let pathExtension = url.pathExtension.lowercased()
+        if pathExtension == "txt" {
+            return true
+        }
+        if pathExtension == "icloud" {
+            return url.deletingPathExtension().pathExtension.lowercased() == "txt"
+        }
+        return false
     }
 
     private static func title(from url: URL) -> String {
-        let title = url.deletingPathExtension().lastPathComponent
+        let title = (sourceFileName(from: url) as NSString)
+            .deletingPathExtension
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return title.isEmpty ? NSLocalizedString("book.untitled", comment: "") : title
+    }
+
+    private static func sourceFileName(from url: URL) -> String {
+        var fileName = url.lastPathComponent
+        if url.pathExtension.lowercased() == "icloud" {
+            fileName = url.deletingPathExtension().lastPathComponent
+            if fileName.hasPrefix(".") {
+                fileName.removeFirst()
+            }
+        }
+        return fileName
     }
 
     private static func normalizedTitle(_ title: String?, fallback: String) -> String {

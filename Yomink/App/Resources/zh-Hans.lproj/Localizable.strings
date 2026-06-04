@@ -288,6 +288,7 @@
 "import.duplicate.cancel" = "取消";
 "import.progress.message" = "正在导入并转换为 UTF-8...";
 "import.batch.scanning" = "正在扫描文件夹...";
+"import.batch.downloading" = "正在从 iCloud 下载 %d/%d 本";
 "import.batch.progress" = "正在导入 %d/%d 本";
 "import.batch.result.title" = "批量导入完成";
 "import.batch.result.summary" = "共找到 %d 本 TXT，成功导入 %d 本，重复跳过 %d 本，失败 %d 本。";

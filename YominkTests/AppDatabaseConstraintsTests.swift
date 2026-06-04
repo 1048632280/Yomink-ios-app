@@ -881,6 +881,10 @@ final class ImportServiceDuplicateTests: XCTestCase {
             to: nestedDirectoryURL.appendingPathComponent("Second.txt"),
             options: .atomic
         )
+        try Data("Chapter 1\nCloud".utf8).write(
+            to: importDirectoryURL.appendingPathComponent(".Cloud.txt.icloud"),
+            options: .atomic
+        )
         try Data(" \n\t ".utf8).write(
             to: importDirectoryURL.appendingPathComponent("Empty.txt"),
             options: .atomic
@@ -897,16 +901,17 @@ final class ImportServiceDuplicateTests: XCTestCase {
         let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
         let progressEvents = await progressRecorder.events
 
-        XCTAssertEqual(summary.totalCount, 3)
-        XCTAssertEqual(summary.importedCount, 2)
+        XCTAssertEqual(summary.totalCount, 4)
+        XCTAssertEqual(summary.importedCount, 3)
         XCTAssertEqual(summary.duplicateCount, 0)
         XCTAssertEqual(summary.failedCount, 1)
         XCTAssertEqual(summary.failures.first?.fileName, "Empty.txt")
-        XCTAssertEqual(Set(summary.importedBooks.map(\.title)), Set(["First", "Second"]))
-        XCTAssertEqual(books.count, 2)
+        XCTAssertEqual(Set(summary.importedBooks.map(\.fileName)), Set(["Cloud.txt", "First.txt", "Second.txt"]))
+        XCTAssertEqual(Set(summary.importedBooks.map(\.title)), Set(["Cloud", "First", "Second"]))
+        XCTAssertEqual(books.count, 3)
         XCTAssertEqual(progressEvents.first?.phase, .scanning)
-        XCTAssertEqual(progressEvents.last?.processedCount, 3)
-        XCTAssertEqual(progressEvents.last?.totalCount, 3)
+        XCTAssertEqual(progressEvents.last?.processedCount, 4)
+        XCTAssertEqual(progressEvents.last?.totalCount, 4)
     }
 
     func testBatchImportReportsDuplicatesWithoutCreatingExtraBooks() async throws {
