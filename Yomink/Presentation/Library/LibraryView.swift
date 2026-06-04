@@ -217,15 +217,6 @@ struct LibraryView: View {
             } message: {
                 Text(viewModel.importErrorMessage ?? "")
             }
-            .alert(item: $viewModel.batchImportResult) { result in
-                Alert(
-                    title: Text("import.batch.result.title"),
-                    message: Text(verbatim: result.message),
-                    dismissButton: .default(Text("common.ok")) {
-                        viewModel.clearBatchImportResult()
-                    }
-                )
-            }
             .alert(item: $pendingBookDeletion) { deletion in
                 Alert(
                     title: Text("library.delete.confirm.title"),
@@ -801,7 +792,7 @@ struct LibraryView: View {
                         value: Double(progress.processedCount),
                         total: Double(progress.totalCount)
                     )
-                    .frame(width: 220)
+                    .frame(width: 210)
                 } else {
                     ProgressView()
                 }
@@ -810,8 +801,8 @@ struct LibraryView: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
-                    .frame(height: 38)
+                    .lineLimit(1)
+                    .frame(width: 240, height: 22)
 
                 if let currentFileName = viewModel.batchImportProgress?.currentFileName {
                     Text(verbatim: currentFileName)
@@ -819,16 +810,16 @@ struct LibraryView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                        .frame(maxWidth: 240)
+                        .frame(width: 240, height: 18)
                 } else {
                     Text(verbatim: "")
                         .font(.footnote)
                         .lineLimit(1)
-                        .frame(maxWidth: 240)
+                        .frame(width: 240, height: 18)
                 }
             }
-            .padding(20)
-            .frame(width: 300, height: 172)
+            .padding(14)
+            .frame(width: 280, height: 132)
             .background(.regularMaterial)
             .cornerRadius(8)
         }
@@ -1247,7 +1238,6 @@ private final class LibraryViewModel: ObservableObject {
     @Published var importErrorMessage: String?
     @Published var importPreview: ImportBookPreview?
     @Published var batchImportProgress: ImportBatchProgress?
-    @Published var batchImportResult: ImportBatchResultAlert?
     private var currentImportTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var settingsSaveTask: Task<Void, Never>?
@@ -1607,7 +1597,7 @@ private final class LibraryViewModel: ObservableObject {
         onCompleted: @escaping () -> Void
     ) {
         isImporting = true
-        batchImportResult = nil
+        clearError()
         batchImportProgress = ImportBatchProgress(
             phase: .scanning,
             processedCount: 0,
@@ -1624,7 +1614,7 @@ private final class LibraryViewModel: ObservableObject {
                 batchImportProgress = nil
                 isImporting = false
                 currentImportTask = nil
-                batchImportResult = ImportBatchResultAlert(summary: summary)
+                showBatchImportResult(summary)
                 onCompleted()
             } catch is CancellationError {
                 batchImportProgress = nil
@@ -1644,16 +1634,17 @@ private final class LibraryViewModel: ObservableObject {
         importErrorMessage = error.localizedDescription
     }
 
+    func showBatchImportResult(_ summary: ImportBatchSummary) {
+        importErrorTitle = "import.batch.result.title"
+        importErrorMessage = ImportBatchResultMessage(summary: summary).message
+    }
+
     func clearError() {
         importErrorMessage = nil
     }
 
     func clearImportPreview() {
         importPreview = nil
-    }
-
-    func clearBatchImportResult() {
-        batchImportResult = nil
     }
 
     private func pruneSelection() {
@@ -2392,8 +2383,7 @@ private struct PendingBookDeletion: Identifiable {
     }
 }
 
-struct ImportBatchResultAlert: Identifiable {
-    let id = UUID()
+private struct ImportBatchResultMessage {
     let summary: ImportBatchSummary
 
     var message: String {

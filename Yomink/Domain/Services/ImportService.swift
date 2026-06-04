@@ -82,8 +82,6 @@ final class ImportService {
     private let libraryRepository: any LibraryRepository
     private let decoder: TXTTextDecoder
     private let chapterIndexer: ChapterIndexer
-    private static let ubiquitousDownloadTimeout: TimeInterval = 180
-    private static let ubiquitousDownloadPollInterval: TimeInterval = 0.25
 
     init(
         fileStore: AppFileStore,
@@ -199,6 +197,8 @@ final class ImportService {
         guard !sourceURLs.isEmpty else {
             return summary
         }
+
+        requestUbiquitousDownloads(for: sourceURLs)
 
         for (index, sourceURL) in sourceURLs.enumerated() {
             try Task.checkCancellation()
@@ -368,7 +368,7 @@ final class ImportService {
                 throw ImportError.unsupportedFileType
             }
 
-            try Self.downloadUbiquitousItemIfNeeded(sourceURL)
+            try Self.requestUbiquitousDownloadIfNeeded(sourceURL)
 
             let bookID = UUID()
             let contentURL = fileStore.contentURL(for: bookID)
@@ -470,7 +470,7 @@ final class ImportService {
                 throw ImportError.unsupportedFileType
             }
 
-            try Self.downloadUbiquitousItemIfNeeded(sourceURL)
+            try Self.requestUbiquitousDownloadIfNeeded(sourceURL)
 
             guard FileManager.default.isReadableFile(atPath: sourceURL.path) else {
                 throw ImportError.cannotReadFile
@@ -492,7 +492,7 @@ final class ImportService {
                 throw ImportError.unsupportedFileType
             }
 
-            try Self.downloadUbiquitousItemIfNeeded(sourceURL)
+            try Self.requestUbiquitousDownloadIfNeeded(sourceURL)
 
             let data: Data
             do {
@@ -528,7 +528,22 @@ final class ImportService {
         }.value) ?? false
     }
 
-    private static func downloadUbiquitousItemIfNeeded(_ sourceURL: URL) throws {
+    private func requestUbiquitousDownloads(for sourceURLs: [URL]) {
+        _ = Task.detached(priority: .utility) {
+            for sourceURL in sourceURLs {
+                try Task.checkCancellation()
+                let accessGranted = sourceURL.startAccessingSecurityScopedResource()
+                defer {
+                    if accessGranted {
+                        sourceURL.stopAccessingSecurityScopedResource()
+                    }
+                }
+                try? Self.requestUbiquitousDownloadIfNeeded(sourceURL)
+            }
+        }
+    }
+
+    private static func requestUbiquitousDownloadIfNeeded(_ sourceURL: URL) throws {
         let fileManager = FileManager.default
         let initialValues = try? sourceURL.resourceValues(
             forKeys: [
@@ -549,28 +564,6 @@ final class ImportService {
         } catch {
             throw ImportError.cannotReadFile
         }
-
-        let deadline = Date().addingTimeInterval(ubiquitousDownloadTimeout)
-        while Date() < deadline {
-            try Task.checkCancellation()
-
-            let values = try? sourceURL.resourceValues(
-                forKeys: [
-                    .ubiquitousItemDownloadingStatusKey,
-                    .ubiquitousItemDownloadingErrorKey
-                ]
-            )
-            if values?.ubiquitousItemDownloadingError != nil {
-                throw ImportError.cannotReadFile
-            }
-            if isUbiquitousItemAvailable(values?.ubiquitousItemDownloadingStatus) {
-                return
-            }
-
-            Thread.sleep(forTimeInterval: ubiquitousDownloadPollInterval)
-        }
-
-        throw ImportError.cannotReadFile
     }
 
     private static func isUbiquitousItemAvailable(
