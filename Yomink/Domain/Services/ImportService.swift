@@ -15,6 +15,42 @@ struct ImportBookPreview: Equatable, Sendable {
     var intro: String?
 }
 
+enum ImportBatchProgressPhase: Equatable, Sendable {
+    case scanning
+    case importing
+}
+
+struct ImportBatchProgress: Equatable, Sendable {
+    var phase: ImportBatchProgressPhase
+    var processedCount: Int
+    var totalCount: Int
+    var currentFileName: String?
+}
+
+struct ImportBatchFailure: Equatable, Sendable {
+    var fileName: String
+    var errorDescription: String
+}
+
+struct ImportBatchSummary: Equatable, Sendable {
+    var totalCount: Int
+    var importedBooks: [Book]
+    var duplicateBooks: [Book]
+    var failures: [ImportBatchFailure]
+
+    var importedCount: Int {
+        importedBooks.count
+    }
+
+    var duplicateCount: Int {
+        duplicateBooks.count
+    }
+
+    var failedCount: Int {
+        failures.count
+    }
+}
+
 final class ImportService {
     enum ImportResult: Sendable {
         case imported(Book)
@@ -127,9 +163,141 @@ final class ImportService {
         )
     }
 
+    func importBooks(
+        in directoryURL: URL,
+        progress: ((ImportBatchProgress) async -> Void)? = nil
+    ) async throws -> ImportBatchSummary {
+        let accessGranted = directoryURL.startAccessingSecurityScopedResource()
+        defer {
+            if accessGranted {
+                directoryURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        if let progress = progress {
+            await progress(
+                ImportBatchProgress(
+                    phase: .scanning,
+                    processedCount: 0,
+                    totalCount: 0,
+                    currentFileName: nil
+                )
+            )
+        }
+
+        let sourceURLs = try await supportedTextFiles(in: directoryURL)
+        var summary = ImportBatchSummary(
+            totalCount: sourceURLs.count,
+            importedBooks: [],
+            duplicateBooks: [],
+            failures: []
+        )
+
+        guard !sourceURLs.isEmpty else {
+            return summary
+        }
+
+        for (index, sourceURL) in sourceURLs.enumerated() {
+            try Task.checkCancellation()
+            if let progress = progress {
+                await progress(
+                    ImportBatchProgress(
+                        phase: .importing,
+                        processedCount: index,
+                        totalCount: sourceURLs.count,
+                        currentFileName: sourceURL.lastPathComponent
+                    )
+                )
+            }
+
+            do {
+                switch try await importBookCheckingDuplicate(from: sourceURL) {
+                case let .imported(book):
+                    summary.importedBooks.append(book)
+                case let .duplicate(book):
+                    summary.duplicateBooks.append(book)
+                }
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                summary.failures.append(
+                    ImportBatchFailure(
+                        fileName: sourceURL.lastPathComponent,
+                        errorDescription: error.localizedDescription
+                    )
+                )
+            }
+
+            if let progress = progress {
+                await progress(
+                    ImportBatchProgress(
+                        phase: .importing,
+                        processedCount: index + 1,
+                        totalCount: sourceURLs.count,
+                        currentFileName: nil
+                    )
+                )
+            }
+        }
+
+        return summary
+    }
+
     func findExistingBook(for sourceURL: URL) async throws -> Book? {
         let contentHash = try await contentHash(for: sourceURL)
         return try await findExistingBook(contentHash: contentHash)
+    }
+
+    private func supportedTextFiles(in directoryURL: URL) async throws -> [URL] {
+        try await Task.detached(priority: .userInitiated) {
+            let fileManager = FileManager.default
+            let directoryValues: URLResourceValues
+            do {
+                directoryValues = try directoryURL.resourceValues(forKeys: [.isDirectoryKey])
+            } catch {
+                throw ImportError.cannotReadFile
+            }
+
+            guard directoryValues.isDirectory == true else {
+                throw ImportError.cannotReadFile
+            }
+
+            let resourceKeys: [URLResourceKey] = [
+                .isRegularFileKey,
+                .isDirectoryKey
+            ]
+            guard let enumerator = fileManager.enumerator(
+                at: directoryURL,
+                includingPropertiesForKeys: resourceKeys,
+                options: [
+                    .skipsHiddenFiles,
+                    .skipsPackageDescendants
+                ],
+                errorHandler: { _, _ in true }
+            ) else {
+                throw ImportError.cannotReadFile
+            }
+
+            var sourceURLs: [URL] = []
+            for case let fileURL as URL in enumerator {
+                try Task.checkCancellation()
+
+                guard Self.isSupportedTextFile(fileURL) else {
+                    continue
+                }
+
+                let values = try? fileURL.resourceValues(forKeys: Set(resourceKeys))
+                guard values?.isRegularFile == true else {
+                    continue
+                }
+
+                sourceURLs.append(fileURL)
+            }
+
+            return sourceURLs.sorted { lhs, rhs in
+                lhs.path.localizedStandardCompare(rhs.path) == .orderedAscending
+            }
+        }.value
     }
 
     private func findExistingBook(contentHash: String) async throws -> Book? {
@@ -170,7 +338,6 @@ final class ImportService {
         let sourceIntro = Self.normalizedOptionalText(metadata?.intro)
 
         return try await Task.detached(priority: .userInitiated) {
-            let fileManager = FileManager.default
             let accessGranted = sourceURL.startAccessingSecurityScopedResource()
             defer {
                 if accessGranted {

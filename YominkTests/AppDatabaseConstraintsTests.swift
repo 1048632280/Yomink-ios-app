@@ -853,4 +853,116 @@ final class ImportServiceDuplicateTests: XCTestCase {
         let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
         XCTAssertEqual(books.count, 2)
     }
+
+    func testBatchImportImportsTextFilesAndReportsFailures() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let database = try AppDatabase(fileStore: fileStore)
+        let repository = GRDBLibraryRepository(database: database)
+        let importService = ImportService(
+            fileStore: fileStore,
+            libraryRepository: repository
+        )
+        let importDirectoryURL = rootURL.appendingPathComponent("Batch", isDirectory: true)
+        let nestedDirectoryURL = importDirectoryURL.appendingPathComponent("Nested", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: nestedDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        try Data("Chapter 1\nFirst".utf8).write(
+            to: importDirectoryURL.appendingPathComponent("First.txt"),
+            options: .atomic
+        )
+        try Data("Chapter 1\nSecond".utf8).write(
+            to: nestedDirectoryURL.appendingPathComponent("Second.txt"),
+            options: .atomic
+        )
+        try Data(" \n\t ".utf8).write(
+            to: importDirectoryURL.appendingPathComponent("Empty.txt"),
+            options: .atomic
+        )
+        try Data("Ignored".utf8).write(
+            to: importDirectoryURL.appendingPathComponent("Ignored.md"),
+            options: .atomic
+        )
+
+        let progressRecorder = ImportBatchProgressRecorder()
+        let summary = try await importService.importBooks(in: importDirectoryURL) { progress in
+            await progressRecorder.append(progress)
+        }
+        let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
+        let progressEvents = await progressRecorder.events
+
+        XCTAssertEqual(summary.totalCount, 3)
+        XCTAssertEqual(summary.importedCount, 2)
+        XCTAssertEqual(summary.duplicateCount, 0)
+        XCTAssertEqual(summary.failedCount, 1)
+        XCTAssertEqual(summary.failures.first?.fileName, "Empty.txt")
+        XCTAssertEqual(Set(summary.importedBooks.map(\.title)), Set(["First", "Second"]))
+        XCTAssertEqual(books.count, 2)
+        XCTAssertEqual(progressEvents.first?.phase, .scanning)
+        XCTAssertEqual(progressEvents.last?.processedCount, 3)
+        XCTAssertEqual(progressEvents.last?.totalCount, 3)
+    }
+
+    func testBatchImportReportsDuplicatesWithoutCreatingExtraBooks() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let database = try AppDatabase(fileStore: fileStore)
+        let repository = GRDBLibraryRepository(database: database)
+        let importService = ImportService(
+            fileStore: fileStore,
+            libraryRepository: repository
+        )
+        let importDirectoryURL = rootURL.appendingPathComponent("Batch", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: importDirectoryURL,
+            withIntermediateDirectories: true
+        )
+        try Data("Chapter 1\nSame".utf8).write(
+            to: importDirectoryURL.appendingPathComponent("A.txt"),
+            options: .atomic
+        )
+        try Data("Chapter 1\nSame".utf8).write(
+            to: importDirectoryURL.appendingPathComponent("B.txt"),
+            options: .atomic
+        )
+
+        let summary = try await importService.importBooks(in: importDirectoryURL)
+        let books = try await repository.fetchBooks(scope: .all, sortOrder: .importedAt)
+        let bookDirectories = try FileManager.default.contentsOfDirectory(
+            at: fileStore.booksURL,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ).filter { url in
+            let values = try? url.resourceValues(forKeys: [.isDirectoryKey])
+            return values?.isDirectory == true && url.lastPathComponent != ".deleting"
+        }
+
+        XCTAssertEqual(summary.totalCount, 2)
+        XCTAssertEqual(summary.importedCount, 1)
+        XCTAssertEqual(summary.duplicateCount, 1)
+        XCTAssertEqual(summary.failedCount, 0)
+        XCTAssertEqual(books.count, 1)
+        XCTAssertEqual(bookDirectories.count, 1)
+    }
+}
+
+private actor ImportBatchProgressRecorder {
+    private var storedEvents: [ImportBatchProgress] = []
+
+    var events: [ImportBatchProgress] {
+        storedEvents
+    }
+
+    func append(_ progress: ImportBatchProgress) {
+        storedEvents.append(progress)
+    }
 }

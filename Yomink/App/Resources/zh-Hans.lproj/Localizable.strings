@@ -52,6 +52,7 @@
 "common.save" = "保存";
 
 "add.import.file" = "从文件导入";
+"add.import.folder" = "从文件夹批量导入";
 "add.reading.history" = "足迹";
 "history.clear" = "清空";
 "history.empty.message" = "还没有阅读记录";
@@ -286,6 +287,14 @@
 "import.duplicate.openExisting" = "打开现有书籍";
 "import.duplicate.cancel" = "取消";
 "import.progress.message" = "正在导入并转换为 UTF-8...";
+"import.batch.scanning" = "正在扫描文件夹...";
+"import.batch.progress" = "正在导入 %d/%d 本";
+"import.batch.result.title" = "批量导入完成";
+"import.batch.result.summary" = "共找到 %d 本 TXT，成功导入 %d 本，重复跳过 %d 本，失败 %d 本。";
+"import.batch.result.empty" = "这个文件夹里没有找到可导入的 TXT 文件。";
+"import.batch.result.failures" = "失败文件：";
+"import.batch.result.failureLine" = "%@：%@";
+"import.batch.result.moreFailures" = "还有 %d 个失败文件未显示。";
 "import.error.title" = "导入失败";
 "import.error.unsupportedFileType" = "请选择 TXT 文本文件。";
 "import.error.unsupportedEncoding" = "暂不支持这个文件的编码。请使用 UTF-8、GBK 或 GB2312 TXT。";

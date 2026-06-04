@@ -8,11 +8,13 @@ struct LibraryView: View {
     @State private var activeDrawer: LibraryDrawerSide?
     @State private var activeReaderBook: Book?
     @State private var isImportPickerPresented = false
+    @State private var isBatchImportPickerPresented = false
     @State private var isDrawerOpen = false
     @State private var selectedScope: LibraryScope = .ungrouped
     @State private var activeRoute: LibraryRoute?
     @State private var exportPayload: ExportPayload?
     @State private var pendingBookDeletion: PendingBookDeletion?
+    @State private var importBatchSummary: ImportBatchSummary?
     @State private var isReaderStatusBarHidden = false
     @State private var pendingReaderBook: Book?
     @State private var pendingReaderOpenID = UUID()
@@ -136,7 +138,9 @@ struct LibraryView: View {
             .background {
                 DocumentPickerPresenter(
                     isPresented: $isImportPickerPresented,
-                    allowedContentTypes: [Self.txtContentType]
+                    allowedContentTypes: [Self.txtContentType],
+                    asCopy: true,
+                    allowsMultipleSelection: false
                 ) { result in
                     guard case let .ready(services) = environment.bootstrapState else {
                         return
@@ -144,6 +148,26 @@ struct LibraryView: View {
                     viewModel.handleImportResult(
                         result,
                         importService: services.importService
+                    )
+                }
+                .frame(width: 0, height: 0)
+
+                DocumentPickerPresenter(
+                    isPresented: $isBatchImportPickerPresented,
+                    allowedContentTypes: [.folder],
+                    asCopy: false,
+                    allowsMultipleSelection: false
+                ) { result in
+                    guard case let .ready(services) = environment.bootstrapState else {
+                        return
+                    }
+                    viewModel.handleBatchImportResult(
+                        result,
+                        importService: services.importService,
+                        onCompleted: { summary in
+                            importBatchSummary = summary
+                            reloadBooksIfReady()
+                        }
                     )
                 }
                 .frame(width: 0, height: 0)
@@ -157,6 +181,17 @@ struct LibraryView: View {
                 )
             }
             .onChange(of: isImportPickerPresented) { isPresented in
+                guard case let .ready(services) = environment.bootstrapState else {
+                    return
+                }
+                if !isPresented {
+                    viewModel.loadIfNeededAfterPickerDismissal(
+                        repository: services.libraryRepository,
+                        scope: selectedScope
+                    )
+                }
+            }
+            .onChange(of: isBatchImportPickerPresented) { isPresented in
                 guard case let .ready(services) = environment.bootstrapState else {
                     return
                 }
@@ -183,6 +218,15 @@ struct LibraryView: View {
                 }
             } message: {
                 Text(viewModel.importErrorMessage ?? "")
+            }
+            .alert(item: $importBatchSummary) { summary in
+                Alert(
+                    title: Text("import.batch.result.title"),
+                    message: Text(verbatim: summary.resultMessage),
+                    dismissButton: .default(Text("common.ok")) {
+                        importBatchSummary = nil
+                    }
+                )
             }
             .alert(item: $pendingBookDeletion) { deletion in
                 Alert(
@@ -330,6 +374,9 @@ struct LibraryView: View {
             AddBookSidebarView(
                 onImportFromFile: {
                     requestImportFromDrawer()
+                },
+                onImportFromFolder: {
+                    requestBatchImportFromDrawer()
                 },
                 onOpenHistoryPage: {
                     openRouteFromDrawer(.history)
@@ -729,6 +776,17 @@ struct LibraryView: View {
             }
             .buttonStyle(.borderedProminent)
             .padding(.top, 8)
+
+            Button {
+                isBatchImportPickerPresented = true
+            } label: {
+                Label {
+                    Text("add.import.folder")
+                } icon: {
+                    Image(systemName: "folder.badge.plus")
+                }
+            }
+            .buttonStyle(.bordered)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -739,10 +797,30 @@ struct LibraryView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: 12) {
-                ProgressView()
-                Text("import.progress.message")
+                if let progress = viewModel.batchImportProgress,
+                   progress.totalCount > 0 {
+                    ProgressView(
+                        value: Double(progress.processedCount),
+                        total: Double(progress.totalCount)
+                    )
+                    .frame(width: 220)
+                } else {
+                    ProgressView()
+                }
+
+                Text(viewModel.importProgressMessage)
                     .font(.subheadline)
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+
+                if let currentFileName = viewModel.batchImportProgress?.currentFileName {
+                    Text(verbatim: currentFileName)
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .frame(maxWidth: 240)
+                }
             }
             .padding(20)
             .background(.regularMaterial)
@@ -881,6 +959,13 @@ struct LibraryView: View {
         }
     }
 
+    private func requestBatchImportFromDrawer() {
+        closeDrawer()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerAnimationDuration + 0.02) {
+            isBatchImportPickerPresented = true
+        }
+    }
+
     private func openRouteFromDrawer(_ route: LibraryRoute) {
         activeRoute = route
         closeDrawer()
@@ -1016,6 +1101,8 @@ private enum LibraryRoute: Hashable {
 private struct DocumentPickerPresenter: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
     let allowedContentTypes: [UTType]
+    var asCopy = true
+    var allowsMultipleSelection = false
     let onCompletion: (Result<[URL], Error>) -> Void
 
     func makeUIViewController(context: Context) -> UIViewController {
@@ -1063,11 +1150,11 @@ private struct DocumentPickerPresenter: UIViewControllerRepresentable {
 
             let picker = UIDocumentPickerViewController(
                 forOpeningContentTypes: parent.allowedContentTypes,
-                asCopy: true
+                asCopy: parent.asCopy
             )
             picker.delegate = self
             picker.presentationController?.delegate = self
-            picker.allowsMultipleSelection = false
+            picker.allowsMultipleSelection = parent.allowsMultipleSelection
             self.picker = picker
             viewController.present(picker, animated: true)
         }
@@ -1153,6 +1240,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var importErrorTitle: LocalizedStringKey = "library.error.title"
     @Published var importErrorMessage: String?
     @Published var importPreview: ImportBookPreview?
+    @Published var batchImportProgress: ImportBatchProgress?
     private var currentImportTask: Task<Void, Never>?
     private var loadGeneration = 0
     private var settingsSaveTask: Task<Void, Never>?
@@ -1168,6 +1256,27 @@ private final class LibraryViewModel: ObservableObject {
             format: NSLocalizedString("library.selection.count", comment: ""),
             selectedBookIDs.count
         )
+    }
+
+    var importProgressMessage: String {
+        guard let progress = batchImportProgress else {
+            return NSLocalizedString("import.progress.message", comment: "")
+        }
+
+        switch progress.phase {
+        case .scanning:
+            return NSLocalizedString("import.batch.scanning", comment: "")
+        case .importing:
+            let displayCount = min(
+                progress.processedCount + (progress.currentFileName == nil ? 0 : 1),
+                progress.totalCount
+            )
+            return String(
+                format: NSLocalizedString("import.batch.progress", comment: ""),
+                displayCount,
+                progress.totalCount
+            )
+        }
     }
 
     func bootstrap(
@@ -1263,6 +1372,30 @@ private final class LibraryViewModel: ObservableObject {
                 return
             }
             prepareImportPreview(from: url, importService: importService)
+        case let .failure(error):
+            showError(error, title: "import.error.title")
+        }
+    }
+
+    func handleBatchImportResult(
+        _ result: Result<[URL], Error>,
+        importService: ImportService,
+        onCompleted: @escaping (ImportBatchSummary) -> Void
+    ) {
+        guard !isImporting else {
+            return
+        }
+
+        switch result {
+        case let .success(urls):
+            guard let url = urls.first else {
+                return
+            }
+            startBatchImport(
+                in: url,
+                importService: importService,
+                onCompleted: onCompleted
+            )
         case let .failure(error):
             showError(error, title: "import.error.title")
         }
@@ -1435,6 +1568,7 @@ private final class LibraryViewModel: ObservableObject {
         importService: ImportService
     ) {
         isImporting = true
+        batchImportProgress = nil
         currentImportTask = Task {
             do {
                 importPreview = try await importService.previewImport(from: url)
@@ -1449,6 +1583,43 @@ private final class LibraryViewModel: ObservableObject {
             isImporting = false
             if Task.isCancelled {
                 currentImportTask = nil
+            }
+        }
+    }
+
+    private func startBatchImport(
+        in directoryURL: URL,
+        importService: ImportService,
+        onCompleted: @escaping (ImportBatchSummary) -> Void
+    ) {
+        isImporting = true
+        batchImportProgress = ImportBatchProgress(
+            phase: .scanning,
+            processedCount: 0,
+            totalCount: 0,
+            currentFileName: nil
+        )
+        currentImportTask = Task {
+            do {
+                let summary = try await importService.importBooks(in: directoryURL) { progress in
+                    await MainActor.run {
+                        self.batchImportProgress = progress
+                    }
+                }
+                try Task.checkCancellation()
+                batchImportProgress = nil
+                isImporting = false
+                currentImportTask = nil
+                onCompleted(summary)
+            } catch is CancellationError {
+                batchImportProgress = nil
+                isImporting = false
+                currentImportTask = nil
+            } catch {
+                batchImportProgress = nil
+                isImporting = false
+                currentImportTask = nil
+                showError(error, title: "import.error.title")
             }
         }
     }
@@ -2199,6 +2370,59 @@ private struct PendingBookDeletion: Identifiable {
             format: NSLocalizedString("library.delete.confirm.multiple.message", comment: ""),
             ids.count
         )
+    }
+}
+
+extension ImportBatchSummary: Identifiable {
+    var id: String {
+        [
+            String(totalCount),
+            String(importedCount),
+            String(duplicateCount),
+            String(failedCount),
+            failures.map(\.fileName).joined(separator: "|")
+        ].joined(separator: "-")
+    }
+
+    var resultMessage: String {
+        var lines = [
+            String(
+                format: NSLocalizedString("import.batch.result.summary", comment: ""),
+                totalCount,
+                importedCount,
+                duplicateCount,
+                failedCount
+            )
+        ]
+
+        if totalCount == 0 {
+            lines.append(NSLocalizedString("import.batch.result.empty", comment: ""))
+        }
+
+        if !failures.isEmpty {
+            let visibleFailures = failures.prefix(5).map { failure in
+                String(
+                    format: NSLocalizedString("import.batch.result.failureLine", comment: ""),
+                    failure.fileName,
+                    failure.errorDescription
+                )
+            }
+            lines.append("")
+            lines.append(NSLocalizedString("import.batch.result.failures", comment: ""))
+            lines.append(contentsOf: visibleFailures)
+
+            let remainingCount = failures.count - visibleFailures.count
+            if remainingCount > 0 {
+                lines.append(
+                    String(
+                        format: NSLocalizedString("import.batch.result.moreFailures", comment: ""),
+                        remainingCount
+                    )
+                )
+            }
+        }
+
+        return lines.joined(separator: "\n")
     }
 }
 
