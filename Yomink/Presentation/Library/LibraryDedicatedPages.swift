@@ -4034,6 +4034,7 @@ struct ImportBookEditPage: View {
     let preview: ImportBookPreview
     let importService: ImportService
     let repository: any LibraryRepository
+    let targetGroupID: UUID?
     let onImported: () -> Void
     let onOpenExistingBook: (Book) -> Void
     let onCancel: () -> Void
@@ -4051,6 +4052,7 @@ struct ImportBookEditPage: View {
         preview: ImportBookPreview,
         importService: ImportService,
         repository: any LibraryRepository,
+        targetGroupID: UUID? = nil,
         onImported: @escaping () -> Void,
         onOpenExistingBook: @escaping (Book) -> Void,
         onCancel: @escaping () -> Void
@@ -4058,6 +4060,7 @@ struct ImportBookEditPage: View {
         self.preview = preview
         self.importService = importService
         self.repository = repository
+        self.targetGroupID = targetGroupID
         self.onImported = onImported
         self.onOpenExistingBook = onOpenExistingBook
         self.onCancel = onCancel
@@ -4238,7 +4241,8 @@ struct ImportBookEditPage: View {
             do {
                 switch try await importService.importBookCheckingDuplicate(
                     from: preview.sourceURL,
-                    metadata: metadata
+                    metadata: metadata,
+                    targetGroupID: targetGroupID
                 ) {
                 case let .duplicate(existingBook):
                     try Task.checkCancellation()

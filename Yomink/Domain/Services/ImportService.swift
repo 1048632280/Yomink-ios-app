@@ -98,11 +98,13 @@ final class ImportService {
     @discardableResult
     func importBookCheckingDuplicate(
         from sourceURL: URL,
-        metadata: ImportBookMetadata? = nil
+        metadata: ImportBookMetadata? = nil,
+        targetGroupID: UUID? = nil
     ) async throws -> ImportResult {
         let candidate = try await prepareImportCandidate(
             from: sourceURL,
-            metadata: metadata
+            metadata: metadata,
+            targetGroupID: targetGroupID
         )
         try Task.checkCancellation()
 
@@ -134,11 +136,13 @@ final class ImportService {
     @discardableResult
     func importBook(
         from sourceURL: URL,
-        metadata: ImportBookMetadata? = nil
+        metadata: ImportBookMetadata? = nil,
+        targetGroupID: UUID? = nil
     ) async throws -> Book {
         let candidate = try await prepareImportCandidate(
             from: sourceURL,
-            metadata: metadata
+            metadata: metadata,
+            targetGroupID: targetGroupID
         )
         try Task.checkCancellation()
         let preparedImport = try await finalizeImport(from: candidate)
@@ -166,6 +170,7 @@ final class ImportService {
 
     func importBooks(
         in directoryURL: URL,
+        targetGroupID: UUID? = nil,
         progress: ((ImportBatchProgress) async -> Void)? = nil
     ) async throws -> ImportBatchSummary {
         let accessGranted = directoryURL.startAccessingSecurityScopedResource()
@@ -226,7 +231,10 @@ final class ImportService {
             }
 
             do {
-                switch try await importBookCheckingDuplicate(from: sourceURL) {
+                switch try await importBookCheckingDuplicate(
+                    from: sourceURL,
+                    targetGroupID: targetGroupID
+                ) {
                 case let .imported(book):
                     summary.importedBooks.append(book)
                 case let .duplicate(book):
@@ -343,7 +351,8 @@ final class ImportService {
 
     private func prepareImportCandidate(
         from sourceURL: URL,
-        metadata: ImportBookMetadata?
+        metadata: ImportBookMetadata?,
+        targetGroupID: UUID?
     ) async throws -> ImportPreparationCandidate {
         let fileStore = fileStore
         let decoder = decoder
@@ -398,6 +407,7 @@ final class ImportService {
                 sourceTitle: sourceTitle,
                 sourceAuthor: sourceAuthor,
                 sourceIntro: sourceIntro,
+                targetGroupID: targetGroupID,
                 decodedText: decodedText,
                 utf8Data: utf8Data,
                 contentHash: contentHash
@@ -444,7 +454,8 @@ final class ImportService {
                     chapters: chapterIndexer.indexChapters(for: candidate.decodedText.text),
                     importedAt: importedAt,
                     importSourceDisplayPath: candidate.sourceDisplayPath,
-                    sourcePath: candidate.contentPath
+                    sourcePath: candidate.contentPath,
+                    groupID: candidate.targetGroupID
                 )
                 return PreparedImport(
                     draft: draft,
@@ -702,6 +713,7 @@ private struct ImportPreparationCandidate: Sendable {
     let sourceTitle: String
     let sourceAuthor: String?
     let sourceIntro: String?
+    let targetGroupID: UUID?
     let decodedText: TXTTextDecoder.DecodedText
     let utf8Data: Data
     let contentHash: String

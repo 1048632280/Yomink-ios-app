@@ -768,6 +768,50 @@ final class ImportServiceDuplicateTests: XCTestCase {
         XCTAssertEqual(bookDirectories.count, 1)
     }
 
+    func testImportCanTargetGroup() async throws {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        defer {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+        let database = try AppDatabase(fileStore: fileStore)
+        let repository = GRDBLibraryRepository(database: database)
+        let group = try await repository.createGroup(name: "Target")
+        let importService = ImportService(
+            fileStore: fileStore,
+            libraryRepository: repository
+        )
+        let sourceURL = rootURL.appendingPathComponent("grouped.txt", isDirectory: false)
+        try Data("Chapter 1\nGrouped".utf8).write(to: sourceURL, options: .atomic)
+
+        let result = try await importService.importBookCheckingDuplicate(
+            from: sourceURL,
+            targetGroupID: group.id
+        )
+        let importedBook: Book
+        switch result {
+        case let .imported(book):
+            importedBook = book
+        case .duplicate:
+            XCTFail("First import should create a book")
+            return
+        }
+
+        let groupedBooks = try await repository.fetchBooks(
+            scope: .group(group.id),
+            sortOrder: .importedAt
+        )
+        let ungroupedBooks = try await repository.fetchBooks(
+            scope: .ungrouped,
+            sortOrder: .importedAt
+        )
+
+        XCTAssertEqual(importedBook.groupID, group.id)
+        XCTAssertEqual(groupedBooks.map(\.id), [importedBook.id])
+        XCTAssertTrue(ungroupedBooks.isEmpty)
+    }
+
     func testConcurrentDuplicateImportKeepsSingleBook() async throws {
         let rootURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("YominkTests-\(UUID().uuidString)", isDirectory: true)

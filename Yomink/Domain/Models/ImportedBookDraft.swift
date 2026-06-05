@@ -22,6 +22,7 @@ struct ImportedBookDraft: Equatable, Sendable {
     var importedAt: Date
     var importSourceDisplayPath: String?
     var sourcePath: String
+    var groupID: UUID?
 
     init(
         id: UUID,
@@ -36,7 +37,8 @@ struct ImportedBookDraft: Equatable, Sendable {
         chapters: [ImportedChapterDraft],
         importedAt: Date,
         importSourceDisplayPath: String?,
-        sourcePath: String
+        sourcePath: String,
+        groupID: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -51,6 +53,7 @@ struct ImportedBookDraft: Equatable, Sendable {
         self.importedAt = importedAt
         self.importSourceDisplayPath = importSourceDisplayPath
         self.sourcePath = sourcePath
+        self.groupID = groupID
     }
 }
 

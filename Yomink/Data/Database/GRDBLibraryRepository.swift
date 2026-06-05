@@ -974,7 +974,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                     importedAt, lastReadAt, groupId, contentHash, importSourceDisplayPath,
                     sourceBookmark, sourcePath
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)
                 ON CONFLICT(contentHash) DO NOTHING
                 """,
                 arguments: [
@@ -987,6 +987,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                     draft.encoding,
                     normalizedWordCount,
                     importedAt,
+                    draft.groupID?.uuidString,
                     draft.contentHash,
                     draft.importSourceDisplayPath,
                     draft.sourcePath
@@ -1035,7 +1036,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                 wordCount: normalizedWordCount,
                 importedAt: draft.importedAt,
                 lastReadAt: nil,
-                groupID: nil,
+                groupID: draft.groupID,
                 progressPercentage: 0,
                 contentHash: draft.contentHash,
                 sourcePath: draft.sourcePath

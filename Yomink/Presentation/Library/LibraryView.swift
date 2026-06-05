@@ -146,7 +146,8 @@ struct LibraryView: View {
                     }
                     viewModel.handleImportResult(
                         result,
-                        importService: services.importService
+                        importService: services.importService,
+                        targetGroupID: currentImportGroupID
                     )
                 }
                 .frame(width: 0, height: 0)
@@ -163,6 +164,7 @@ struct LibraryView: View {
                     viewModel.handleBatchImportResult(
                         result,
                         importService: services.importService,
+                        targetGroupID: currentImportGroupID,
                         onCompleted: {
                             reloadBooksIfReady()
                         }
@@ -321,6 +323,13 @@ struct LibraryView: View {
         case .bootstrapping, .failed:
             return nil
         }
+    }
+
+    private var currentImportGroupID: UUID? {
+        if case let .group(groupID) = selectedScope {
+            return groupID
+        }
+        return nil
     }
 
     @ViewBuilder
@@ -506,6 +515,7 @@ struct LibraryView: View {
                         preview: preview,
                         importService: services.importService,
                         repository: services.libraryRepository,
+                        targetGroupID: viewModel.importTargetGroupID,
                         onImported: {
                             closeImportRoute()
                             reloadBooksIfReady()
@@ -1317,6 +1327,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var importErrorTitle: LocalizedStringKey = "library.error.title"
     @Published var importErrorMessage: String?
     @Published var importPreview: ImportBookPreview?
+    @Published private(set) var importTargetGroupID: UUID?
     @Published var batchImportProgress: ImportBatchProgress?
     private var currentImportTask: Task<Void, Never>?
     private var loadGeneration = 0
@@ -1464,7 +1475,8 @@ private final class LibraryViewModel: ObservableObject {
 
     func handleImportResult(
         _ result: Result<[URL], Error>,
-        importService: ImportService
+        importService: ImportService,
+        targetGroupID: UUID?
     ) {
         guard !isImporting else {
             return
@@ -1475,7 +1487,11 @@ private final class LibraryViewModel: ObservableObject {
             guard let url = urls.first else {
                 return
             }
-            prepareImportPreview(from: url, importService: importService)
+            prepareImportPreview(
+                from: url,
+                importService: importService,
+                targetGroupID: targetGroupID
+            )
         case let .failure(error):
             showError(error, title: "import.error.title")
         }
@@ -1484,6 +1500,7 @@ private final class LibraryViewModel: ObservableObject {
     func handleBatchImportResult(
         _ result: Result<[URL], Error>,
         importService: ImportService,
+        targetGroupID: UUID?,
         onCompleted: @escaping () -> Void
     ) {
         guard !isImporting else {
@@ -1498,6 +1515,7 @@ private final class LibraryViewModel: ObservableObject {
             startBatchImport(
                 in: url,
                 importService: importService,
+                targetGroupID: targetGroupID,
                 onCompleted: onCompleted
             )
         case let .failure(error):
@@ -1669,9 +1687,11 @@ private final class LibraryViewModel: ObservableObject {
 
     private func prepareImportPreview(
         from url: URL,
-        importService: ImportService
+        importService: ImportService,
+        targetGroupID: UUID?
     ) {
         isImporting = true
+        importTargetGroupID = targetGroupID
         batchImportProgress = nil
         currentImportTask = Task {
             do {
@@ -1682,6 +1702,7 @@ private final class LibraryViewModel: ObservableObject {
                 if !Task.isCancelled {
                     showError(error, title: "import.error.title")
                     currentImportTask = nil
+                    importTargetGroupID = nil
                 }
             }
             isImporting = false
@@ -1694,6 +1715,7 @@ private final class LibraryViewModel: ObservableObject {
     private func startBatchImport(
         in directoryURL: URL,
         importService: ImportService,
+        targetGroupID: UUID?,
         onCompleted: @escaping () -> Void
     ) {
         isImporting = true
@@ -1706,7 +1728,10 @@ private final class LibraryViewModel: ObservableObject {
         )
         currentImportTask = Task {
             do {
-                let summary = try await importService.importBooks(in: directoryURL) { progress in
+                let summary = try await importService.importBooks(
+                    in: directoryURL,
+                    targetGroupID: targetGroupID
+                ) { progress in
                     await MainActor.run {
                         self.batchImportProgress = progress
                     }
@@ -1753,6 +1778,7 @@ private final class LibraryViewModel: ObservableObject {
 
     func clearImportPreview() {
         importPreview = nil
+        importTargetGroupID = nil
     }
 
     private func pruneSelection() {
