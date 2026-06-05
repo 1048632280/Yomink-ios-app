@@ -126,8 +126,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let autoReadExitButtonHeight: CGFloat = 42
         static let maximumResidentPages = 14
         static let horizontalPrefetchDistance = 4
-        static let verticalPrefetchDistance = 6
-        static let autoReadPrefetchViewportMultiplier: CGFloat = 4
     }
 
     private static let widgetTimeFormatter: DateFormatter = {
@@ -2282,11 +2280,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let leadingCount = index + pendingPagePrepends.count
         let trailingCount = pages.count - index - 1
 
-        let prefetchDistance = usesVerticalScrolling
-            ? Layout.verticalPrefetchDistance
-            : Layout.horizontalPrefetchDistance
-        let needsLeading = leadingCount <= prefetchDistance
-        let needsTrailing = trailingCount <= prefetchDistance
+        let needsLeading = leadingCount <= Layout.horizontalPrefetchDistance
+        let needsTrailing = trailingCount <= Layout.horizontalPrefetchDistance
 
         if needsLeading && needsTrailing {
             if trailingCount <= leadingCount {
@@ -3466,13 +3461,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         if displayNeedsProgressSave() {
             scheduleProgressSave()
         }
-        let prefetchDistance = autoReadPrefetchDistance()
         if distance > 0,
-           nextOffsetY >= max(minOffsetY, maxOffsetY - prefetchDistance) {
+           nextOffsetY >= max(minOffsetY, maxOffsetY - autoReadPageHeight() * 1.6) {
             loadNextPageIfNeeded()
         }
         if distance < 0,
-           nextOffsetY <= minOffsetY + prefetchDistance {
+           nextOffsetY <= minOffsetY + autoReadPageHeight() * 1.6 {
             loadPreviousPageIfNeeded()
         }
         if nextOffsetY >= maxOffsetY,
@@ -3489,13 +3483,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
         lastAutoReadProgressUpdateTimestamp = now
         return true
-    }
-
-    private func autoReadPrefetchDistance() -> CGFloat {
-        max(
-            autoReadPageHeight() * Layout.autoReadPrefetchViewportMultiplier,
-            currentAutoReadBaseSpeed() * 4
-        )
     }
 
     private func targetProgressInCurrentChapter(
@@ -6348,9 +6335,6 @@ private enum CollectionReaderError: LocalizedError {
 }
 
 private enum CollectionReaderPaginator {
-    private static let minimumDrawingSafetyInset: CGFloat = 6
-    private static let drawingSafetyLineHeightMultiplier: CGFloat = 0.35
-
     static func makePage(
         book: Book,
         chapters: [Chapter],
@@ -6402,15 +6386,7 @@ private enum CollectionReaderPaginator {
                 safeAreaInsets: safeAreaInsets,
                 widgetInsets: effectiveWidgetInsets
             )
-            let drawingSafetyInset = Self.drawingSafetyInset(
-                fontSize: CGFloat(normalizedSettings.fontSize),
-                layout: layout
-            )
-            let contentSize = layout.contentRect(in: CGRect(origin: .zero, size: viewportSize)).size
-            let fittingSize = CGSize(
-                width: contentSize.width,
-                height: max(1, contentSize.height - drawingSafetyInset)
-            )
+            let fittingSize = layout.contentRect(in: CGRect(origin: .zero, size: viewportSize)).size
             let typography = ReaderTypography(
                 settings: normalizedSettings,
                 chapterTitle: chapter.title
@@ -6473,7 +6449,7 @@ private enum CollectionReaderPaginator {
                 fontSize: CGFloat(normalizedSettings.fontSize),
                 layout: layout
             )
-            let verticalExtent = ceil(page.usedHeight + pageGap + drawingSafetyInset)
+            let verticalExtent = ceil(page.usedHeight + pageGap)
 
             guard endAbsoluteOffset > startAbsoluteOffset else {
                 throw CollectionReaderError.emptyPage
@@ -6568,17 +6544,6 @@ private enum CollectionReaderPaginator {
     ) -> CGFloat {
         let lineHeight = fontSize + layout.bodyLineSpacing
         return max(lineHeight * 3, layout.bodyParagraphSpacing)
-    }
-
-    private static func drawingSafetyInset(
-        fontSize: CGFloat,
-        layout: ReaderLayoutConfiguration
-    ) -> CGFloat {
-        let lineHeight = fontSize + layout.bodyLineSpacing
-        return max(
-            minimumDrawingSafetyInset,
-            ceil(lineHeight * drawingSafetyLineHeightMultiplier)
-        )
     }
 
     private static func isParagraphBoundary(

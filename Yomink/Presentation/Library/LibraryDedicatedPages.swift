@@ -1091,20 +1091,33 @@ private final class TagWordCloudUIKitView: UIView {
 
 private enum TagWordCloudPalette {
     private static let colors: [UIColor] = [
-        UIColor(red: 0.39, green: 0.50, blue: 0.58, alpha: 1),
-        UIColor(red: 0.58, green: 0.43, blue: 0.38, alpha: 1),
-        UIColor(red: 0.43, green: 0.53, blue: 0.39, alpha: 1),
-        UIColor(red: 0.48, green: 0.44, blue: 0.58, alpha: 1),
-        UIColor(red: 0.62, green: 0.42, blue: 0.48, alpha: 1),
-        UIColor(red: 0.40, green: 0.56, blue: 0.54, alpha: 1),
-        UIColor(red: 0.61, green: 0.52, blue: 0.34, alpha: 1),
-        UIColor(red: 0.45, green: 0.48, blue: 0.63, alpha: 1),
-        UIColor(red: 0.55, green: 0.48, blue: 0.41, alpha: 1),
-        UIColor(red: 0.38, green: 0.56, blue: 0.45, alpha: 1)
+        makeColor(red: 0xA3, green: 0x41, blue: 0x58),
+        makeColor(red: 0x38, green: 0x52, blue: 0x7A),
+        makeColor(red: 0xB5, green: 0x9A, blue: 0x45),
+        makeColor(red: 0x6B, green: 0x7D, blue: 0x53),
+        makeColor(red: 0x84, green: 0x74, blue: 0xA1),
+        makeColor(red: 0xB8, green: 0x63, blue: 0x41),
+        makeColor(red: 0x54, green: 0x63, blue: 0x6D),
+        makeColor(red: 0x5C, green: 0x6E, blue: 0x58),
+        makeColor(red: 0x8D, green: 0x4A, blue: 0x5B),
+        makeColor(red: 0x4D, green: 0x80, blue: 0x76)
     ]
 
     static func color(for id: UUID) -> UIColor {
         colors[Int(stableHash(for: id) % UInt64(colors.count))]
+    }
+
+    private static func makeColor(
+        red: CGFloat,
+        green: CGFloat,
+        blue: CGFloat
+    ) -> UIColor {
+        UIColor(
+            red: red / 255.0,
+            green: green / 255.0,
+            blue: blue / 255.0,
+            alpha: 1
+        )
     }
 
     static func stableHash(for id: UUID) -> UInt64 {
