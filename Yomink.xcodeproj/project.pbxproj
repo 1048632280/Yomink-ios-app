@@ -13,7 +13,12 @@
 		146E7E1DD3A2418F88177901 /* AppDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146E7E1DD3A2418F88177900 /* AppDatabase.swift */; };
 		19DE8485AE524998BBFE7B01 /* ReaderHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19DE8485AE524998BBFE7B00 /* ReaderHostView.swift */; };
 		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
-		1FA3D8E4177B4B7CAB7C7D01 /* ReaderMoreViewControllers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FA3D8E4177B4B7CAB7C7D00 /* ReaderMoreViewControllers.swift */; };
+		C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */; };
+		C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */; };
+		C0DE10000000000000000301 /* ReaderFilterRulesViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000300 /* ReaderFilterRulesViewController.swift */; };
+		C0DE10000000000000000401 /* ReaderContentSearchViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000400 /* ReaderContentSearchViewController.swift */; };
+		C0DE10000000000000000501 /* ReaderBookCoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000500 /* ReaderBookCoverView.swift */; };
+		C0DE10000000000000000601 /* ReaderPageTouchAreasViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000600 /* ReaderPageTouchAreasViewController.swift */; };
 		AA55C6D1B3F442539D4F0001 /* ChapterIndexer.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA55C6D1B3F442539D4F0000 /* ChapterIndexer.swift */; };
 		25FE22A19C594380B5A78901 /* BookRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25FE22A19C594380B5A78900 /* BookRecord.swift */; };
 		2C799D6D40B44D20B3E2A901 /* DatabaseDateFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C799D6D40B44D20B3E2A900 /* DatabaseDateFormatter.swift */; };
@@ -27,7 +32,16 @@
 		A24F0C9D3B7A4F2F9C1D0301 /* TextFilterRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0300 /* TextFilterRule.swift */; };
 		A24F0C9D3B7A4F2F9C1D0401 /* ReaderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0400 /* ReaderSettings.swift */; };
 		44F43894BCA349048B94BE01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 44F43894BCA349048B94BE00 /* Assets.xcassets */; };
-		4F67893D9CA54B9192994201 /* LibraryDedicatedPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F67893D9CA54B9192994200 /* LibraryDedicatedPages.swift */; };
+		C0DE20000000000000000101 /* LibraryGroupsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000100 /* LibraryGroupsPage.swift */; };
+		C0DE20000000000000000201 /* LibraryTagsPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000200 /* LibraryTagsPage.swift */; };
+		C0DE20000000000000000301 /* BookTagPickerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000300 /* BookTagPickerPage.swift */; };
+		C0DE20000000000000000401 /* ReadingHistoryPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000400 /* ReadingHistoryPage.swift */; };
+		C0DE20000000000000000501 /* RandomBookPickerPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000500 /* RandomBookPickerPage.swift */; };
+		C0DE20000000000000000601 /* LibrarySettingsPages.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000600 /* LibrarySettingsPages.swift */; };
+		C0DE20000000000000000701 /* StorageManagementPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000700 /* StorageManagementPage.swift */; };
+		C0DE20000000000000000801 /* BookExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000800 /* BookExportService.swift */; };
+		C0DE20000000000000000901 /* ImportBookEditPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000900 /* ImportBookEditPage.swift */; };
+		C0DE20000000000000001001 /* DedicatedPageComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001000 /* DedicatedPageComponents.swift */; };
 		5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5687B1CC7E93495893E4D400 /* ReadingProgress.swift */; };
 		5AE7C8317C0F4440A4C4AF01 /* ReaderTextFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */; };
 		7B3D9F1C4A2E4F50B8C19A01 /* HostingControllerHomeIndicatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */; };
@@ -53,7 +67,12 @@
 		146E7E1DD3A2418F88177900 /* AppDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabase.swift; sourceTree = "<group>"; };
 		19DE8485AE524998BBFE7B00 /* ReaderHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderHostView.swift; sourceTree = "<group>"; };
 		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
-		1FA3D8E4177B4B7CAB7C7D00 /* ReaderMoreViewControllers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderMoreViewControllers.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailViewController.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailEditViewController.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000300 /* ReaderFilterRulesViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderFilterRulesViewController.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000400 /* ReaderContentSearchViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderContentSearchViewController.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000500 /* ReaderBookCoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookCoverView.swift; sourceTree = "<group>"; };
+		C0DE10000000000000000600 /* ReaderPageTouchAreasViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPageTouchAreasViewController.swift; sourceTree = "<group>"; };
 		AA55C6D1B3F442539D4F0000 /* ChapterIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterIndexer.swift; sourceTree = "<group>"; };
 		20DCC8B06C9E4D1D8E57414F /* Yomink.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Yomink.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		25FE22A19C594380B5A78900 /* BookRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookRecord.swift; sourceTree = "<group>"; };
@@ -68,7 +87,16 @@
 		A24F0C9D3B7A4F2F9C1D0300 /* TextFilterRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextFilterRule.swift; sourceTree = "<group>"; };
 		A24F0C9D3B7A4F2F9C1D0400 /* ReaderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettings.swift; sourceTree = "<group>"; };
 		44F43894BCA349048B94BE00 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		4F67893D9CA54B9192994200 /* LibraryDedicatedPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDedicatedPages.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000100 /* LibraryGroupsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryGroupsPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000200 /* LibraryTagsPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryTagsPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000300 /* BookTagPickerPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookTagPickerPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000400 /* ReadingHistoryPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingHistoryPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000500 /* RandomBookPickerPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RandomBookPickerPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000600 /* LibrarySettingsPages.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySettingsPages.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000700 /* StorageManagementPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagementPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000800 /* BookExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookExportService.swift; sourceTree = "<group>"; };
+		C0DE20000000000000000900 /* ImportBookEditPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportBookEditPage.swift; sourceTree = "<group>"; };
+		C0DE20000000000000001000 /* DedicatedPageComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DedicatedPageComponents.swift; sourceTree = "<group>"; };
 		5687B1CC7E93495893E4D400 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
 		5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTextFilter.swift; sourceTree = "<group>"; };
 		7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingControllerHomeIndicatorBridge.swift; sourceTree = "<group>"; };
@@ -183,7 +211,16 @@
 			isa = PBXGroup;
 			children = (
 				0CC7AEF4199B48E0A7B02400 /* LibraryView.swift */,
-				4F67893D9CA54B9192994200 /* LibraryDedicatedPages.swift */,
+				C0DE20000000000000000100 /* LibraryGroupsPage.swift */,
+				C0DE20000000000000000200 /* LibraryTagsPage.swift */,
+				C0DE20000000000000000300 /* BookTagPickerPage.swift */,
+				C0DE20000000000000000400 /* ReadingHistoryPage.swift */,
+				C0DE20000000000000000500 /* RandomBookPickerPage.swift */,
+				C0DE20000000000000000600 /* LibrarySettingsPages.swift */,
+				C0DE20000000000000000700 /* StorageManagementPage.swift */,
+				C0DE20000000000000000800 /* BookExportService.swift */,
+				C0DE20000000000000000900 /* ImportBookEditPage.swift */,
+				C0DE20000000000000001000 /* DedicatedPageComponents.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -273,7 +310,12 @@
 			isa = PBXGroup;
 			children = (
 				19DE8485AE524998BBFE7B00 /* ReaderHostView.swift */,
-				1FA3D8E4177B4B7CAB7C7D00 /* ReaderMoreViewControllers.swift */,
+				C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */,
+				C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */,
+				C0DE10000000000000000300 /* ReaderFilterRulesViewController.swift */,
+				C0DE10000000000000000400 /* ReaderContentSearchViewController.swift */,
+				C0DE10000000000000000500 /* ReaderBookCoverView.swift */,
+				C0DE10000000000000000600 /* ReaderPageTouchAreasViewController.swift */,
 				5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */,
 			);
 			path = Reader;
@@ -431,12 +473,26 @@
 				1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */,
 				AA55C6D1B3F442539D4F0001 /* ChapterIndexer.swift in Sources */,
 				0CC7AEF4199B48E0A7B02401 /* LibraryView.swift in Sources */,
-				4F67893D9CA54B9192994201 /* LibraryDedicatedPages.swift in Sources */,
+				C0DE20000000000000000101 /* LibraryGroupsPage.swift in Sources */,
+				C0DE20000000000000000201 /* LibraryTagsPage.swift in Sources */,
+				C0DE20000000000000000301 /* BookTagPickerPage.swift in Sources */,
+				C0DE20000000000000000401 /* ReadingHistoryPage.swift in Sources */,
+				C0DE20000000000000000501 /* RandomBookPickerPage.swift in Sources */,
+				C0DE20000000000000000601 /* LibrarySettingsPages.swift in Sources */,
+				C0DE20000000000000000701 /* StorageManagementPage.swift in Sources */,
+				C0DE20000000000000000801 /* BookExportService.swift in Sources */,
+				C0DE20000000000000000901 /* ImportBookEditPage.swift in Sources */,
+				C0DE20000000000000001001 /* DedicatedPageComponents.swift in Sources */,
 				A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */,
 				85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */,
 				5A6C90E4D1A9485B8F9A7601 /* SidebarStyle.swift in Sources */,
 				19DE8485AE524998BBFE7B01 /* ReaderHostView.swift in Sources */,
-				1FA3D8E4177B4B7CAB7C7D01 /* ReaderMoreViewControllers.swift in Sources */,
+				C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */,
+				C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */,
+				C0DE10000000000000000301 /* ReaderFilterRulesViewController.swift in Sources */,
+				C0DE10000000000000000401 /* ReaderContentSearchViewController.swift in Sources */,
+				C0DE10000000000000000501 /* ReaderBookCoverView.swift in Sources */,
+				C0DE10000000000000000601 /* ReaderPageTouchAreasViewController.swift in Sources */,
 				5AE7C8317C0F4440A4C4AF01 /* ReaderTextFilter.swift in Sources */,
 				7B3D9F1C4A2E4F50B8C19A01 /* HostingControllerHomeIndicatorBridge.swift in Sources */,
 			);
