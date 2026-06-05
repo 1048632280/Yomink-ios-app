@@ -1369,6 +1369,7 @@ private final class LibraryViewModel: ObservableObject {
             self.allBooks = allBooks
             self.books = books
             pruneSelection()
+        } catch is CancellationError {
         } catch {
             guard isCurrentLoadGeneration(generation) else {
                 return
@@ -1407,6 +1408,7 @@ private final class LibraryViewModel: ObservableObject {
             self.allBooks = allBooks
             self.books = books
             pruneSelection()
+        } catch is CancellationError {
         } catch {
             guard isCurrentLoadGeneration(generation) else {
                 return
@@ -1683,6 +1685,9 @@ private final class LibraryViewModel: ObservableObject {
     }
 
     func showError(_ error: Error, title: LocalizedStringKey) {
+        guard !(error is CancellationError) else {
+            return
+        }
         importErrorTitle = title
         importErrorMessage = error.localizedDescription
     }
