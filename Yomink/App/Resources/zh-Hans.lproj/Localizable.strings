@@ -290,6 +290,9 @@
 "import.batch.scanning" = "正在扫描文件夹...";
 "import.batch.downloading" = "正在从 iCloud 下载 %d/%d 本";
 "import.batch.progress" = "正在导入 %d/%d 本";
+"import.batch.downloading.prefix" = "正在从 iCloud 下载";
+"import.batch.progress.prefix" = "正在导入";
+"import.batch.count.unit" = "本";
 "import.batch.result.title" = "批量导入完成";
 "import.batch.result.summary" = "共找到 %d 本 TXT，成功导入 %d 本，重复跳过 %d 本，失败 %d 本。";
 "import.batch.result.empty" = "这个文件夹里没有找到可导入的 TXT 文件。";

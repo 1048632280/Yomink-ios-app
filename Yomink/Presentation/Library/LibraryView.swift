@@ -785,7 +785,14 @@ struct LibraryView: View {
             Color.black.opacity(0.16)
                 .ignoresSafeArea()
 
-            VStack(spacing: 12) {
+            VStack(spacing: 9) {
+                Text(verbatim: viewModel.batchImportProgress?.currentFileName ?? " ")
+                    .font(.footnote)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: 240, height: 18)
+
                 if let progress = viewModel.batchImportProgress,
                    progress.totalCount > 0 {
                     ProgressView(
@@ -795,33 +802,46 @@ struct LibraryView: View {
                     .frame(width: 210)
                 } else {
                     ProgressView()
+                        .frame(width: 210, height: 20)
                 }
 
-                Text(viewModel.importProgressMessage)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(1)
-                    .frame(width: 240, height: 22)
-
-                if let currentFileName = viewModel.batchImportProgress?.currentFileName {
-                    Text(verbatim: currentFileName)
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(width: 240, height: 18)
-                } else {
-                    Text(verbatim: "")
-                        .font(.footnote)
-                        .lineLimit(1)
-                        .frame(width: 240, height: 18)
-                }
+                importProgressStatusRow
             }
-            .padding(14)
-            .frame(width: 280, height: 132)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .frame(width: 280, height: 112)
             .background(.regularMaterial)
             .cornerRadius(8)
+        }
+    }
+
+    @ViewBuilder
+    private var importProgressStatusRow: some View {
+        if let countText = viewModel.importProgressCountText {
+            HStack(spacing: 4) {
+                Text(verbatim: viewModel.importProgressStatusText)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.86)
+                    .frame(width: 150, alignment: .trailing)
+
+                FixedWidthImportBatchCountText(text: countText)
+
+                Text("import.batch.count.unit")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .frame(width: 16, alignment: .leading)
+            }
+            .frame(width: 240, height: 22)
+        } else {
+            Text(verbatim: viewModel.importProgressStatusText)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(1)
+                .frame(width: 240, height: 22)
         }
     }
 
@@ -1255,7 +1275,7 @@ private final class LibraryViewModel: ObservableObject {
         )
     }
 
-    var importProgressMessage: String {
+    var importProgressStatusText: String {
         guard let progress = batchImportProgress else {
             return NSLocalizedString("import.progress.message", comment: "")
         }
@@ -1264,20 +1284,34 @@ private final class LibraryViewModel: ObservableObject {
         case .scanning:
             return NSLocalizedString("import.batch.scanning", comment: "")
         case .downloading:
-            let displayCount = min(progress.processedCount + 1, progress.totalCount)
-            return String(
-                format: NSLocalizedString("import.batch.downloading", comment: ""),
-                displayCount,
-                progress.totalCount
-            )
+            return NSLocalizedString("import.batch.downloading.prefix", comment: "")
         case .importing:
-            let displayCount = min(
+            return NSLocalizedString("import.batch.progress.prefix", comment: "")
+        }
+    }
+
+    var importProgressCountText: String? {
+        guard let progress = batchImportProgress,
+              progress.phase != .scanning,
+              progress.totalCount > 0 else {
+            return nil
+        }
+        return "\(importProgressDisplayCount)/\(progress.totalCount)"
+    }
+
+    private var importProgressDisplayCount: Int {
+        guard let progress = batchImportProgress else {
+            return 0
+        }
+
+        switch progress.phase {
+        case .scanning:
+            return progress.processedCount
+        case .downloading:
+            return min(progress.processedCount + 1, progress.totalCount)
+        case .importing:
+            return min(
                 progress.processedCount + (progress.currentFileName == nil ? 0 : 1),
-                progress.totalCount
-            )
-            return String(
-                format: NSLocalizedString("import.batch.progress", comment: ""),
-                displayCount,
                 progress.totalCount
             )
         }
@@ -1635,8 +1669,13 @@ private final class LibraryViewModel: ObservableObject {
     }
 
     func showBatchImportResult(_ summary: ImportBatchSummary) {
-        importErrorTitle = "import.batch.result.title"
-        importErrorMessage = ImportBatchResultMessage(summary: summary).message
+        let message = ImportBatchResultMessage(summary: summary).message
+        importErrorMessage = nil
+        Task { @MainActor in
+            await Task.yield()
+            self.importErrorTitle = "import.batch.result.title"
+            self.importErrorMessage = message
+        }
     }
 
     func clearError() {
@@ -1929,6 +1968,26 @@ private enum BookCoverStyle {
     static let background = Color(.systemGray5)
     static let coverText = Color(.darkGray).opacity(0.62)
     static let progressText = Color(.systemGray)
+}
+
+private struct FixedWidthImportBatchCountText: View {
+    let text: String
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Text(verbatim: "999/999")
+                .font(.subheadline.monospacedDigit())
+                .hidden()
+
+            Text(verbatim: text)
+                .font(.subheadline.monospacedDigit())
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(height: 22, alignment: .trailing)
+    }
 }
 
 private extension String {
