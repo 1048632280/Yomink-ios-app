@@ -27,6 +27,11 @@ protocol LibraryRepository: Sendable {
     func fetchSearchHistory() async throws -> [SearchHistoryItem]
     func saveSearchKeyword(_ keyword: String) async throws
     func clearSearchHistory() async throws
+    func fetchTagsWithUsage() async throws -> [BookTagUsage]
+    func fetchTags(bookID: UUID) async throws -> [BookTag]
+    func createTag(name: String) async throws -> BookTag
+    func deleteTag(id: UUID) async throws
+    func setBookTags(bookID: UUID, tagIDs: Set<UUID>) async throws
     func fetchGroups() async throws -> [BookGroup]
     func createGroup(name: String) async throws -> BookGroup
     func renameGroup(id: UUID, name: String) async throws

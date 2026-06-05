@@ -68,10 +68,35 @@ struct Book: Identifiable, Equatable, Sendable {
     }
 }
 
+struct BookTag: Identifiable, Equatable, Sendable {
+    let id: UUID
+    var name: String
+    var createdAt: Date
+}
+
+struct BookTagUsage: Identifiable, Equatable, Sendable {
+    var tag: BookTag
+    var bookCount: Int {
+        didSet {
+            bookCount = max(bookCount, 0)
+        }
+    }
+
+    var id: UUID {
+        tag.id
+    }
+
+    init(tag: BookTag, bookCount: Int) {
+        self.tag = tag
+        self.bookCount = max(bookCount, 0)
+    }
+}
+
 enum LibraryScope: Equatable, Sendable {
     case all
     case ungrouped
     case group(UUID)
+    case tag(UUID)
 
     var settingsKey: String {
         switch self {
@@ -81,6 +106,8 @@ enum LibraryScope: Equatable, Sendable {
             return "ungrouped"
         case let .group(id):
             return "group-\(id.uuidString)"
+        case let .tag(id):
+            return "tag-\(id.uuidString)"
         }
     }
 }

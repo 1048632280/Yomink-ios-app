@@ -442,6 +442,40 @@ final class AppDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v6_create_tags") { db in
+            try db.execute(sql: """
+            CREATE TABLE tags (
+                id TEXT PRIMARY KEY NOT NULL,
+                name TEXT NOT NULL CHECK (length(trim(name)) > 0),
+                createdAt TEXT NOT NULL
+            )
+            """)
+
+            try db.execute(sql: """
+            CREATE UNIQUE INDEX tags_name_unique_index
+            ON tags(name COLLATE NOCASE)
+            """)
+
+            try db.execute(sql: """
+            CREATE TABLE book_tags (
+                bookId TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                tagId TEXT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                createdAt TEXT NOT NULL,
+                PRIMARY KEY (bookId, tagId)
+            )
+            """)
+
+            try db.execute(sql: """
+            CREATE INDEX book_tags_book_index
+            ON book_tags(bookId)
+            """)
+
+            try db.execute(sql: """
+            CREATE INDEX book_tags_tag_book_index
+            ON book_tags(tagId, bookId)
+            """)
+        }
+
         return migrator
     }
 

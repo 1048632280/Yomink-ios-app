@@ -2,6 +2,7 @@ import Foundation
 
 struct PreviewLibraryRepository: LibraryRepository {
     static let sampleBookID = UUID(uuidString: "4D52E7FE-A7ED-41F1-8C49-55C3E22B6B48") ?? UUID()
+    static let sampleTagID = UUID(uuidString: "2F1E4B06-89A2-45A3-A088-96F005EAE2D9") ?? UUID()
     static let sampleText = "这是一段阅读器预览文本。\n\nPhase 2 已接入按章节读取、分页、点击热区和阅读进度恢复。\n\nPhase 3 会继续加入平移翻页、滚动阅读、目录跳转和阅读设置。"
 
     func fetchBooks(
@@ -32,6 +33,8 @@ struct PreviewLibraryRepository: LibraryRepository {
             return books
         case .group:
             return []
+        case let .tag(id):
+            return id == Self.sampleTagID ? books : []
         }
     }
 
@@ -54,6 +57,46 @@ struct PreviewLibraryRepository: LibraryRepository {
     func saveSearchKeyword(_ keyword: String) async throws {}
 
     func clearSearchHistory() async throws {}
+
+    func fetchTagsWithUsage() async throws -> [BookTagUsage] {
+        [
+            BookTagUsage(
+                tag: BookTag(
+                    id: Self.sampleTagID,
+                    name: NSLocalizedString("tags.preview.favorite", comment: ""),
+                    createdAt: Date()
+                ),
+                bookCount: 1
+            )
+        ]
+    }
+
+    func fetchTags(bookID: UUID) async throws -> [BookTag] {
+        guard bookID == Self.sampleBookID else {
+            return []
+        }
+
+        return [
+            BookTag(
+                id: Self.sampleTagID,
+                name: NSLocalizedString("tags.preview.favorite", comment: ""),
+                createdAt: Date()
+            )
+        ]
+    }
+
+    func createTag(name: String) async throws -> BookTag {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return BookTag(
+            id: UUID(),
+            name: trimmedName.isEmpty ? NSLocalizedString("tags.untitled", comment: "") : trimmedName,
+            createdAt: Date()
+        )
+    }
+
+    func deleteTag(id: UUID) async throws {}
+
+    func setBookTags(bookID: UUID, tagIDs: Set<UUID>) async throws {}
 
     func fetchGroups() async throws -> [BookGroup] {
         []

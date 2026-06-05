@@ -79,6 +79,24 @@
 "randomPicker.stats.empty" = "还没有抽取统计";
 "randomPicker.stats.count" = "%d次";
 
+"tags.page.title" = "标签";
+"tags.cloud.title" = "标签云";
+"tags.all.title" = "全部标签";
+"tags.select.title" = "选择标签";
+"tags.field.title" = "标签";
+"tags.new" = "新建标签";
+"tags.name.placeholder" = "标签名称";
+"tags.name.message" = "请输入标签名称。";
+"tags.empty.message" = "还没有标签。";
+"tags.books.empty" = "这个标签下还没有书籍。";
+"tags.error.title" = "标签操作失败";
+"tags.count.format" = "%d本";
+"tags.selected.count" = "已选%d个标签";
+"tags.none" = "无";
+"tags.summary.more" = "%@ 等%d个";
+"tags.untitled" = "未命名标签";
+"tags.preview.favorite" = "想读";
+
 "sidebar.groups.section" = "书架分组";
 "sidebar.groupWithCount" = "%@(%d本)";
 "sidebar.ungrouped" = "未分组";

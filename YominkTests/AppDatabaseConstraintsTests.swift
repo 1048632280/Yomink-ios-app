@@ -652,6 +652,48 @@ final class BookSearchEscapingTests: XCTestCase {
         XCTAssertEqual(underscoreResults.map(\.title), ["Under_score"])
     }
 
+    func testBookTagsCanBeCreatedAssignedAndQueried() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let firstBook = try await insertBook(
+            title: "Tagged",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+        let secondBook = try await insertBook(
+            title: "Untagged",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+
+        let tag = try await repository.createTag(name: "仙侠")
+        let duplicateTag = try await repository.createTag(name: "  仙侠  ")
+        try await repository.setBookTags(bookID: firstBook.id, tagIDs: [tag.id])
+
+        let firstBookTags = try await repository.fetchTags(bookID: firstBook.id)
+        let secondBookTags = try await repository.fetchTags(bookID: secondBook.id)
+        let usages = try await repository.fetchTagsWithUsage()
+        let taggedBooks = try await repository.fetchBooks(
+            scope: .tag(tag.id),
+            sortOrder: .importedAt
+        )
+
+        XCTAssertEqual(duplicateTag.id, tag.id)
+        XCTAssertEqual(firstBookTags.map(\.id), [tag.id])
+        XCTAssertTrue(secondBookTags.isEmpty)
+        XCTAssertEqual(usages.first?.tag.id, tag.id)
+        XCTAssertEqual(usages.first?.bookCount, 1)
+        XCTAssertEqual(taggedBooks.map(\.id), [firstBook.id])
+
+        try await repository.setBookTags(bookID: firstBook.id, tagIDs: [])
+        let clearedTags = try await repository.fetchTags(bookID: firstBook.id)
+        let clearedUsages = try await repository.fetchTagsWithUsage()
+        let clearedUsage = clearedUsages.first { $0.id == tag.id }
+
+        XCTAssertTrue(clearedTags.isEmpty)
+        XCTAssertEqual(clearedUsage?.bookCount, 0)
+    }
+
     private func insertBook(
         title: String,
         contentHash: String,

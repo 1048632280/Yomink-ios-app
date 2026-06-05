@@ -322,6 +322,547 @@ private enum GroupNameEditor {
     }
 }
 
+struct LibraryTagsPage: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let repository: any LibraryRepository
+    let sortOrder: LibrarySettings.SortOrder
+    let onOpenBook: (Book) -> Void
+
+    @State private var tagUsages: [BookTagUsage] = []
+    @State private var selectedUsage: BookTagUsage?
+    @State private var tagNameEditorPresented = false
+    @State private var tagNameDraft = ""
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if tagUsages.isEmpty {
+                        emptyTagsView
+                    } else {
+                        tagCloudCard
+                        tagListCard
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 20)
+            }
+
+            tagRouteLink
+
+            if tagNameEditorPresented {
+                DedicatedPromptOverlay(
+                    title: "tags.new",
+                    message: "tags.name.message",
+                    text: $tagNameDraft,
+                    placeholder: NSLocalizedString("tags.name.placeholder", comment: ""),
+                    confirmTitle: "common.save",
+                    confirmRole: nil,
+                    confirmAction: createTag,
+                    cancelAction: cancelCreatingTag
+                )
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("tags.page.title")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    dismiss()
+                }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("common.new") {
+                    beginCreatingTag()
+                }
+            }
+        }
+        .task {
+            await reloadTags()
+        }
+        .alert(
+            "tags.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private var emptyTagsView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "tag")
+                .font(.system(size: 42))
+                .foregroundColor(.secondary)
+
+            Text("tags.empty.message")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+
+            Button("tags.new") {
+                beginCreatingTag()
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 260)
+        .storageCardStyle()
+    }
+
+    private var tagCloudCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("tags.cloud.title")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 86), spacing: 10, alignment: .center)],
+                alignment: .center,
+                spacing: 10
+            ) {
+                ForEach(tagUsages) { usage in
+                    Button {
+                        selectedUsage = usage
+                    } label: {
+                        Text(verbatim: "#\(usage.tag.name)")
+                            .font(.system(size: fontSize(for: usage), weight: .semibold))
+                            .foregroundColor(.accentColor)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.72)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .storageCardStyle()
+    }
+
+    private var tagListCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("tags.all.title")
+                .font(.headline)
+                .foregroundColor(.primary)
+
+            VStack(spacing: 0) {
+                ForEach(Array(tagUsages.enumerated()), id: \.element.id) { index, usage in
+                    Button {
+                        selectedUsage = usage
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(verbatim: usage.tag.name)
+                                .font(.body)
+                                .foregroundColor(.primary)
+                                .lineLimit(1)
+
+                            Spacer(minLength: 12)
+
+                            Text(countText(for: usage.bookCount))
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .monospacedDigit()
+
+                            Image(systemName: "chevron.right")
+                                .font(.footnote.weight(.semibold))
+                                .foregroundColor(Color(.tertiaryLabel))
+                        }
+                        .padding(.vertical, 11)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    if index < tagUsages.count - 1 {
+                        SettingsPageStyle.separator
+                    }
+                }
+            }
+        }
+        .storageCardStyle()
+    }
+
+    private var tagRouteLink: some View {
+        NavigationLink(
+            isActive: Binding(
+                get: { selectedUsage != nil },
+                set: { isActive in
+                    if !isActive {
+                        selectedUsage = nil
+                    }
+                }
+            )
+        ) {
+            if let selectedUsage {
+                TaggedBooksPage(
+                    tag: selectedUsage.tag,
+                    repository: repository,
+                    sortOrder: sortOrder,
+                    onOpenBook: onOpenBook
+                )
+            } else {
+                EmptyView()
+            }
+        } label: {
+            EmptyView()
+        }
+        .hidden()
+        .frame(width: 0, height: 0)
+    }
+
+    private func fontSize(for usage: BookTagUsage) -> CGFloat {
+        let counts = tagUsages.map(\.bookCount)
+        guard let minCount = counts.min(),
+              let maxCount = counts.max(),
+              maxCount > minCount
+        else {
+            return 22
+        }
+
+        let progress = CGFloat(usage.bookCount - minCount) / CGFloat(maxCount - minCount)
+        return 15 + progress * 18
+    }
+
+    private func countText(for count: Int) -> String {
+        String(
+            format: NSLocalizedString("tags.count.format", comment: ""),
+            count
+        )
+    }
+
+    @MainActor
+    private func reloadTags() async {
+        do {
+            tagUsages = try await repository.fetchTagsWithUsage()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func beginCreatingTag() {
+        tagNameDraft = ""
+        tagNameEditorPresented = true
+    }
+
+    private func cancelCreatingTag() {
+        tagNameDraft = ""
+        tagNameEditorPresented = false
+    }
+
+    private func createTag() {
+        let name = tagNameDraft
+
+        Task {
+            do {
+                _ = try await repository.createTag(name: name)
+                cancelCreatingTag()
+                await reloadTags()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct TaggedBooksPage: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let tag: BookTag
+    let repository: any LibraryRepository
+    let sortOrder: LibrarySettings.SortOrder
+    let onOpenBook: (Book) -> Void
+
+    @State private var books: [Book] = []
+    @State private var errorMessage: String?
+
+    var body: some View {
+        ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
+
+            if books.isEmpty {
+                Text("tags.books.empty")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(books) { book in
+                    Button {
+                        onOpenBook(book)
+                    } label: {
+                        BookRowView(
+                            book: book,
+                            isSelecting: false,
+                            isSelected: false
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .listRowBackground(Color(.systemGray6))
+                    .listRowInsets(
+                        EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                    )
+                }
+                .listStyle(.plain)
+                .background(Color(.systemGray6))
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(tag.name)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    dismiss()
+                }
+            }
+        }
+        .task {
+            await reloadBooks()
+        }
+        .alert(
+            "tags.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    @MainActor
+    private func reloadBooks() async {
+        do {
+            books = try await repository.fetchBooks(
+                scope: .tag(tag.id),
+                sortOrder: sortOrder
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+struct BookTagPickerPage: View {
+    @Environment(\.dismiss) private var dismiss
+
+    let repository: any LibraryRepository
+    @Binding var selectedTagIDs: Set<UUID>
+    let onCatalogChanged: () -> Void
+    let onSelectionFinished: (Set<UUID>) -> Void
+
+    @State private var tagUsages: [BookTagUsage] = []
+    @State private var tagNameEditorPresented = false
+    @State private var tagNameDraft = ""
+    @State private var errorMessage: String?
+
+    init(
+        repository: any LibraryRepository,
+        selectedTagIDs: Binding<Set<UUID>>,
+        onCatalogChanged: @escaping () -> Void = {},
+        onSelectionFinished: @escaping (Set<UUID>) -> Void = { _ in }
+    ) {
+        self.repository = repository
+        _selectedTagIDs = selectedTagIDs
+        self.onCatalogChanged = onCatalogChanged
+        self.onSelectionFinished = onSelectionFinished
+    }
+
+    var body: some View {
+        ZStack {
+            Color(.systemGray6)
+                .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    if tagUsages.isEmpty {
+                        Text("tags.empty.message")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 140)
+                    } else {
+                        ForEach(Array(tagUsages.enumerated()), id: \.element.id) { index, usage in
+                            Button {
+                                toggleTag(usage.tag)
+                            } label: {
+                                BookTagSelectionRow(
+                                    usage: usage,
+                                    isSelected: selectedTagIDs.contains(usage.id)
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            if index < tagUsages.count - 1 {
+                                SettingsPageStyle.separator
+                            }
+                        }
+                    }
+                }
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.horizontal, 16)
+                .padding(.top, 28)
+            }
+
+            if tagNameEditorPresented {
+                DedicatedPromptOverlay(
+                    title: "tags.new",
+                    message: "tags.name.message",
+                    text: $tagNameDraft,
+                    placeholder: NSLocalizedString("tags.name.placeholder", comment: ""),
+                    confirmTitle: "common.save",
+                    confirmRole: nil,
+                    confirmAction: createTag,
+                    cancelAction: cancelCreatingTag
+                )
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("tags.select.title")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    dismiss()
+                }
+            }
+
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button("common.new") {
+                    beginCreatingTag()
+                }
+            }
+        }
+        .task {
+            await reloadTags()
+        }
+        .onDisappear {
+            onSelectionFinished(selectedTagIDs)
+        }
+        .alert(
+            "tags.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private func toggleTag(_ tag: BookTag) {
+        if selectedTagIDs.contains(tag.id) {
+            selectedTagIDs.remove(tag.id)
+        } else {
+            selectedTagIDs.insert(tag.id)
+        }
+    }
+
+    @MainActor
+    private func reloadTags() async {
+        do {
+            tagUsages = try await repository.fetchTagsWithUsage()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func beginCreatingTag() {
+        tagNameDraft = ""
+        tagNameEditorPresented = true
+    }
+
+    private func cancelCreatingTag() {
+        tagNameDraft = ""
+        tagNameEditorPresented = false
+    }
+
+    private func createTag() {
+        let name = tagNameDraft
+
+        Task {
+            do {
+                let tag = try await repository.createTag(name: name)
+                selectedTagIDs.insert(tag.id)
+                cancelCreatingTag()
+                await reloadTags()
+                onCatalogChanged()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct BookTagSelectionRow: View {
+    let usage: BookTagUsage
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(verbatim: usage.tag.name)
+                .font(.body)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Text(countText)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.body.weight(.semibold))
+                .foregroundColor(isSelected ? .accentColor : Color(.tertiaryLabel))
+        }
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
+        .background(Color.white)
+        .contentShape(Rectangle())
+    }
+
+    private var countText: String {
+        String(
+            format: NSLocalizedString("tags.count.format", comment: ""),
+            usage.bookCount
+        )
+    }
+}
+
 private struct NonBlockingLongPressRecognizer: UIViewRepresentable {
     let isEnabled: Bool
     let onBegan: () -> Void
@@ -1765,6 +2306,7 @@ struct StorageManagementPage: View {
                         StorageUsageChartCard(snapshot: snapshot)
                         StorageDashboardCard(snapshot: snapshot)
                         StorageBookManagementCard(
+                            repository: repository,
                             books: snapshot.books,
                             groups: snapshot.groups,
                             sort: $sort,
@@ -2046,6 +2588,7 @@ private struct StorageMetricTile: View {
 }
 
 private struct StorageBookManagementCard: View {
+    let repository: any LibraryRepository
     let books: [StorageBookUsage]
     let groups: [BookGroup]
     @Binding var sort: StorageBookSort
@@ -2085,6 +2628,7 @@ private struct StorageBookManagementCard: View {
                     ForEach(Array(visibleBooks.enumerated()), id: \.element.id) { index, book in
                         NavigationLink {
                             StorageBookDetailPage(
+                                repository: repository,
                                 bookUsage: book,
                                 groups: groups,
                                 onOpenBook: onOpenBook,
@@ -2298,6 +2842,7 @@ private struct StorageBookUsageRow: View {
 private struct StorageBookDetailPage: View {
     @Environment(\.dismiss) private var dismiss
 
+    let repository: any LibraryRepository
     let bookUsage: StorageBookUsage
     let groups: [BookGroup]
     let onOpenBook: (Book) -> Void
@@ -2305,6 +2850,10 @@ private struct StorageBookDetailPage: View {
     let onDeleteBook: (Book) -> Void
 
     @State private var showsDeleteConfirmation = false
+    @State private var tags: [BookTag] = []
+    @State private var selectedTagIDs: Set<UUID> = []
+    @State private var isReadyToPersistTagChanges = false
+    @State private var errorMessage: String?
 
     var body: some View {
         ZStack {
@@ -2331,6 +2880,9 @@ private struct StorageBookDetailPage: View {
                 }
             }
         }
+        .task(id: bookUsage.id) {
+            await reloadTags()
+        }
         .alert(
             "storage.book.delete.title",
             isPresented: $showsDeleteConfirmation
@@ -2342,6 +2894,23 @@ private struct StorageBookDetailPage: View {
             }
         } message: {
             Text("storage.book.delete.message")
+        }
+        .alert(
+            "tags.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
         }
     }
 
@@ -2382,6 +2951,21 @@ private struct StorageBookDetailPage: View {
                 title: "storage.book.group",
                 value: groupName
             )
+            SettingsPageStyle.separator
+
+            NavigationLink {
+                BookTagPickerPage(
+                    repository: repository,
+                    selectedTagIDs: $selectedTagIDs,
+                    onSelectionFinished: persistTagChanges
+                )
+            } label: {
+                StorageBookDetailNavigationRow(
+                    title: "tags.field.title",
+                    value: tagsSummary
+                )
+            }
+            .buttonStyle(.plain)
         }
         .storageCardStyle()
     }
@@ -2441,6 +3025,61 @@ private struct StorageBookDetailPage: View {
         return groups.first { $0.id == groupID }?.name
             ?? NSLocalizedString("sidebar.untitledGroup", comment: "")
     }
+
+    private var tagsSummary: String {
+        guard !tags.isEmpty else {
+            return NSLocalizedString("tags.none", comment: "")
+        }
+
+        let visibleNames = tags.prefix(3).map(\.name).joined(separator: ", ")
+        if tags.count <= 3 {
+            return visibleNames
+        }
+
+        return String(
+            format: NSLocalizedString("tags.summary.more", comment: ""),
+            visibleNames,
+            tags.count - 3
+        )
+    }
+
+    @MainActor
+    private func reloadTags() async {
+        do {
+            let fetchedTags = try await repository.fetchTags(bookID: bookUsage.id)
+            isReadyToPersistTagChanges = false
+            tags = fetchedTags
+            selectedTagIDs = Set(fetchedTags.map(\.id))
+            DispatchQueue.main.async {
+                isReadyToPersistTagChanges = true
+            }
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    private func persistTagChanges(_ tagIDs: Set<UUID>) {
+        guard isReadyToPersistTagChanges else {
+            return
+        }
+        guard tagIDs != Set(tags.map(\.id)) else {
+            return
+        }
+
+        isReadyToPersistTagChanges = false
+        Task {
+            do {
+                try await repository.setBookTags(
+                    bookID: bookUsage.id,
+                    tagIDs: tagIDs
+                )
+                await reloadTags()
+            } catch {
+                isReadyToPersistTagChanges = true
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
 }
 
 private struct StorageBookDetailRow: View {
@@ -2462,6 +3101,33 @@ private struct StorageBookDetailRow: View {
                 .lineLimit(2)
         }
         .padding(.vertical, 11)
+    }
+}
+
+private struct StorageBookDetailNavigationRow: View {
+    let title: LocalizedStringKey
+    let value: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(title)
+                .font(.body)
+                .foregroundColor(.secondary)
+
+            Spacer(minLength: 16)
+
+            Text(verbatim: value)
+                .font(.body)
+                .foregroundColor(.primary)
+                .multilineTextAlignment(.trailing)
+                .lineLimit(2)
+
+            Image(systemName: "chevron.right")
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(Color(.tertiaryLabel))
+        }
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
     }
 }
 
@@ -2948,6 +3614,7 @@ struct ImportBookEditPage: View {
 
     let preview: ImportBookPreview
     let importService: ImportService
+    let repository: any LibraryRepository
     let onImported: () -> Void
     let onOpenExistingBook: (Book) -> Void
     let onCancel: () -> Void
@@ -2955,6 +3622,7 @@ struct ImportBookEditPage: View {
     @State private var title: String
     @State private var author: String
     @State private var intro: String
+    @State private var selectedTagIDs: Set<UUID> = []
     @State private var isImporting = false
     @State private var duplicateBook: Book?
     @State private var errorMessage: String?
@@ -2963,12 +3631,14 @@ struct ImportBookEditPage: View {
     init(
         preview: ImportBookPreview,
         importService: ImportService,
+        repository: any LibraryRepository,
         onImported: @escaping () -> Void,
         onOpenExistingBook: @escaping (Book) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.preview = preview
         self.importService = importService
+        self.repository = repository
         self.onImported = onImported
         self.onOpenExistingBook = onOpenExistingBook
         self.onCancel = onCancel
@@ -3097,6 +3767,21 @@ struct ImportBookEditPage: View {
                 )
             }
             .buttonStyle(.plain)
+
+            SettingsPageStyle.separator
+
+            NavigationLink {
+                BookTagPickerPage(
+                    repository: repository,
+                    selectedTagIDs: $selectedTagIDs
+                )
+            } label: {
+                ImportMetadataRow(
+                    title: "tags.field.title",
+                    value: selectedTagsSummary
+                )
+            }
+            .buttonStyle(.plain)
         }
         .background(Color.white)
     }
@@ -3124,6 +3809,7 @@ struct ImportBookEditPage: View {
         }
 
         isImporting = true
+        let tagIDsToApply = selectedTagIDs
         let metadata = ImportBookMetadata(
             title: title,
             author: author,
@@ -3139,7 +3825,14 @@ struct ImportBookEditPage: View {
                     try Task.checkCancellation()
                     isImporting = false
                     duplicateBook = existingBook
-                case .imported(_):
+                case let .imported(book):
+                    try Task.checkCancellation()
+                    if !tagIDsToApply.isEmpty {
+                        try await repository.setBookTags(
+                            bookID: book.id,
+                            tagIDs: tagIDsToApply
+                        )
+                    }
                     try Task.checkCancellation()
                     isImporting = false
                     onImported()
@@ -3164,6 +3857,17 @@ struct ImportBookEditPage: View {
         importTask?.cancel()
         importTask = nil
         isImporting = false
+    }
+
+    private var selectedTagsSummary: String {
+        guard !selectedTagIDs.isEmpty else {
+            return ""
+        }
+
+        return String(
+            format: NSLocalizedString("tags.selected.count", comment: ""),
+            selectedTagIDs.count
+        )
     }
 }
 

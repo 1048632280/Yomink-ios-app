@@ -4,17 +4,20 @@ import UIKit
 struct AddBookSidebarView: View {
     let onImportFromFile: () -> Void
     let onImportFromFolder: () -> Void
+    let onOpenTagsPage: () -> Void
     let onOpenHistoryPage: () -> Void
     let onOpenRandomPickerPage: () -> Void
 
     init(
         onImportFromFile: @escaping () -> Void = {},
         onImportFromFolder: @escaping () -> Void = {},
+        onOpenTagsPage: @escaping () -> Void = {},
         onOpenHistoryPage: @escaping () -> Void = {},
         onOpenRandomPickerPage: @escaping () -> Void = {}
     ) {
         self.onImportFromFile = onImportFromFile
         self.onImportFromFolder = onImportFromFolder
+        self.onOpenTagsPage = onOpenTagsPage
         self.onOpenHistoryPage = onOpenHistoryPage
         self.onOpenRandomPickerPage = onOpenRandomPickerPage
     }
@@ -34,6 +37,13 @@ struct AddBookSidebarView: View {
                         onImportFromFolder()
                     } label: {
                         SidebarItemRow(localizedTitle: "add.import.folder")
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        onOpenTagsPage()
+                    } label: {
+                        SidebarItemRow(localizedTitle: "tags.page.title")
                     }
                     .buttonStyle(.plain)
 

@@ -367,6 +367,9 @@ struct LibraryView: View {
                 onImportFromFolder: {
                     requestBatchImportFromDrawer()
                 },
+                onOpenTagsPage: {
+                    openRouteFromDrawer(.tags)
+                },
                 onOpenHistoryPage: {
                     openRouteFromDrawer(.history)
                 },
@@ -433,6 +436,23 @@ struct LibraryView: View {
             .frame(width: 0, height: 0)
 
             NavigationLink(
+                tag: LibraryRoute.tags,
+                selection: $activeRoute
+            ) {
+                LibraryTagsPage(
+                    repository: services.libraryRepository,
+                    sortOrder: viewModel.settings.sortOrder,
+                    onOpenBook: { book in
+                        openBookAfterRouteDismissal(book)
+                    }
+                )
+            } label: {
+                EmptyView()
+            }
+            .hidden()
+            .frame(width: 0, height: 0)
+
+            NavigationLink(
                 tag: LibraryRoute.search,
                 selection: $activeRoute
             ) {
@@ -485,6 +505,7 @@ struct LibraryView: View {
                     ImportBookEditPage(
                         preview: preview,
                         importService: services.importService,
+                        repository: services.libraryRepository,
                         onImported: {
                             closeImportRoute()
                             reloadBooksIfReady()
@@ -1107,6 +1128,7 @@ private enum LibraryRoute: Hashable {
     case groups
     case history
     case randomPicker
+    case tags
     case search
     case settings
     case importBook
@@ -1742,7 +1764,7 @@ private struct BookShelfItemButton<Content: View>: View {
     }
 }
 
-private struct BookRowView: View {
+struct BookRowView: View {
     let book: Book
     let isSelecting: Bool
     let isSelected: Bool

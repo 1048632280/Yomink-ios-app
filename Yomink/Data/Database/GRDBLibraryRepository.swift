@@ -98,6 +98,15 @@ struct GRDBLibraryRepository: LibraryRepository {
             case let .group(groupID):
                 whereClause = "books.groupId = ?"
                 arguments = [groupID.uuidString]
+            case let .tag(tagID):
+                whereClause = """
+                books.id IN (
+                    SELECT bookId
+                    FROM book_tags
+                    WHERE tagId = ?
+                )
+                """
+                arguments = [tagID.uuidString]
             }
 
             let rows = try Row.fetchAll(
@@ -173,6 +182,128 @@ struct GRDBLibraryRepository: LibraryRepository {
     func clearSearchHistory() async throws {
         try await database.writer.write { db in
             try db.execute(sql: "DELETE FROM search_history")
+        }
+    }
+
+    func fetchTagsWithUsage() async throws -> [BookTagUsage] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT
+                    tags.id,
+                    tags.name,
+                    tags.createdAt,
+                    COUNT(book_tags.bookId) AS bookCount
+                FROM tags
+                LEFT JOIN book_tags
+                    ON book_tags.tagId = tags.id
+                GROUP BY tags.id, tags.name, tags.createdAt
+                ORDER BY bookCount DESC, tags.name COLLATE NOCASE ASC, tags.createdAt ASC
+                """
+            )
+            return rows.compactMap(BookTagUsage.init(row:))
+        }
+    }
+
+    func fetchTags(bookID: UUID) async throws -> [BookTag] {
+        try await database.writer.read { db in
+            let rows = try Row.fetchAll(
+                db,
+                sql: """
+                SELECT tags.id, tags.name, tags.createdAt
+                FROM tags
+                INNER JOIN book_tags
+                    ON book_tags.tagId = tags.id
+                WHERE book_tags.bookId = ?
+                ORDER BY tags.name COLLATE NOCASE ASC, tags.createdAt ASC
+                """,
+                arguments: [bookID.uuidString]
+            )
+            return rows.compactMap(BookTag.init(row:))
+        }
+    }
+
+    func createTag(name: String) async throws -> BookTag {
+        let trimmedName = Self.normalizedTagName(name)
+        let id = UUID()
+        let createdAt = Date()
+        let createdAtString = DatabaseDateFormatter.string(from: createdAt)
+
+        return try await database.writer.write { db in
+            do {
+                try db.execute(
+                    sql: """
+                    INSERT INTO tags (id, name, createdAt)
+                    VALUES (?, ?, ?)
+                    """,
+                    arguments: [
+                        id.uuidString,
+                        trimmedName,
+                        createdAtString
+                    ]
+                )
+            } catch {
+                if let existingTag = try Self.fetchTag(db, name: trimmedName) {
+                    return existingTag
+                }
+                throw error
+            }
+
+            return BookTag(
+                id: id,
+                name: trimmedName,
+                createdAt: createdAt
+            )
+        }
+    }
+
+    func deleteTag(id: UUID) async throws {
+        try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                DELETE FROM tags
+                WHERE id = ?
+                """,
+                arguments: [id.uuidString]
+            )
+        }
+    }
+
+    func setBookTags(bookID: UUID, tagIDs: Set<UUID>) async throws {
+        let tagIDStrings = Set(tagIDs.map(\.uuidString))
+        let createdAt = DatabaseDateFormatter.string(from: Date())
+
+        try await database.writer.write { db in
+            guard try Row.fetchOne(
+                db,
+                sql: "SELECT 1 FROM books WHERE id = ?",
+                arguments: [bookID.uuidString]
+            ) != nil else {
+                throw Self.bookNotFoundError()
+            }
+
+            try db.execute(
+                sql: """
+                DELETE FROM book_tags
+                WHERE bookId = ?
+                """,
+                arguments: [bookID.uuidString]
+            )
+
+            for tagIDString in tagIDStrings.sorted() {
+                try db.execute(
+                    sql: """
+                    INSERT INTO book_tags (bookId, tagId, createdAt)
+                    VALUES (?, ?, ?)
+                    """,
+                    arguments: [
+                        bookID.uuidString,
+                        tagIDString,
+                        createdAt
+                    ]
+                )
+            }
         }
     }
 
@@ -313,16 +444,7 @@ struct GRDBLibraryRepository: LibraryRepository {
             ),
                 let book = Book(row: row)
             else {
-                throw NSError(
-                    domain: "Yomink.LibraryRepository",
-                    code: 404,
-                    userInfo: [
-                        NSLocalizedDescriptionKey: NSLocalizedString(
-                            "library.error.bookNotFound",
-                            comment: ""
-                        )
-                    ]
-                )
+                throw Self.bookNotFoundError()
             }
 
             return book
@@ -944,6 +1066,11 @@ struct GRDBLibraryRepository: LibraryRepository {
         return trimmed.isEmpty ? NSLocalizedString("sidebar.untitledGroup", comment: "") : trimmed
     }
 
+    private static func normalizedTagName(_ name: String) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? NSLocalizedString("tags.untitled", comment: "") : trimmed
+    }
+
     private static func normalizedBookTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? NSLocalizedString("library.untitledBook", comment: "") : trimmed
@@ -960,6 +1087,35 @@ struct GRDBLibraryRepository: LibraryRepository {
             .replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_")
         return "%\(escaped)%"
+    }
+
+    private static func fetchTag(_ db: Database, name: String) throws -> BookTag? {
+        guard let row = try Row.fetchOne(
+            db,
+            sql: """
+            SELECT id, name, createdAt
+            FROM tags
+            WHERE name = ? COLLATE NOCASE
+            LIMIT 1
+            """,
+            arguments: [name]
+        ) else {
+            return nil
+        }
+        return BookTag(row: row)
+    }
+
+    private static func bookNotFoundError() -> NSError {
+        NSError(
+            domain: "Yomink.LibraryRepository",
+            code: 404,
+            userInfo: [
+                NSLocalizedDescriptionKey: NSLocalizedString(
+                    "library.error.bookNotFound",
+                    comment: ""
+                )
+            ]
+        )
     }
 
     private static func normalizedImportedChapter(
@@ -1037,6 +1193,39 @@ private extension BookGroup {
             id: id,
             name: record.name,
             sortOrder: record.sortOrder
+        )
+    }
+}
+
+private extension BookTag {
+    init?(row: Row) {
+        let idString: String = row["id"]
+        let createdAtString: String = row["createdAt"]
+
+        guard
+            let id = UUID(uuidString: idString),
+            let createdAt = DatabaseDateFormatter.date(from: createdAtString)
+        else {
+            return nil
+        }
+
+        self.init(
+            id: id,
+            name: row["name"],
+            createdAt: createdAt
+        )
+    }
+}
+
+private extension BookTagUsage {
+    init?(row: Row) {
+        guard let tag = BookTag(row: row) else {
+            return nil
+        }
+
+        self.init(
+            tag: tag,
+            bookCount: row["bookCount"] ?? 0
         )
     }
 }
