@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 @MainActor
@@ -13,6 +14,8 @@ final class ReaderBookDetailViewController: UIViewController {
     private let scrollView = UIScrollView()
     private let stackView = UIStackView()
     private let introLabel = UILabel()
+    private let tagBubbleWrapView = ReaderTagBubbleWrapView()
+    private var tags: [BookTag] = []
 
     init(
         book: Book,
@@ -53,6 +56,7 @@ final class ReaderBookDetailViewController: UIViewController {
         )
         configureLayout()
         render()
+        loadTags()
         loadIntroFallbackIfNeeded()
     }
 
@@ -98,6 +102,7 @@ final class ReaderBookDetailViewController: UIViewController {
         }
 
         stackView.addArrangedSubview(headerCard())
+        stackView.addArrangedSubview(tagsCard())
         stackView.addArrangedSubview(introCard())
         stackView.addArrangedSubview(catalogCard())
     }
@@ -147,6 +152,16 @@ final class ReaderBookDetailViewController: UIViewController {
         ])
 
         return card(containing: row)
+    }
+
+    private func tagsCard() -> UIView {
+        let titleLabel = sectionTitle(NSLocalizedString("tags.field.title", comment: ""))
+        tagBubbleWrapView.configure(tags: tags)
+
+        let stack = UIStackView(arrangedSubviews: [titleLabel, tagBubbleWrapView])
+        stack.axis = .vertical
+        stack.spacing = 8
+        return card(containing: stack)
     }
 
     private func introCard() -> UIView {
@@ -286,6 +301,27 @@ final class ReaderBookDetailViewController: UIViewController {
         }
     }
 
+    private func loadTags() {
+        let bookID = book.id
+        let repository = repository
+        Task { [weak self] in
+            do {
+                let fetchedTags = try await repository.fetchTags(bookID: bookID)
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.tags = fetchedTags
+                    self.tagBubbleWrapView.configure(tags: fetchedTags)
+                }
+            } catch {
+                await MainActor.run {
+                    self?.showError(error)
+                }
+            }
+        }
+    }
+
     @objc private func closeButtonTapped() {
         readerPopOrDismiss(animated: true)
     }
@@ -301,6 +337,7 @@ final class ReaderBookDetailViewController: UIViewController {
             self.book = updatedBook
             self.onBookUpdated(updatedBook)
             self.render()
+            self.loadTags()
             self.loadIntroFallbackIfNeeded()
         }
         navigationController?.pushViewController(editViewController, animated: true)
@@ -330,6 +367,129 @@ final class ReaderBookDetailViewController: UIViewController {
 
 }
 
+private final class ReaderTagBubbleWrapView: UIView {
+    private var arrangedViews: [UIView] = []
+    private let itemSpacing: CGFloat = 8
+    private let lineSpacing: CGFloat = 8
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func configure(tags: [BookTag]) {
+        arrangedViews.forEach { $0.removeFromSuperview() }
+
+        if tags.isEmpty {
+            let label = UILabel()
+            label.text = NSLocalizedString("tags.none", comment: "")
+            label.font = .preferredFont(forTextStyle: .body)
+            label.adjustsFontForContentSizeCategory = true
+            label.textColor = .secondaryLabel
+            arrangedViews = [label]
+        } else {
+            arrangedViews = tags.map { tag in
+                let label = ReaderTagBubbleLabel()
+                label.text = tag.name
+                return label
+            }
+        }
+
+        arrangedViews.forEach(addSubview)
+        invalidateIntrinsicContentSize()
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        _ = layoutArrangedViews(maxWidth: bounds.width, shouldApplyFrames: true)
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let fallbackWidth = UIScreen.main.bounds.width - 64
+        return CGSize(
+            width: UIView.noIntrinsicMetric,
+            height: layoutArrangedViews(
+                maxWidth: bounds.width > 0 ? bounds.width : fallbackWidth,
+                shouldApplyFrames: false
+            )
+        )
+    }
+
+    private func layoutArrangedViews(
+        maxWidth: CGFloat,
+        shouldApplyFrames: Bool
+    ) -> CGFloat {
+        let availableWidth = max(maxWidth, 1)
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for view in arrangedViews {
+            let size = view.intrinsicContentSize
+            if x > 0,
+               x + size.width > availableWidth {
+                x = 0
+                y += rowHeight + lineSpacing
+                rowHeight = 0
+            }
+
+            if shouldApplyFrames {
+                view.frame = CGRect(
+                    origin: CGPoint(x: x, y: y),
+                    size: size
+                )
+            }
+
+            x += size.width + itemSpacing
+            rowHeight = max(rowHeight, size.height)
+        }
+
+        return y + rowHeight
+    }
+}
+
+private final class ReaderTagBubbleLabel: UILabel {
+    private let textInsets = UIEdgeInsets(top: 8, left: 12, bottom: 8, right: 12)
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        let baseFont = UIFont.systemFont(
+            ofSize: UIFont.preferredFont(forTextStyle: .subheadline).pointSize,
+            weight: .medium
+        )
+        font = UIFontMetrics(forTextStyle: .subheadline).scaledFont(for: baseFont)
+        adjustsFontForContentSizeCategory = true
+        textColor = tintColor
+        backgroundColor = tintColor.withAlphaComponent(0.12)
+        layer.cornerRadius = 8
+        layer.masksToBounds = true
+        numberOfLines = 1
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func drawText(in rect: CGRect) {
+        super.drawText(in: rect.inset(by: textInsets))
+    }
+
+    override var intrinsicContentSize: CGSize {
+        let size = super.intrinsicContentSize
+        return CGSize(
+            width: size.width + textInsets.left + textInsets.right,
+            height: size.height + textInsets.top + textInsets.bottom
+        )
+    }
+}
+
 @MainActor
 final class ReaderBookDetailEditViewController: UIViewController, UITextViewDelegate {
     private var book: Book
@@ -338,7 +498,10 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
     private let stackView = UIStackView()
     private let titleTextField = UITextField()
     private let authorTextField = UITextField()
+    private let tagsButton = UIButton(type: .system)
     private let introTextView = UITextView()
+    private var availableTagNames: [UUID: String] = [:]
+    private var selectedTagIDs: Set<UUID> = []
 
     init(
         book: Book,
@@ -368,6 +531,7 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
         )
         configureFields()
         configureLayout()
+        loadTags()
     }
 
     private func configureFields() {
@@ -395,6 +559,8 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
             for: .editingDidEndOnExit
         )
 
+        configureTagsButton()
+
         introTextView.text = book.intro ?? ""
         introTextView.font = .preferredFont(forTextStyle: .body)
         introTextView.adjustsFontForContentSizeCategory = true
@@ -417,6 +583,22 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
         textField.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
     }
 
+    private func configureTagsButton() {
+        tagsButton.contentHorizontalAlignment = .right
+        tagsButton.titleLabel?.font = .preferredFont(forTextStyle: .body)
+        tagsButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        tagsButton.titleLabel?.lineBreakMode = .byTruncatingTail
+        tagsButton.setTitleColor(.secondaryLabel, for: .normal)
+        tagsButton.addTarget(
+            self,
+            action: #selector(tagsButtonTapped),
+            for: .touchUpInside
+        )
+        tagsButton.translatesAutoresizingMaskIntoConstraints = false
+        tagsButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 48).isActive = true
+        updateTagsButtonTitle()
+    }
+
     private func configureLayout() {
         stackView.axis = .vertical
         stackView.spacing = 14
@@ -433,6 +615,12 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
             fieldRow(
                 title: NSLocalizedString("reader.bookDetail.author", comment: ""),
                 content: authorTextField
+            )
+        )
+        stackView.addArrangedSubview(
+            fieldRow(
+                title: NSLocalizedString("tags.field.title", comment: ""),
+                content: tagsButton
             )
         )
         stackView.addArrangedSubview(introRow())
@@ -509,12 +697,37 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
         introTextView.becomeFirstResponder()
     }
 
+    @objc private func tagsButtonTapped() {
+        let selection = Binding<Set<UUID>>(
+            get: { [weak self] in
+                self?.selectedTagIDs ?? []
+            },
+            set: { [weak self] nextValue in
+                guard let self else {
+                    return
+                }
+                self.selectedTagIDs = nextValue
+                self.updateTagsButtonTitle()
+            }
+        )
+        let picker = BookTagPickerPage(
+            repository: repository,
+            selectedTagIDs: selection,
+            onCatalogChanged: { [weak self] in
+                self?.loadAvailableTags()
+            }
+        )
+        let hostingController = UIHostingController(rootView: picker)
+        navigationController?.pushViewController(hostingController, animated: true)
+    }
+
     @objc private func saveButtonTapped() {
         view.endEditing(true)
         navigationItem.rightBarButtonItem?.isEnabled = false
         let title = titleTextField.text ?? book.title
         let author = authorTextField.text
         let intro = introTextView.text
+        let tagIDs = selectedTagIDs
 
         Task { [weak self] in
             guard let self else {
@@ -527,6 +740,10 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
                     author: author,
                     intro: intro
                 )
+                try await repository.setBookTags(
+                    bookID: book.id,
+                    tagIDs: tagIDs
+                )
                 await MainActor.run {
                     self.book = updated
                     self.onSaved(updated)
@@ -538,6 +755,100 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
                     self.showError(error)
                 }
             }
+        }
+    }
+
+    private func loadTags() {
+        let bookID = book.id
+        let repository = repository
+        Task { [weak self] in
+            do {
+                async let fetchedUsages = repository.fetchTagsWithUsage()
+                async let fetchedBookTags = repository.fetchTags(bookID: bookID)
+                let usages = try await fetchedUsages
+                let bookTags = try await fetchedBookTags
+
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.availableTagNames = Dictionary(
+                        uniqueKeysWithValues: usages.map { usage in
+                            (usage.id, usage.tag.name)
+                        }
+                    )
+                    for tag in bookTags {
+                        self.availableTagNames[tag.id] = tag.name
+                    }
+                    self.selectedTagIDs = Set(bookTags.map(\.id))
+                    self.updateTagsButtonTitle()
+                }
+            } catch {
+                await MainActor.run {
+                    self?.showError(error)
+                }
+            }
+        }
+    }
+
+    private func loadAvailableTags() {
+        let repository = repository
+        Task { [weak self] in
+            do {
+                let usages = try await repository.fetchTagsWithUsage()
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.availableTagNames = Dictionary(
+                        uniqueKeysWithValues: usages.map { usage in
+                            (usage.id, usage.tag.name)
+                        }
+                    )
+                    self.updateTagsButtonTitle()
+                }
+            } catch {
+                await MainActor.run {
+                    self?.showError(error)
+                }
+            }
+        }
+    }
+
+    private func updateTagsButtonTitle() {
+        guard !selectedTagIDs.isEmpty else {
+            tagsButton.setTitle(NSLocalizedString("tags.none", comment: ""), for: .normal)
+            return
+        }
+
+        let names = selectedTagIDs
+            .compactMap { availableTagNames[$0] }
+            .sorted { lhs, rhs in
+                lhs.localizedCaseInsensitiveCompare(rhs) == .orderedAscending
+            }
+        guard !names.isEmpty else {
+            tagsButton.setTitle(
+                String(
+                    format: NSLocalizedString("tags.selected.count", comment: ""),
+                    selectedTagIDs.count
+                ),
+                for: .normal
+            )
+            return
+        }
+
+        let visibleNames = names.prefix(3).joined(separator: ", ")
+        if names.count <= 3 {
+            tagsButton.setTitle(visibleNames, for: .normal)
+        } else {
+            tagsButton.setTitle(
+                String(
+                    format: NSLocalizedString("tags.summary.more", comment: ""),
+                    visibleNames,
+                    names.count - 3
+                ),
+                for: .normal
+            )
         }
     }
 

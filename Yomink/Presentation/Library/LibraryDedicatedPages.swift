@@ -433,24 +433,10 @@ struct LibraryTagsPage: View {
                 .font(.headline)
                 .foregroundColor(.primary)
 
-            LazyVGrid(
-                columns: [GridItem(.adaptive(minimum: 86), spacing: 10, alignment: .center)],
-                alignment: .center,
-                spacing: 10
-            ) {
-                ForEach(tagUsages) { usage in
-                    Button {
-                        selectedUsage = usage
-                    } label: {
-                        Text(verbatim: "#\(usage.tag.name)")
-                            .font(.system(size: fontSize(for: usage), weight: .semibold))
-                            .foregroundColor(.accentColor)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.72)
-                    }
-                    .buttonStyle(.plain)
-                }
+            TagWordCloudView(tagUsages: tagUsages) { usage in
+                selectedUsage = usage
             }
+            .frame(height: 260)
         }
         .storageCardStyle()
     }
@@ -523,19 +509,6 @@ struct LibraryTagsPage: View {
         }
         .hidden()
         .frame(width: 0, height: 0)
-    }
-
-    private func fontSize(for usage: BookTagUsage) -> CGFloat {
-        let counts = tagUsages.map(\.bookCount)
-        guard let minCount = counts.min(),
-              let maxCount = counts.max(),
-              maxCount > minCount
-        else {
-            return 22
-        }
-
-        let progress = CGFloat(usage.bookCount - minCount) / CGFloat(maxCount - minCount)
-        return 15 + progress * 18
     }
 
     private func countText(for count: Int) -> String {
@@ -664,6 +637,271 @@ private struct TaggedBooksPage: View {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+}
+
+private struct TagWordCloudView: UIViewRepresentable {
+    let tagUsages: [BookTagUsage]
+    let onSelect: (BookTagUsage) -> Void
+
+    func makeUIView(context: Context) -> TagWordCloudUIKitView {
+        let view = TagWordCloudUIKitView()
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ view: TagWordCloudUIKitView, context: Context) {
+        view.configure(
+            tagUsages: tagUsages,
+            onSelect: onSelect
+        )
+    }
+}
+
+private final class TagWordCloudUIKitView: UIView {
+    private var tagUsages: [BookTagUsage] = []
+    private var wordLabels: [TagWordLabel] = []
+    private var onSelect: ((BookTagUsage) -> Void)?
+
+    func configure(
+        tagUsages: [BookTagUsage],
+        onSelect: @escaping (BookTagUsage) -> Void
+    ) {
+        self.tagUsages = tagUsages
+        self.onSelect = onSelect
+        rebuildLabels()
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layoutWordLabels()
+    }
+
+    private func rebuildLabels() {
+        wordLabels.forEach { $0.removeFromSuperview() }
+        wordLabels = tagUsages
+            .sorted { lhs, rhs in
+                if lhs.bookCount != rhs.bookCount {
+                    return lhs.bookCount > rhs.bookCount
+                }
+                return lhs.tag.name.localizedCaseInsensitiveCompare(rhs.tag.name) == .orderedAscending
+            }
+            .map { usage in
+                let label = TagWordLabel()
+                label.usage = usage
+                label.text = usage.tag.name
+                label.textAlignment = .center
+                label.numberOfLines = 1
+                label.textColor = TagWordCloudPalette.color(for: usage.tag.id)
+                label.font = .systemFont(
+                    ofSize: fontSize(for: usage),
+                    weight: usage.bookCount == maxBookCount ? .bold : .semibold
+                )
+                label.adjustsFontForContentSizeCategory = false
+                label.adjustsFontSizeToFitWidth = true
+                label.minimumScaleFactor = 0.7
+                label.isUserInteractionEnabled = true
+                label.addGestureRecognizer(
+                    UITapGestureRecognizer(
+                        target: self,
+                        action: #selector(wordTapped(_:))
+                    )
+                )
+                addSubview(label)
+                return label
+            }
+    }
+
+    private func layoutWordLabels() {
+        guard bounds.width > 20,
+              bounds.height > 20
+        else {
+            return
+        }
+
+        var placedFrames: [CGRect] = []
+        let cloudBounds = bounds.insetBy(dx: 4, dy: 4)
+        let center = CGPoint(
+            x: cloudBounds.midX,
+            y: cloudBounds.midY * 0.94
+        )
+
+        for (index, label) in wordLabels.enumerated() {
+            let targetSize = label.sizeThatFits(
+                CGSize(
+                    width: cloudBounds.width * 0.82,
+                    height: CGFloat.greatestFiniteMagnitude
+                )
+            )
+            let size = CGSize(
+                width: min(max(targetSize.width, 12), cloudBounds.width),
+                height: min(max(targetSize.height, 16), cloudBounds.height)
+            )
+            let frame = placementFrame(
+                for: label,
+                size: size,
+                index: index,
+                center: center,
+                in: cloudBounds,
+                avoiding: placedFrames
+            )
+            label.frame = frame.integral
+            placedFrames.append(frame.insetBy(dx: -6, dy: -4))
+        }
+    }
+
+    private func placementFrame(
+        for label: TagWordLabel,
+        size: CGSize,
+        index: Int,
+        center: CGPoint,
+        in bounds: CGRect,
+        avoiding placedFrames: [CGRect]
+    ) -> CGRect {
+        let seed = TagWordCloudPalette.stableHash(for: label.usage?.tag.id ?? UUID())
+        let baseAngle = Double(seed % 6_283) / 1_000
+        let startRadius = CGFloat(index) * 5.5
+        let horizontalRadius = max(bounds.width, 1)
+        let verticalScale: CGFloat = 0.72
+
+        for step in 0..<300 {
+            let radius = startRadius + CGFloat(step) * 3.1
+            let angle = baseAngle + Double(step) * 0.56
+            let point = CGPoint(
+                x: center.x + CGFloat(cos(angle)) * radius,
+                y: center.y + CGFloat(sin(angle)) * radius * verticalScale
+            )
+            let candidate = clampedFrame(
+                centeredAt: point,
+                size: size,
+                in: bounds
+            )
+            let hitFrame = candidate.insetBy(dx: -6, dy: -4)
+
+            if !placedFrames.contains(where: { $0.intersects(hitFrame) }) {
+                return candidate
+            }
+
+            if radius > horizontalRadius * 0.92 {
+                break
+            }
+        }
+
+        return fallbackFrame(
+            size: size,
+            in: bounds,
+            avoiding: placedFrames,
+            seed: seed
+        )
+    }
+
+    private func fallbackFrame(
+        size: CGSize,
+        in bounds: CGRect,
+        avoiding placedFrames: [CGRect],
+        seed: UInt64
+    ) -> CGRect {
+        let stepX = max(size.width * 0.38, 18)
+        let stepY = max(size.height * 0.72, 18)
+        let rowOffset = CGFloat(seed % 17)
+        var y = bounds.minY
+
+        while y <= bounds.maxY - size.height {
+            var x = bounds.minX + rowOffset
+            while x <= bounds.maxX - size.width {
+                let candidate = CGRect(origin: CGPoint(x: x, y: y), size: size)
+                let hitFrame = candidate.insetBy(dx: -6, dy: -4)
+                if !placedFrames.contains(where: { $0.intersects(hitFrame) }) {
+                    return candidate
+                }
+                x += stepX
+            }
+            y += stepY
+        }
+
+        return clampedFrame(
+            centeredAt: CGPoint(x: bounds.midX, y: bounds.midY),
+            size: size,
+            in: bounds
+        )
+    }
+
+    private func clampedFrame(
+        centeredAt point: CGPoint,
+        size: CGSize,
+        in bounds: CGRect
+    ) -> CGRect {
+        let x = min(
+            max(point.x - size.width / 2, bounds.minX),
+            bounds.maxX - size.width
+        )
+        let y = min(
+            max(point.y - size.height / 2, bounds.minY),
+            bounds.maxY - size.height
+        )
+        return CGRect(
+            origin: CGPoint(x: x, y: y),
+            size: size
+        )
+    }
+
+    private func fontSize(for usage: BookTagUsage) -> CGFloat {
+        guard maxBookCount > minBookCount else {
+            return 22
+        }
+
+        let progress = CGFloat(usage.bookCount - minBookCount) / CGFloat(maxBookCount - minBookCount)
+        return 15 + progress * 20
+    }
+
+    private var minBookCount: Int {
+        tagUsages.map(\.bookCount).min() ?? 0
+    }
+
+    private var maxBookCount: Int {
+        tagUsages.map(\.bookCount).max() ?? 0
+    }
+
+    @objc private func wordTapped(_ recognizer: UITapGestureRecognizer) {
+        guard let label = recognizer.view as? TagWordLabel,
+              let usage = label.usage
+        else {
+            return
+        }
+        onSelect?(usage)
+    }
+
+    private final class TagWordLabel: UILabel {
+        var usage: BookTagUsage?
+    }
+}
+
+private enum TagWordCloudPalette {
+    private static let colors: [UIColor] = [
+        .systemBlue,
+        .systemGreen,
+        .systemOrange,
+        .systemPink,
+        .systemPurple,
+        .systemTeal,
+        .systemIndigo,
+        .systemRed,
+        .systemBrown,
+        .systemCyan
+    ]
+
+    static func color(for id: UUID) -> UIColor {
+        colors[Int(stableHash(for: id) % UInt64(colors.count))]
+    }
+
+    static func stableHash(for id: UUID) -> UInt64 {
+        var hash: UInt64 = 14_695_981_039_346_656_037
+        for byte in id.uuidString.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* 1_099_511_628_211
+        }
+        return hash
     }
 }
 
@@ -860,6 +1098,21 @@ private struct BookTagSelectionRow: View {
             format: NSLocalizedString("tags.count.format", comment: ""),
             usage.bookCount
         )
+    }
+}
+
+private struct BookTagBubble: View {
+    let name: String
+
+    var body: some View {
+        Text(verbatim: name)
+            .font(.subheadline.weight(.medium))
+            .foregroundColor(.accentColor)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Color.accentColor.opacity(0.12))
+            .cornerRadius(8)
     }
 }
 
@@ -2851,8 +3104,6 @@ private struct StorageBookDetailPage: View {
 
     @State private var showsDeleteConfirmation = false
     @State private var tags: [BookTag] = []
-    @State private var selectedTagIDs: Set<UUID> = []
-    @State private var isReadyToPersistTagChanges = false
     @State private var errorMessage: String?
 
     var body: some View {
@@ -2953,19 +3204,7 @@ private struct StorageBookDetailPage: View {
             )
             SettingsPageStyle.separator
 
-            NavigationLink {
-                BookTagPickerPage(
-                    repository: repository,
-                    selectedTagIDs: $selectedTagIDs,
-                    onSelectionFinished: persistTagChanges
-                )
-            } label: {
-                StorageBookDetailNavigationRow(
-                    title: "tags.field.title",
-                    value: tagsSummary
-                )
-            }
-            .buttonStyle(.plain)
+            StorageBookTagsDisplayRow(tags: tags)
         }
         .storageCardStyle()
     }
@@ -3026,58 +3265,13 @@ private struct StorageBookDetailPage: View {
             ?? NSLocalizedString("sidebar.untitledGroup", comment: "")
     }
 
-    private var tagsSummary: String {
-        guard !tags.isEmpty else {
-            return NSLocalizedString("tags.none", comment: "")
-        }
-
-        let visibleNames = tags.prefix(3).map(\.name).joined(separator: ", ")
-        if tags.count <= 3 {
-            return visibleNames
-        }
-
-        return String(
-            format: NSLocalizedString("tags.summary.more", comment: ""),
-            visibleNames,
-            tags.count - 3
-        )
-    }
-
     @MainActor
     private func reloadTags() async {
         do {
             let fetchedTags = try await repository.fetchTags(bookID: bookUsage.id)
-            isReadyToPersistTagChanges = false
             tags = fetchedTags
-            selectedTagIDs = Set(fetchedTags.map(\.id))
-            DispatchQueue.main.async {
-                isReadyToPersistTagChanges = true
-            }
         } catch {
             errorMessage = error.localizedDescription
-        }
-    }
-
-    private func persistTagChanges(_ tagIDs: Set<UUID>) {
-        guard isReadyToPersistTagChanges else {
-            return
-        }
-        guard tagIDs != Set(tags.map(\.id)) else {
-            return
-        }
-
-        isReadyToPersistTagChanges = false
-        Task {
-            do {
-                try await repository.setBookTags(
-                    bookID: bookUsage.id,
-                    tagIDs: tagIDs
-                )
-                await reloadTags()
-            } catch {
-                isReadyToPersistTagChanges = true
-                errorMessage = error.localizedDescription
-            }
         }
     }
 }
@@ -3104,30 +3298,33 @@ private struct StorageBookDetailRow: View {
     }
 }
 
-private struct StorageBookDetailNavigationRow: View {
-    let title: LocalizedStringKey
-    let value: String
+private struct StorageBookTagsDisplayRow: View {
+    let tags: [BookTag]
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(title)
+        HStack(alignment: .top, spacing: 12) {
+            Text("tags.field.title")
                 .font(.body)
                 .foregroundColor(.secondary)
+                .padding(.top, tags.isEmpty ? 0 : 7)
 
             Spacer(minLength: 16)
 
-            Text(verbatim: value)
-                .font(.body)
-                .foregroundColor(.primary)
-                .multilineTextAlignment(.trailing)
-                .lineLimit(2)
-
-            Image(systemName: "chevron.right")
-                .font(.footnote.weight(.semibold))
-                .foregroundColor(Color(.tertiaryLabel))
+            if tags.isEmpty {
+                Text("tags.none")
+                    .font(.body)
+                    .foregroundColor(.primary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(tags) { tag in
+                            BookTagBubble(name: tag.name)
+                        }
+                    }
+                }
+            }
         }
         .padding(.vertical, 11)
-        .contentShape(Rectangle())
     }
 }
 
