@@ -600,7 +600,9 @@ struct LibraryView: View {
                 Spacer(minLength: 0)
             }
         case .ready:
-            if viewModel.books.isEmpty {
+            if !viewModel.hasLoadedInitialData {
+                shelfSkeletonView
+            } else if viewModel.books.isEmpty {
                 emptyShelfView
             } else {
                 shelfContentView
@@ -691,6 +693,44 @@ struct LibraryView: View {
         }
         .padding(-24)
         .background(Color(.systemGray6))
+    }
+
+    private var shelfSkeletonView: some View {
+        VStack(spacing: 12) {
+            ForEach(0..<5, id: \.self) { _ in
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(.tertiarySystemFill))
+                        .frame(width: 42, height: 58)
+
+                    VStack(alignment: .leading, spacing: 9) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(.tertiarySystemFill))
+                            .frame(height: 13)
+                            .frame(maxWidth: 180, alignment: .leading)
+
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(.tertiarySystemFill))
+                            .frame(height: 10)
+                            .frame(maxWidth: 112, alignment: .leading)
+
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color(.tertiarySystemFill))
+                            .frame(height: 10)
+                            .frame(maxWidth: 220, alignment: .leading)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 2)
+                .padding(.vertical, 8)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
     }
 
     private var selectionActionBar: some View {
@@ -1270,6 +1310,7 @@ private final class LibraryViewModel: ObservableObject {
     @Published var allBooks: [Book] = []
     @Published var groups: [BookGroup] = []
     @Published var settings = LibrarySettings.default
+    @Published private(set) var hasLoadedInitialData = false
     @Published var selectedBookIDs: Set<UUID> = []
     @Published var isSelectionMode = false
     @Published var isImporting = false
@@ -1368,12 +1409,14 @@ private final class LibraryViewModel: ObservableObject {
             self.groups = groups
             self.allBooks = allBooks
             self.books = books
+            self.hasLoadedInitialData = true
             pruneSelection()
         } catch is CancellationError {
         } catch {
             guard isCurrentLoadGeneration(generation) else {
                 return
             }
+            hasLoadedInitialData = true
             showError(error, title: "library.error.title")
         }
     }
@@ -1407,12 +1450,14 @@ private final class LibraryViewModel: ObservableObject {
             self.groups = groups
             self.allBooks = allBooks
             self.books = books
+            self.hasLoadedInitialData = true
             pruneSelection()
         } catch is CancellationError {
         } catch {
             guard isCurrentLoadGeneration(generation) else {
                 return
             }
+            hasLoadedInitialData = true
             showError(error, title: "library.error.title")
         }
     }
