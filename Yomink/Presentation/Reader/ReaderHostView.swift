@@ -338,6 +338,44 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         var delta: Double = 0
     }
 
+    private struct PagingLayoutSnapshot: @unchecked Sendable {
+        let viewportSize: CGSize
+        let safeAreaInsets: UIEdgeInsets
+        let widgetInsets: UIEdgeInsets
+        let isVerticalViewport: Bool
+
+        func isMeaningfullyDifferent(from other: PagingLayoutSnapshot) -> Bool {
+            isVerticalViewport != other.isVerticalViewport
+                || Self.differs(viewportSize.width, other.viewportSize.width, tolerance: 1)
+                || Self.differs(viewportSize.height, other.viewportSize.height, tolerance: 1)
+                || Self.insetsDiffer(safeAreaInsets, other.safeAreaInsets, tolerance: 0.5)
+                || Self.insetsDiffer(widgetInsets, other.widgetInsets, tolerance: 0.5)
+        }
+
+        func canProvideHorizontalFallback(for current: PagingLayoutSnapshot) -> Bool {
+            !isVerticalViewport
+                && !current.isVerticalViewport
+                && !Self.differs(viewportSize.width, current.viewportSize.width, tolerance: 1)
+                && !Self.differs(viewportSize.height, current.viewportSize.height, tolerance: 1)
+                && !Self.insetsDiffer(widgetInsets, current.widgetInsets, tolerance: 0.5)
+        }
+
+        private static func differs(_ lhs: CGFloat, _ rhs: CGFloat, tolerance: CGFloat) -> Bool {
+            abs(lhs - rhs) > tolerance
+        }
+
+        private static func insetsDiffer(
+            _ lhs: UIEdgeInsets,
+            _ rhs: UIEdgeInsets,
+            tolerance: CGFloat
+        ) -> Bool {
+            differs(lhs.top, rhs.top, tolerance: tolerance)
+                || differs(lhs.left, rhs.left, tolerance: tolerance)
+                || differs(lhs.bottom, rhs.bottom, tolerance: tolerance)
+                || differs(lhs.right, rhs.right, tolerance: tolerance)
+        }
+    }
+
     private var book: Book
     private var chapters: [Chapter] = []
     private var bookmarks: [Bookmark] = []
@@ -391,7 +429,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private weak var configuredInteractivePopGesture: UIGestureRecognizer?
     private static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
     private static let autoReadReverseInertiaDecayConstant: CGFloat = 2.5
-    private var lastViewportSize = CGSize.zero
+    private var lastPagingLayoutSnapshot: PagingLayoutSnapshot?
+    private var stableHorizontalPagingLayoutSnapshot: PagingLayoutSnapshot?
     private weak var settingsPageModeSection: UIView?
     private weak var settingsLayoutSection: UIView?
     private weak var settingsMoreSection: UIView?
@@ -514,19 +553,21 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         applyAutoReadPanelPosition()
         updateVerticalContentCovers()
 
-        let size = collectionView.bounds.size
         guard didStartOpening,
-              size.width > 1,
-              size.height > 1,
-              (
-                abs(size.width - lastViewportSize.width) > 1
-                    || abs(size.height - lastViewportSize.height) > 1
-              )
-        else {
+              isReaderActiveTopController,
+              !isMenuVisible,
+              let layoutSnapshot = currentPagingLayoutSnapshot() else {
+            return
+        }
+        let shouldReopen = lastPagingLayoutSnapshot
+            .map { layoutSnapshot.isMeaningfullyDifferent(from: $0) }
+            ?? true
+        rememberPagingLayoutSnapshot(layoutSnapshot)
+
+        guard shouldReopen else {
             return
         }
 
-        lastViewportSize = size
         if currentPage == nil {
             guard let pendingRestoreAbsoluteOffset else {
                 return
@@ -537,6 +578,52 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
         let offset = currentDisplayByteOffset()
         reopen(atAbsoluteOffset: offset, enforceChapterBoundary: true)
+    }
+
+    private var isReaderActiveTopController: Bool {
+        guard let navigationController else {
+            return view.window != nil && presentedViewController == nil
+        }
+        guard let readerStackController = navigationStackControllerForReader() else {
+            return false
+        }
+        return navigationController.topViewController === readerStackController
+    }
+
+    private func currentPagingLayoutSnapshot() -> PagingLayoutSnapshot? {
+        let viewportSize = collectionView.bounds.size
+        guard viewportSize.width > 1,
+              viewportSize.height > 1 else {
+            return nil
+        }
+        return PagingLayoutSnapshot(
+            viewportSize: viewportSize,
+            safeAreaInsets: view.safeAreaInsets,
+            widgetInsets: widgetContentInsets(),
+            isVerticalViewport: usesVerticalScrolling
+        )
+    }
+
+    private func pagingLayoutSnapshotForPageLoad() -> PagingLayoutSnapshot? {
+        guard let currentSnapshot = currentPagingLayoutSnapshot() else {
+            return nil
+        }
+        if !isReaderActiveTopController,
+           let stableSnapshot = stableHorizontalPagingLayoutSnapshot,
+           stableSnapshot.canProvideHorizontalFallback(for: currentSnapshot) {
+            return stableSnapshot
+        }
+        return currentSnapshot
+    }
+
+    private func rememberPagingLayoutSnapshot(_ snapshot: PagingLayoutSnapshot) {
+        guard !isMenuVisible else {
+            return
+        }
+        lastPagingLayoutSnapshot = snapshot
+        if !snapshot.isVerticalViewport {
+            stableHorizontalPagingLayoutSnapshot = snapshot
+        }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -1813,8 +1900,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             showLoading(false)
             return
         }
-        guard collectionView.bounds.width > 1,
-              collectionView.bounds.height > 1 else {
+        guard let layoutSnapshot = pagingLayoutSnapshotForPageLoad() else {
             pendingRestoreAbsoluteOffset = absoluteOffset
             if showsLoadingIndicator {
                 showLoading(true)
@@ -1835,10 +1921,10 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let loadedChapters = chapters
         let activeRules = filterRules
         let settings = readerSettings.normalized
-        let viewportSize = collectionView.bounds.size
-        let safeAreaInsets = view.safeAreaInsets
-        let widgetInsets = widgetContentInsets()
-        let isVerticalViewport = usesVerticalScrolling
+        let viewportSize = layoutSnapshot.viewportSize
+        let safeAreaInsets = layoutSnapshot.safeAreaInsets
+        let widgetInsets = layoutSnapshot.widgetInsets
+        let isVerticalViewport = layoutSnapshot.isVerticalViewport
         let appFileStore = fileStore ?? self.fileStore
         didReachEndOfBook = false
         isLoadingNextPage = true
@@ -1872,6 +1958,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                     self.collectionView.reloadData()
                     self.collectionView.layoutIfNeeded()
                     self.collectionView.setContentOffset(self.contentOffset(forPageAt: 0), animated: false)
+                    if self.isReaderActiveTopController {
+                        self.rememberPagingLayoutSnapshot(layoutSnapshot)
+                    }
                     self.showLoading(false)
                     self.updateSessionState(isLoadingNextPage: false)
                     self.recordBookOpenedIfNeeded()
@@ -1969,10 +2058,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         let loadedChapters = chapters
         let activeRules = filterRules
         let settings = readerSettings.normalized
-        let viewportSize = collectionView.bounds.size
-        let safeAreaInsets = view.safeAreaInsets
-        let widgetInsets = widgetContentInsets()
-        let isVerticalViewport = usesVerticalScrolling
+        guard let layoutSnapshot = pagingLayoutSnapshotForPageLoad() else {
+            return
+        }
+        let viewportSize = layoutSnapshot.viewportSize
+        let safeAreaInsets = layoutSnapshot.safeAreaInsets
+        let widgetInsets = layoutSnapshot.widgetInsets
+        let isVerticalViewport = layoutSnapshot.isVerticalViewport
         let appFileStore = fileStore
         isLoadingNextPage = insertingAtEnd
         updateSessionState(isLoadingNextPage: insertingAtEnd)
@@ -2000,6 +2092,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
                         return
                     }
                     self.pageTask = nil
+                    if self.isReaderActiveTopController {
+                        self.rememberPagingLayoutSnapshot(layoutSnapshot)
+                    }
                     if insertingAtEnd {
                         self.appendPage(page)
                     } else {
@@ -6312,6 +6407,7 @@ private struct CollectionReaderPage: Equatable, @unchecked Sendable {
     let globalProgress: Double
     let containsChapterTitle: Bool
     let verticalExtent: CGFloat
+    let contentLayout: ReaderLayoutConfiguration
     let attributedText: NSAttributedString
     let text: String
 
@@ -6471,6 +6567,7 @@ private enum CollectionReaderPaginator {
                 globalProgress: globalProgress,
                 containsChapterTitle: containsChapterTitle,
                 verticalExtent: verticalExtent,
+                contentLayout: layout,
                 attributedText: page.attributedText,
                 text: pageText
             )
@@ -6659,7 +6756,7 @@ private final class CollectionReaderPageCell: UICollectionViewCell {
         contentView.backgroundColor = backgroundColor
         pageView.configure(
             attributedText: page.attributedText,
-            layout: layout,
+            layout: showsWidgets ? page.contentLayout : layout,
             backgroundColor: backgroundColor
         )
         widgetOverlay.isHidden = !showsWidgets
