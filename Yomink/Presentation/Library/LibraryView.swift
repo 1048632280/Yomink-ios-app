@@ -2051,6 +2051,8 @@ enum ReadingProgressFormatter {
 }
 
 private struct GlobalBookSearchView: View {
+    @Environment(\.dismiss) private var dismiss
+
     let repository: (any LibraryRepository)?
     let sortOrder: LibrarySettings.SortOrder
     let onOpenBook: (Book) -> Void
@@ -2105,8 +2107,17 @@ private struct GlobalBookSearchView: View {
             resultList
         }
         .padding()
+        .navigationBarBackButtonHidden(true)
+        .background(InteractivePopGestureRestorer())
         .navigationTitle("search.title")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                BackTextButton {
+                    dismiss()
+                }
+            }
+        }
         .task {
             await reloadHistory()
         }

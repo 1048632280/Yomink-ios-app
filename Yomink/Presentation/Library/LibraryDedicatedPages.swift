@@ -332,6 +332,8 @@ struct LibraryTagsPage: View {
     @State private var tagUsages: [BookTagUsage] = []
     @State private var selectedUsage: BookTagUsage?
     @State private var tagNameEditorPresented = false
+    @State private var isEditingTags = false
+    @State private var tagPendingDeletion: BookTagUsage?
     @State private var tagNameDraft = ""
     @State private var errorMessage: String?
 
@@ -367,6 +369,19 @@ struct LibraryTagsPage: View {
                     cancelAction: cancelCreatingTag
                 )
             }
+
+            if tagPendingDeletion != nil {
+                DedicatedConfirmationOverlay(
+                    title: "tags.delete.title",
+                    message: "tags.delete.message",
+                    confirmTitle: "tags.delete.action",
+                    confirmRole: .destructive,
+                    confirmAction: deletePendingTag,
+                    cancelAction: {
+                        tagPendingDeletion = nil
+                    }
+                )
+            }
         }
         .navigationBarBackButtonHidden(true)
         .background(InteractivePopGestureRestorer())
@@ -379,9 +394,17 @@ struct LibraryTagsPage: View {
                 }
             }
 
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button("common.new") {
                     beginCreatingTag()
+                }
+
+                if !tagUsages.isEmpty {
+                    Button(tagEditButtonTitle) {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            isEditingTags.toggle()
+                        }
+                    }
                 }
             }
         }
@@ -441,6 +464,10 @@ struct LibraryTagsPage: View {
         .storageCardStyle()
     }
 
+    private var tagEditButtonTitle: LocalizedStringKey {
+        isEditingTags ? "common.done" : "common.edit"
+    }
+
     private var tagListCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("tags.all.title")
@@ -449,30 +476,16 @@ struct LibraryTagsPage: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(tagUsages.enumerated()), id: \.element.id) { index, usage in
-                    Button {
-                        selectedUsage = usage
-                    } label: {
-                        HStack(spacing: 12) {
-                            Text(verbatim: usage.tag.name)
-                                .font(.body)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 12)
-
-                            Text(countText(for: usage.bookCount))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .monospacedDigit()
-
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundColor(Color(.tertiaryLabel))
+                    if isEditingTags {
+                        tagListRow(for: usage)
+                    } else {
+                        Button {
+                            selectedUsage = usage
+                        } label: {
+                            tagListRow(for: usage)
                         }
-                        .padding(.vertical, 11)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
 
                     if index < tagUsages.count - 1 {
                         SettingsPageStyle.separator
@@ -481,6 +494,43 @@ struct LibraryTagsPage: View {
             }
         }
         .storageCardStyle()
+    }
+
+    private func tagListRow(for usage: BookTagUsage) -> some View {
+        HStack(spacing: 12) {
+            if isEditingTags {
+                Button(role: .destructive) {
+                    tagPendingDeletion = usage
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.red)
+                        .frame(width: 30, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("tags.delete.action"))
+            }
+
+            Text(verbatim: usage.tag.name)
+                .font(.body)
+                .foregroundColor(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            Text(countText(for: usage.bookCount))
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+
+            if !isEditingTags {
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundColor(Color(.tertiaryLabel))
+            }
+        }
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
     }
 
     private var tagRouteLink: some View {
@@ -545,6 +595,28 @@ struct LibraryTagsPage: View {
                 _ = try await repository.createTag(name: name)
                 cancelCreatingTag()
                 await reloadTags()
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func deletePendingTag() {
+        guard let usage = tagPendingDeletion else {
+            return
+        }
+
+        Task {
+            do {
+                try await repository.deleteTag(id: usage.id)
+                if selectedUsage?.id == usage.id {
+                    selectedUsage = nil
+                }
+                tagPendingDeletion = nil
+                await reloadTags()
+                if tagUsages.isEmpty {
+                    isEditingTags = false
+                }
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -660,7 +732,7 @@ private struct TagWordCloudView: UIViewRepresentable {
 
 private final class TagWordCloudUIKitView: UIView {
     private var tagUsages: [BookTagUsage] = []
-    private var wordLabels: [TagWordLabel] = []
+    private var wordViews: [SpineWordView] = []
     private var onSelect: ((BookTagUsage) -> Void)?
 
     func configure(
@@ -669,51 +741,46 @@ private final class TagWordCloudUIKitView: UIView {
     ) {
         self.tagUsages = tagUsages
         self.onSelect = onSelect
-        rebuildLabels()
+        rebuildWordViews()
         setNeedsLayout()
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        layoutWordLabels()
+        layoutWordViews()
     }
 
-    private func rebuildLabels() {
-        wordLabels.forEach { $0.removeFromSuperview() }
-        wordLabels = tagUsages
+    private func rebuildWordViews() {
+        wordViews.forEach { $0.removeFromSuperview() }
+        wordViews = tagUsages
             .sorted { lhs, rhs in
                 if lhs.bookCount != rhs.bookCount {
                     return lhs.bookCount > rhs.bookCount
                 }
                 return lhs.tag.name.localizedCaseInsensitiveCompare(rhs.tag.name) == .orderedAscending
             }
-            .map { usage in
-                let label = TagWordLabel()
-                label.usage = usage
-                label.text = usage.tag.name
-                label.textAlignment = .center
-                label.numberOfLines = 1
-                label.textColor = TagWordCloudPalette.color(for: usage.tag.id)
-                label.font = .systemFont(
-                    ofSize: fontSize(for: usage),
-                    weight: usage.bookCount == maxBookCount ? .bold : .semibold
+            .enumerated()
+            .map { index, usage in
+                let view = SpineWordView(
+                    usage: usage,
+                    orientation: orientation(for: usage, at: index),
+                    font: .systemFont(
+                        ofSize: fontSize(for: usage),
+                        weight: usage.bookCount == maxBookCount ? .bold : .semibold
+                    ),
+                    textColor: TagWordCloudPalette.color(for: usage.tag.id)
                 )
-                label.adjustsFontForContentSizeCategory = false
-                label.adjustsFontSizeToFitWidth = true
-                label.minimumScaleFactor = 0.7
-                label.isUserInteractionEnabled = true
-                label.addGestureRecognizer(
-                    UITapGestureRecognizer(
-                        target: self,
-                        action: #selector(wordTapped(_:))
-                    )
+                view.addTarget(
+                    self,
+                    action: #selector(wordTapped(_:)),
+                    for: .touchUpInside
                 )
-                addSubview(label)
-                return label
+                addSubview(view)
+                return view
             }
     }
 
-    private func layoutWordLabels() {
+    private func layoutWordViews() {
         guard bounds.width > 20,
               bounds.height > 20
         else {
@@ -721,110 +788,264 @@ private final class TagWordCloudUIKitView: UIView {
         }
 
         var placedFrames: [CGRect] = []
-        let cloudBounds = bounds.insetBy(dx: 4, dy: 4)
+        let cloudBounds = bounds.insetBy(dx: 6, dy: 6)
         let center = CGPoint(
             x: cloudBounds.midX,
-            y: cloudBounds.midY * 0.94
+            y: cloudBounds.minY + cloudBounds.height * 0.46
         )
+        let totalCount = max(wordViews.count, 1)
 
-        for (index, label) in wordLabels.enumerated() {
-            let targetSize = label.sizeThatFits(
-                CGSize(
-                    width: cloudBounds.width * 0.82,
-                    height: CGFloat.greatestFiniteMagnitude
+        for (index, wordView) in wordViews.enumerated() {
+            wordView.isHidden = false
+            let size = wordView.preferredSize(
+                maxHorizontalWidth: cloudBounds.width * 0.78,
+                maxVerticalHeight: cloudBounds.height * 0.72
+            )
+
+            let frame: CGRect?
+            if index == 0 {
+                frame = clampedFrame(
+                    centeredAt: center,
+                    size: size,
+                    in: cloudBounds
                 )
-            )
-            let size = CGSize(
-                width: min(max(targetSize.width, 12), cloudBounds.width),
-                height: min(max(targetSize.height, 16), cloudBounds.height)
-            )
-            let frame = placementFrame(
-                for: label,
-                size: size,
-                index: index,
-                center: center,
-                in: cloudBounds,
-                avoiding: placedFrames
-            )
-            label.frame = frame.integral
+            } else {
+                frame = placementFrame(
+                    for: wordView,
+                    size: size,
+                    index: index,
+                    totalCount: totalCount,
+                    center: center,
+                    in: cloudBounds,
+                    avoiding: placedFrames
+                )
+            }
+
+            guard let frame else {
+                wordView.isHidden = true
+                continue
+            }
+
+            wordView.frame = frame.integral
             placedFrames.append(frame.insetBy(dx: -6, dy: -4))
         }
     }
 
     private func placementFrame(
-        for label: TagWordLabel,
+        for wordView: SpineWordView,
         size: CGSize,
         index: Int,
+        totalCount: Int,
         center: CGPoint,
         in bounds: CGRect,
         avoiding placedFrames: [CGRect]
-    ) -> CGRect {
-        let seed = TagWordCloudPalette.stableHash(for: label.usage?.tag.id ?? UUID())
-        let baseAngle = Double(seed % 6_283) / 1_000
-        let startRadius = CGFloat(index) * 5.5
-        let horizontalRadius = max(bounds.width, 1)
-        let verticalScale: CGFloat = 0.72
-
-        for step in 0..<300 {
-            let radius = startRadius + CGFloat(step) * 3.1
-            let angle = baseAngle + Double(step) * 0.56
-            let point = CGPoint(
-                x: center.x + CGFloat(cos(angle)) * radius,
-                y: center.y + CGFloat(sin(angle)) * radius * verticalScale
-            )
-            let candidate = clampedFrame(
-                centeredAt: point,
-                size: size,
-                in: bounds
-            )
-            let hitFrame = candidate.insetBy(dx: -6, dy: -4)
-
-            if !placedFrames.contains(where: { $0.intersects(hitFrame) }) {
-                return candidate
-            }
-
-            if radius > horizontalRadius * 0.92 {
-                break
-            }
-        }
-
-        return fallbackFrame(
+    ) -> CGRect? {
+        let seed = TagWordCloudPalette.stableHash(for: wordView.usage.id)
+        let candidates = edgeCandidates(
             size: size,
+            index: index,
             in: bounds,
             avoiding: placedFrames,
             seed: seed
+        ) + fallbackCandidates(
+            size: size,
+            in: bounds,
+            seed: seed
         )
+
+        return candidates
+            .filter { candidate in
+                bounds.contains(candidate)
+                    && !intersects(candidate, with: placedFrames)
+            }
+            .min { lhs, rhs in
+                placementScore(
+                    for: lhs,
+                    index: index,
+                    totalCount: totalCount,
+                    center: center,
+                    in: bounds,
+                    seed: seed
+                ) < placementScore(
+                    for: rhs,
+                    index: index,
+                    totalCount: totalCount,
+                    center: center,
+                    in: bounds,
+                    seed: seed
+                )
+            }
     }
 
-    private func fallbackFrame(
+    private func edgeCandidates(
         size: CGSize,
+        index: Int,
         in bounds: CGRect,
         avoiding placedFrames: [CGRect],
         seed: UInt64
-    ) -> CGRect {
-        let stepX = max(size.width * 0.38, 18)
-        let stepY = max(size.height * 0.72, 18)
-        let rowOffset = CGFloat(seed % 17)
+    ) -> [CGRect] {
+        guard !placedFrames.isEmpty else {
+            return []
+        }
+
+        let gap = index < 7 ? CGFloat(5) : CGFloat(8)
+        let offsets: [CGFloat] = [-0.48, -0.24, 0, 0.24, 0.48]
+        var candidates: [CGRect] = []
+
+        for (placedIndex, baseFrame) in placedFrames.enumerated() {
+            let horizontalJitter = jitter(seed: seed, salt: UInt64(placedIndex * 17 + 3), amplitude: 7)
+            let verticalJitter = jitter(seed: seed, salt: UInt64(placedIndex * 19 + 11), amplitude: 7)
+
+            for offset in offsets {
+                let yOffset = offset * max(baseFrame.height, size.height) + verticalJitter
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.minX - gap - size.width,
+                        y: baseFrame.midY - size.height / 2 + yOffset,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.maxX + gap,
+                        y: baseFrame.midY - size.height / 2 + yOffset,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+
+                let xOffset = offset * max(baseFrame.width, size.width) + horizontalJitter
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.midX - size.width / 2 + xOffset,
+                        y: baseFrame.minY - gap - size.height,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.midX - size.width / 2 + xOffset,
+                        y: baseFrame.maxY + gap,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+            }
+        }
+
+        return candidates
+    }
+
+    private func fallbackCandidates(
+        size: CGSize,
+        in bounds: CGRect,
+        seed: UInt64
+    ) -> [CGRect] {
+        let stepX = max(size.width + 8, 22)
+        let stepY = max(size.height + 8, 22)
+        let rowOffset = CGFloat(seed % 23)
+        var candidates: [CGRect] = []
         var y = bounds.minY
 
         while y <= bounds.maxY - size.height {
             var x = bounds.minX + rowOffset
             while x <= bounds.maxX - size.width {
-                let candidate = CGRect(origin: CGPoint(x: x, y: y), size: size)
-                let hitFrame = candidate.insetBy(dx: -6, dy: -4)
-                if !placedFrames.contains(where: { $0.intersects(hitFrame) }) {
-                    return candidate
-                }
+                candidates.append(
+                    CGRect(
+                        origin: CGPoint(x: x, y: y),
+                        size: size
+                    )
+                )
                 x += stepX
             }
             y += stepY
         }
 
-        return clampedFrame(
-            centeredAt: CGPoint(x: bounds.midX, y: bounds.midY),
-            size: size,
+        return candidates
+    }
+
+    private func placementScore(
+        for frame: CGRect,
+        index: Int,
+        totalCount: Int,
+        center: CGPoint,
+        in bounds: CGRect,
+        seed: UInt64
+    ) -> CGFloat {
+        let rank = rankProgress(index: index, totalCount: totalCount)
+        let target = preferredPoint(
+            rank: rank,
+            center: center,
+            in: bounds,
+            seed: seed
+        )
+        let targetDistance = normalizedDistance(
+            from: CGPoint(x: frame.midX, y: frame.midY),
+            to: target,
             in: bounds
         )
+        let centerDistance = normalizedDistance(
+            from: CGPoint(x: frame.midX, y: frame.midY),
+            to: center,
+            in: bounds
+        )
+        let upperPenalty = frame.midY < center.y
+            ? (center.y - frame.midY) / max(bounds.height, 1) * rank * 90
+            : 0
+        let crowdedCenterPenalty = max(0, 0.28 - centerDistance) * rank * 75
+
+        return targetDistance * 180
+            + centerDistance * (1 - rank) * 80
+            + upperPenalty
+            + crowdedCenterPenalty
+    }
+
+    private func preferredPoint(
+        rank: CGFloat,
+        center: CGPoint,
+        in bounds: CGRect,
+        seed: UInt64
+    ) -> CGPoint {
+        let xSpread = bounds.width * (0.08 + rank * 0.42)
+        let yDrift = bounds.height * rank * 0.32
+        let x = center.x + jitter(seed: seed, salt: 31, amplitude: xSpread)
+        let y = center.y
+            + yDrift
+            + jitter(seed: seed, salt: 47, amplitude: bounds.height * rank * 0.08)
+
+        return CGPoint(
+            x: min(max(x, bounds.minX), bounds.maxX),
+            y: min(max(y, bounds.minY), bounds.maxY)
+        )
+    }
+
+    private func normalizedDistance(
+        from lhs: CGPoint,
+        to rhs: CGPoint,
+        in bounds: CGRect
+    ) -> CGFloat {
+        let dx = (lhs.x - rhs.x) / max(bounds.width, 1)
+        let dy = (lhs.y - rhs.y) / max(bounds.height, 1)
+        return sqrt(dx * dx + dy * dy)
+    }
+
+    private func rankProgress(index: Int, totalCount: Int) -> CGFloat {
+        guard totalCount > 1 else {
+            return 0
+        }
+        return CGFloat(index) / CGFloat(totalCount - 1)
+    }
+
+    private func intersects(
+        _ frame: CGRect,
+        with placedFrames: [CGRect]
+    ) -> Bool {
+        let hitFrame = frame.insetBy(dx: -5, dy: -5)
+        return placedFrames.contains { placedFrame in
+            placedFrame.intersects(hitFrame)
+        }
     }
 
     private func clampedFrame(
@@ -832,27 +1053,57 @@ private final class TagWordCloudUIKitView: UIView {
         size: CGSize,
         in bounds: CGRect
     ) -> CGRect {
+        let clampedSize = CGSize(
+            width: min(size.width, bounds.width),
+            height: min(size.height, bounds.height)
+        )
         let x = min(
-            max(point.x - size.width / 2, bounds.minX),
-            bounds.maxX - size.width
+            max(point.x - clampedSize.width / 2, bounds.minX),
+            bounds.maxX - clampedSize.width
         )
         let y = min(
-            max(point.y - size.height / 2, bounds.minY),
-            bounds.maxY - size.height
+            max(point.y - clampedSize.height / 2, bounds.minY),
+            bounds.maxY - clampedSize.height
         )
         return CGRect(
             origin: CGPoint(x: x, y: y),
-            size: size
+            size: clampedSize
         )
     }
 
     private func fontSize(for usage: BookTagUsage) -> CGFloat {
         guard maxBookCount > minBookCount else {
-            return 22
+            return tagUsages.count <= 1 ? 30 : 21
         }
 
         let progress = CGFloat(usage.bookCount - minBookCount) / CGFloat(maxBookCount - minBookCount)
-        return 15 + progress * 20
+        let curvedProgress = CGFloat(sqrt(Double(progress)))
+        return 14 + curvedProgress * 20
+    }
+
+    private func orientation(
+        for usage: BookTagUsage,
+        at index: Int
+    ) -> SpineWordOrientation {
+        guard index > 0 else {
+            return .horizontal
+        }
+
+        let seed = TagWordCloudPalette.stableHash(for: usage.id)
+        if index % 4 == 1 {
+            return .vertical
+        }
+        return seed % 7 <= 2 ? .vertical : .horizontal
+    }
+
+    private func jitter(
+        seed: UInt64,
+        salt: UInt64,
+        amplitude: CGFloat
+    ) -> CGFloat {
+        let mixed = TagWordCloudPalette.mix(seed &+ (salt &* 97))
+        let unit = CGFloat(Int(mixed % 2_001) - 1_000) / 1_000
+        return unit * amplitude
     }
 
     private var minBookCount: Int {
@@ -863,32 +1114,130 @@ private final class TagWordCloudUIKitView: UIView {
         tagUsages.map(\.bookCount).max() ?? 0
     }
 
-    @objc private func wordTapped(_ recognizer: UITapGestureRecognizer) {
-        guard let label = recognizer.view as? TagWordLabel,
-              let usage = label.usage
-        else {
+    @objc private func wordTapped(_ sender: UIControl) {
+        guard let wordView = sender as? SpineWordView else {
             return
         }
-        onSelect?(usage)
+        onSelect?(wordView.usage)
     }
 
-    private final class TagWordLabel: UILabel {
-        var usage: BookTagUsage?
+    private enum SpineWordOrientation {
+        case horizontal
+        case vertical
+    }
+
+    private final class SpineWordView: UIControl {
+        let usage: BookTagUsage
+        private let orientation: SpineWordOrientation
+        private let label = UILabel()
+        private let contentInsets = UIEdgeInsets(top: 7, left: 11, bottom: 7, right: 11)
+
+        init(
+            usage: BookTagUsage,
+            orientation: SpineWordOrientation,
+            font: UIFont,
+            textColor: UIColor
+        ) {
+            self.usage = usage
+            self.orientation = orientation
+            super.init(frame: .zero)
+
+            backgroundColor = UIColor(
+                red: 245.0 / 255.0,
+                green: 247.0 / 255.0,
+                blue: 250.0 / 255.0,
+                alpha: 1
+            )
+            layer.cornerRadius = 6
+            layer.masksToBounds = true
+
+            label.text = usage.tag.name
+            label.textAlignment = .center
+            label.numberOfLines = 1
+            label.font = font
+            label.textColor = textColor
+            label.adjustsFontForContentSizeCategory = false
+            label.adjustsFontSizeToFitWidth = true
+            label.minimumScaleFactor = 0.7
+            label.baselineAdjustment = .alignCenters
+            label.isUserInteractionEnabled = false
+            addSubview(label)
+
+            isAccessibilityElement = true
+            accessibilityLabel = usage.tag.name
+            accessibilityTraits = .button
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) has not been implemented")
+        }
+
+        func preferredSize(
+            maxHorizontalWidth: CGFloat,
+            maxVerticalHeight: CGFloat
+        ) -> CGSize {
+            let font = label.font ?? .systemFont(ofSize: 16)
+            let text = (label.text ?? "") as NSString
+            let rawSize = text.size(
+                withAttributes: [.font: font]
+            )
+            let textWidth = ceil(max(rawSize.width, 8))
+            let lineHeight = ceil(max(rawSize.height, font.lineHeight))
+
+            switch orientation {
+            case .horizontal:
+                return CGSize(
+                    width: min(
+                        textWidth + contentInsets.left + contentInsets.right,
+                        max(maxHorizontalWidth, 48)
+                    ),
+                    height: lineHeight + contentInsets.top + contentInsets.bottom
+                )
+            case .vertical:
+                return CGSize(
+                    width: lineHeight + contentInsets.left + contentInsets.right,
+                    height: min(
+                        textWidth + contentInsets.top + contentInsets.bottom,
+                        max(maxVerticalHeight, 58)
+                    )
+                )
+            }
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+
+            label.transform = .identity
+            switch orientation {
+            case .horizontal:
+                label.frame = bounds.inset(by: contentInsets)
+            case .vertical:
+                label.bounds = CGRect(
+                    x: 0,
+                    y: 0,
+                    width: max(bounds.height - contentInsets.top - contentInsets.bottom, 1),
+                    height: max(bounds.width - contentInsets.left - contentInsets.right, 1)
+                )
+                label.center = CGPoint(x: bounds.midX, y: bounds.midY)
+                label.transform = CGAffineTransform(rotationAngle: .pi / 2)
+            }
+        }
     }
 }
 
 private enum TagWordCloudPalette {
     private static let colors: [UIColor] = [
-        .systemBlue,
-        .systemGreen,
-        .systemOrange,
-        .systemPink,
-        .systemPurple,
-        .systemTeal,
-        .systemIndigo,
-        .systemRed,
-        .systemBrown,
-        .systemCyan
+        UIColor(red: 0.31, green: 0.44, blue: 0.56, alpha: 1),
+        UIColor(red: 0.31, green: 0.50, blue: 0.49, alpha: 1),
+        UIColor(red: 0.44, green: 0.50, blue: 0.41, alpha: 1),
+        UIColor(red: 0.60, green: 0.40, blue: 0.45, alpha: 1),
+        UIColor(red: 0.48, green: 0.42, blue: 0.57, alpha: 1),
+        UIColor(red: 0.61, green: 0.44, blue: 0.36, alpha: 1),
+        UIColor(red: 0.57, green: 0.48, blue: 0.27, alpha: 1),
+        UIColor(red: 0.31, green: 0.47, blue: 0.55, alpha: 1),
+        UIColor(red: 0.37, green: 0.48, blue: 0.37, alpha: 1),
+        UIColor(red: 0.50, green: 0.40, blue: 0.49, alpha: 1)
     ]
 
     static func color(for id: UUID) -> UIColor {
@@ -902,6 +1251,16 @@ private enum TagWordCloudPalette {
             hash = hash &* 1_099_511_628_211
         }
         return hash
+    }
+
+    static func mix(_ value: UInt64) -> UInt64 {
+        var mixed = value
+        mixed ^= mixed >> 33
+        mixed = mixed &* 0xff51afd7ed558ccd
+        mixed ^= mixed >> 33
+        mixed = mixed &* 0xc4ceb9fe1a85ec53
+        mixed ^= mixed >> 33
+        return mixed
     }
 }
 
@@ -4209,16 +4568,18 @@ private struct SettingsOptionListPage<Content: View>: View {
     }
 }
 
-private struct BackTextButton: View {
+struct BackTextButton: View {
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Text("<")
+            HStack(spacing: 3) {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
                 Text("common.back")
             }
         }
+        .accessibilityLabel(Text("common.back"))
     }
 }
 
@@ -4358,7 +4719,7 @@ private struct DedicatedModalBackdrop<Content: View>: View {
     }
 }
 
-private struct InteractivePopGestureRestorer: UIViewControllerRepresentable {
+struct InteractivePopGestureRestorer: UIViewControllerRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
