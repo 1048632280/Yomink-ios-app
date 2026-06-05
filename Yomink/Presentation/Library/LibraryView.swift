@@ -1974,7 +1974,7 @@ private struct FixedWidthImportBatchCountText: View {
     let text: String
 
     var body: some View {
-        ZStack(alignment: .trailing) {
+        ZStack(alignment: .center) {
             Text(verbatim: "999/999")
                 .font(.subheadline.monospacedDigit())
                 .hidden()
@@ -1986,7 +1986,7 @@ private struct FixedWidthImportBatchCountText: View {
                 .minimumScaleFactor(0.8)
         }
         .fixedSize(horizontal: true, vertical: false)
-        .frame(height: 22, alignment: .trailing)
+        .frame(height: 22, alignment: .center)
     }
 }
 
