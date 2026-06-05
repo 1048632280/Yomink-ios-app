@@ -332,6 +332,8 @@ struct LibraryTagsPage: View {
     @State private var tagUsages: [BookTagUsage] = []
     @State private var selectedUsage: BookTagUsage?
     @State private var tagNameEditorPresented = false
+    @State private var isEditingTags = false
+    @State private var tagPendingDeletion: BookTagUsage?
     @State private var tagNameDraft = ""
     @State private var errorMessage: String?
 
@@ -367,6 +369,19 @@ struct LibraryTagsPage: View {
                     cancelAction: cancelCreatingTag
                 )
             }
+
+            if tagPendingDeletion != nil {
+                DedicatedConfirmationOverlay(
+                    title: "tags.delete.title",
+                    message: "tags.delete.message",
+                    confirmTitle: "tags.delete.action",
+                    confirmRole: .destructive,
+                    confirmAction: deletePendingTag,
+                    cancelAction: {
+                        tagPendingDeletion = nil
+                    }
+                )
+            }
         }
         .navigationBarBackButtonHidden(true)
         .background(InteractivePopGestureRestorer())
@@ -379,9 +394,17 @@ struct LibraryTagsPage: View {
                 }
             }
 
-            ToolbarItem(placement: .navigationBarTrailing) {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button("common.new") {
                     beginCreatingTag()
+                }
+
+                if !tagUsages.isEmpty {
+                    Button(tagEditButtonTitle) {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            isEditingTags.toggle()
+                        }
+                    }
                 }
             }
         }
@@ -441,6 +464,10 @@ struct LibraryTagsPage: View {
         .storageCardStyle()
     }
 
+    private var tagEditButtonTitle: LocalizedStringKey {
+        isEditingTags ? "common.done" : "common.edit"
+    }
+
     private var tagListCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("tags.all.title")
@@ -449,30 +476,28 @@ struct LibraryTagsPage: View {
 
             VStack(spacing: 0) {
                 ForEach(Array(tagUsages.enumerated()), id: \.element.id) { index, usage in
-                    Button {
-                        selectedUsage = usage
-                    } label: {
-                        HStack(spacing: 12) {
-                            Text(verbatim: usage.tag.name)
-                                .font(.body)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-
-                            Spacer(minLength: 12)
-
-                            Text(countText(for: usage.bookCount))
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                                .monospacedDigit()
-
-                            Image(systemName: "chevron.right")
-                                .font(.footnote.weight(.semibold))
-                                .foregroundColor(Color(.tertiaryLabel))
+                    if isEditingTags {
+                        LibraryTagListRow(
+                            usage: usage,
+                            countText: countText(for: usage.bookCount),
+                            isEditing: true,
+                            deleteAction: {
+                                tagPendingDeletion = usage
+                            }
+                        )
+                    } else {
+                        Button {
+                            selectedUsage = usage
+                        } label: {
+                            LibraryTagListRow(
+                                usage: usage,
+                                countText: countText(for: usage.bookCount),
+                                isEditing: false,
+                                deleteAction: {}
+                            )
                         }
-                        .padding(.vertical, 11)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
 
                     if index < tagUsages.count - 1 {
                         SettingsPageStyle.separator
@@ -549,6 +574,85 @@ struct LibraryTagsPage: View {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func deletePendingTag() {
+        guard let usage = tagPendingDeletion else {
+            return
+        }
+
+        Task {
+            do {
+                try await repository.deleteTag(id: usage.id)
+                if selectedUsage?.id == usage.id {
+                    selectedUsage = nil
+                }
+                tagPendingDeletion = nil
+                await reloadTags()
+                if tagUsages.isEmpty {
+                    isEditingTags = false
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+}
+
+private struct LibraryTagListRow: View {
+    let usage: BookTagUsage
+    let countText: String
+    let isEditing: Bool
+    let deleteAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            deleteSlot
+
+            Text(verbatim: usage.tag.name)
+                .font(.body.weight(.medium))
+                .foregroundColor(.primary)
+                .lineLimit(1)
+
+            Spacer(minLength: 10)
+
+            Text(verbatim: countText)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .frame(minWidth: 44, alignment: .trailing)
+
+            ZStack {
+                if !isEditing {
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundColor(Color(.tertiaryLabel))
+                }
+            }
+            .frame(width: 14)
+        }
+        .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    private var deleteSlot: some View {
+        ZStack {
+            if isEditing {
+                Button(role: .destructive) {
+                    deleteAction()
+                } label: {
+                    Image(systemName: "minus.circle.fill")
+                        .font(.title3)
+                        .foregroundColor(.red)
+                        .frame(width: 28, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("tags.delete.action"))
+            }
+        }
+        .frame(width: isEditing ? 30 : 0)
+        .clipped()
     }
 }
 
@@ -721,16 +825,16 @@ private final class TagWordCloudUIKitView: UIView {
         }
 
         var placedFrames: [CGRect] = []
-        let cloudBounds = bounds.insetBy(dx: 4, dy: 4)
+        let cloudBounds = bounds.insetBy(dx: 3, dy: 3)
         let center = CGPoint(
             x: cloudBounds.midX,
-            y: cloudBounds.midY * 0.94
+            y: cloudBounds.midY
         )
 
-        for (index, label) in wordLabels.enumerated() {
+        for label in wordLabels {
             let targetSize = label.sizeThatFits(
                 CGSize(
-                    width: cloudBounds.width * 0.82,
+                    width: cloudBounds.width * 0.88,
                     height: CGFloat.greatestFiniteMagnitude
                 )
             )
@@ -738,81 +842,179 @@ private final class TagWordCloudUIKitView: UIView {
                 width: min(max(targetSize.width, 12), cloudBounds.width),
                 height: min(max(targetSize.height, 16), cloudBounds.height)
             )
-            let frame = placementFrame(
-                for: label,
-                size: size,
-                index: index,
-                center: center,
-                in: cloudBounds,
-                avoiding: placedFrames
-            )
+
+            let frame: CGRect
+            if placedFrames.isEmpty {
+                frame = clampedFrame(centeredAt: center, size: size, in: cloudBounds)
+            } else {
+                frame = placementFrame(
+                    for: label,
+                    size: size,
+                    center: center,
+                    in: cloudBounds,
+                    avoiding: placedFrames
+                )
+            }
+
             label.frame = frame.integral
-            placedFrames.append(frame.insetBy(dx: -6, dy: -4))
+            placedFrames.append(frame.insetBy(dx: -4, dy: -2))
         }
     }
 
     private func placementFrame(
         for label: TagWordLabel,
         size: CGSize,
-        index: Int,
         center: CGPoint,
         in bounds: CGRect,
         avoiding placedFrames: [CGRect]
     ) -> CGRect {
         let seed = TagWordCloudPalette.stableHash(for: label.usage?.tag.id ?? UUID())
-        let baseAngle = Double(seed % 6_283) / 1_000
-        let startRadius = CGFloat(index) * 5.5
-        let horizontalRadius = max(bounds.width, 1)
-        let verticalScale: CGFloat = 0.72
+        let candidates = edgeCandidates(
+            size: size,
+            avoiding: placedFrames,
+            seed: seed
+        ) + gridCandidates(
+            size: size,
+            in: bounds,
+            seed: seed
+        )
 
-        for step in 0..<300 {
-            let radius = startRadius + CGFloat(step) * 3.1
-            let angle = baseAngle + Double(step) * 0.56
-            let point = CGPoint(
-                x: center.x + CGFloat(cos(angle)) * radius,
-                y: center.y + CGFloat(sin(angle)) * radius * verticalScale
-            )
-            let candidate = clampedFrame(
-                centeredAt: point,
-                size: size,
-                in: bounds
-            )
-            let hitFrame = candidate.insetBy(dx: -6, dy: -4)
-
-            if !placedFrames.contains(where: { $0.intersects(hitFrame) }) {
-                return candidate
-            }
-
-            if radius > horizontalRadius * 0.92 {
-                break
-            }
+        if let bestFrame = candidates
+            .filter({ bounds.contains($0) && !intersects($0, with: placedFrames) })
+            .min(by: {
+                placementScore(for: $0, center: center, in: bounds, seed: seed)
+                    < placementScore(for: $1, center: center, in: bounds, seed: seed)
+            }) {
+            return bestFrame
         }
 
         return fallbackFrame(
             size: size,
             in: bounds,
-            avoiding: placedFrames,
-            seed: seed
+            avoiding: placedFrames
         )
     }
 
-    private func fallbackFrame(
+    private func edgeCandidates(
         size: CGSize,
-        in bounds: CGRect,
         avoiding placedFrames: [CGRect],
         seed: UInt64
-    ) -> CGRect {
-        let stepX = max(size.width * 0.38, 18)
-        let stepY = max(size.height * 0.72, 18)
-        let rowOffset = CGFloat(seed % 17)
+    ) -> [CGRect] {
+        let offsets: [CGFloat] = [-0.58, -0.34, -0.16, 0, 0.16, 0.34, 0.58]
+        var candidates: [CGRect] = []
+
+        for (placedIndex, baseFrame) in placedFrames.enumerated() {
+            let xJitter = jitter(seed: seed, salt: UInt64(placedIndex * 19 + 5), amplitude: 3)
+            let yJitter = jitter(seed: seed, salt: UInt64(placedIndex * 23 + 11), amplitude: 3)
+
+            for offset in offsets {
+                let yOffset = offset * max(baseFrame.height, size.height) + yJitter
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.minX - size.width - 4,
+                        y: baseFrame.midY - size.height / 2 + yOffset,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.maxX + 4,
+                        y: baseFrame.midY - size.height / 2 + yOffset,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+
+                let xOffset = offset * max(baseFrame.width, size.width) + xJitter
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.midX - size.width / 2 + xOffset,
+                        y: baseFrame.minY - size.height - 2,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+                candidates.append(
+                    CGRect(
+                        x: baseFrame.midX - size.width / 2 + xOffset,
+                        y: baseFrame.maxY + 2,
+                        width: size.width,
+                        height: size.height
+                    )
+                )
+            }
+        }
+
+        return candidates
+    }
+
+    private func gridCandidates(
+        size: CGSize,
+        in bounds: CGRect,
+        seed: UInt64
+    ) -> [CGRect] {
+        let stepX = max(size.width + 4, 14)
+        let stepY = max(size.height + 2, 12)
+        let rowOffset = CGFloat(seed % 11)
+        var candidates: [CGRect] = []
         var y = bounds.minY
 
         while y <= bounds.maxY - size.height {
             var x = bounds.minX + rowOffset
             while x <= bounds.maxX - size.width {
+                candidates.append(
+                    CGRect(
+                        origin: CGPoint(x: x, y: y),
+                        size: size
+                    )
+                )
+                x += stepX
+            }
+            y += stepY
+        }
+
+        return candidates
+    }
+
+    private func placementScore(
+        for frame: CGRect,
+        center: CGPoint,
+        in bounds: CGRect,
+        seed: UInt64
+    ) -> CGFloat {
+        let point = CGPoint(x: frame.midX, y: frame.midY)
+        let dx = (point.x - center.x) / max(bounds.width, 1)
+        let dy = (point.y - center.y) / max(bounds.height, 1)
+        let distance = sqrt(dx * dx + dy * dy)
+        let jitter = abs(jitter(seed: seed, salt: 97, amplitude: 0.018))
+        return distance + jitter
+    }
+
+    private func intersects(
+        _ frame: CGRect,
+        with placedFrames: [CGRect]
+    ) -> Bool {
+        let hitFrame = frame.insetBy(dx: -3, dy: -1)
+        return placedFrames.contains { placedFrame in
+            placedFrame.intersects(hitFrame)
+        }
+    }
+
+    private func fallbackFrame(
+        size: CGSize,
+        in bounds: CGRect,
+        avoiding placedFrames: [CGRect]
+    ) -> CGRect {
+        let stepX = max(size.width + 4, 14)
+        let stepY = max(size.height + 2, 12)
+        var y = bounds.minY
+
+        while y <= bounds.maxY - size.height {
+            var x = bounds.minX
+            while x <= bounds.maxX - size.width {
                 let candidate = CGRect(origin: CGPoint(x: x, y: y), size: size)
-                let hitFrame = candidate.insetBy(dx: -6, dy: -4)
-                if !placedFrames.contains(where: { $0.intersects(hitFrame) }) {
+                if !intersects(candidate, with: placedFrames) {
                     return candidate
                 }
                 x += stepX
@@ -825,6 +1027,16 @@ private final class TagWordCloudUIKitView: UIView {
             size: size,
             in: bounds
         )
+    }
+
+    private func jitter(
+        seed: UInt64,
+        salt: UInt64,
+        amplitude: CGFloat
+    ) -> CGFloat {
+        let mixed = TagWordCloudPalette.mix(seed &+ (salt &* 97))
+        let unit = CGFloat(Int(mixed % 2_001) - 1_000) / 1_000
+        return unit * amplitude
     }
 
     private func clampedFrame(
@@ -879,16 +1091,16 @@ private final class TagWordCloudUIKitView: UIView {
 
 private enum TagWordCloudPalette {
     private static let colors: [UIColor] = [
-        .systemBlue,
-        .systemGreen,
-        .systemOrange,
-        .systemPink,
-        .systemPurple,
-        .systemTeal,
-        .systemIndigo,
-        .systemRed,
-        .systemBrown,
-        .systemCyan
+        UIColor(red: 0.39, green: 0.50, blue: 0.58, alpha: 1),
+        UIColor(red: 0.58, green: 0.43, blue: 0.38, alpha: 1),
+        UIColor(red: 0.43, green: 0.53, blue: 0.39, alpha: 1),
+        UIColor(red: 0.48, green: 0.44, blue: 0.58, alpha: 1),
+        UIColor(red: 0.62, green: 0.42, blue: 0.48, alpha: 1),
+        UIColor(red: 0.40, green: 0.56, blue: 0.54, alpha: 1),
+        UIColor(red: 0.61, green: 0.52, blue: 0.34, alpha: 1),
+        UIColor(red: 0.45, green: 0.48, blue: 0.63, alpha: 1),
+        UIColor(red: 0.55, green: 0.48, blue: 0.41, alpha: 1),
+        UIColor(red: 0.38, green: 0.56, blue: 0.45, alpha: 1)
     ]
 
     static func color(for id: UUID) -> UIColor {
@@ -902,6 +1114,16 @@ private enum TagWordCloudPalette {
             hash = hash &* 1_099_511_628_211
         }
         return hash
+    }
+
+    static func mix(_ value: UInt64) -> UInt64 {
+        var mixed = value
+        mixed ^= mixed >> 33
+        mixed = mixed &* 0xff51afd7ed558ccd
+        mixed ^= mixed >> 33
+        mixed = mixed &* 0xc4ceb9fe1a85ec53
+        mixed ^= mixed >> 33
+        return mixed
     }
 }
 

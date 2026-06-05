@@ -698,21 +698,16 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
     }
 
     @objc private func tagsButtonTapped() {
-        let selection = Binding<Set<UUID>>(
-            get: { [weak self] in
-                self?.selectedTagIDs ?? []
-            },
-            set: { [weak self] nextValue in
+        let picker = ReaderBookTagPickerHostView(
+            repository: repository,
+            initialSelectedTagIDs: selectedTagIDs,
+            onSelectionChanged: { [weak self] nextValue in
                 guard let self else {
                     return
                 }
                 self.selectedTagIDs = nextValue
                 self.updateTagsButtonTitle()
-            }
-        )
-        let picker = BookTagPickerPage(
-            repository: repository,
-            selectedTagIDs: selection,
+            },
             onCatalogChanged: { [weak self] in
                 self?.loadAvailableTags()
             }
@@ -860,6 +855,40 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
         )
         alert.addAction(UIAlertAction(title: NSLocalizedString("common.ok", comment: ""), style: .default))
         present(alert, animated: true)
+    }
+}
+
+private struct ReaderBookTagPickerHostView: View {
+    let repository: any LibraryRepository
+    let onSelectionChanged: (Set<UUID>) -> Void
+    let onCatalogChanged: () -> Void
+
+    @State private var selectedTagIDs: Set<UUID>
+
+    init(
+        repository: any LibraryRepository,
+        initialSelectedTagIDs: Set<UUID>,
+        onSelectionChanged: @escaping (Set<UUID>) -> Void,
+        onCatalogChanged: @escaping () -> Void
+    ) {
+        self.repository = repository
+        self.onSelectionChanged = onSelectionChanged
+        self.onCatalogChanged = onCatalogChanged
+        _selectedTagIDs = State(initialValue: initialSelectedTagIDs)
+    }
+
+    var body: some View {
+        BookTagPickerPage(
+            repository: repository,
+            selectedTagIDs: $selectedTagIDs,
+            onCatalogChanged: onCatalogChanged
+        )
+        .onChange(of: selectedTagIDs) { nextValue in
+            onSelectionChanged(nextValue)
+        }
+        .onDisappear {
+            onSelectionChanged(selectedTagIDs)
+        }
     }
 }
 

@@ -90,6 +90,9 @@
 "tags.empty.message" = "还没有标签。";
 "tags.books.empty" = "这个标签下还没有书籍。";
 "tags.error.title" = "标签操作失败";
+"tags.delete.title" = "删除标签";
+"tags.delete.message" = "删除后会从所有书籍中移除该标签。";
+"tags.delete.action" = "删除";
 "tags.count.format" = "%d本";
 "tags.selected.count" = "已选%d个标签";
 "tags.none" = "无";
