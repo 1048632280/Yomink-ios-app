@@ -824,17 +824,14 @@ struct LibraryView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.86)
-                    .frame(width: 150, alignment: .trailing)
-
                 FixedWidthImportBatchCountText(text: countText)
 
                 Text("import.batch.count.unit")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
-                    .frame(width: 16, alignment: .leading)
             }
-            .frame(width: 240, height: 22)
+            .frame(width: 240, height: 22, alignment: .center)
         } else {
             Text(verbatim: viewModel.importProgressStatusText)
                 .font(.subheadline)
