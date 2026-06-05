@@ -198,7 +198,7 @@ private struct BookTagSelectionRow: View {
     }
 }
 
-private struct BookTagBubble: View {
+struct BookTagBubble: View {
     let name: String
 
     var body: some View {
@@ -213,7 +213,7 @@ private struct BookTagBubble: View {
     }
 }
 
-private struct NonBlockingLongPressRecognizer: UIViewRepresentable {
+struct NonBlockingLongPressRecognizer: UIViewRepresentable {
     let isEnabled: Bool
     let onBegan: () -> Void
     let onEnded: () -> Void
