@@ -22,9 +22,9 @@ jobs:
       SCHEME: Yomink
       CONFIGURATION: Release
       SIMULATOR_BUILD_DESTINATION: generic/platform=iOS Simulator
-      SIMULATOR_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 16
+      SIMULATOR_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest,arch=arm64
       ARCHIVE_PATH: build/Yomink.xcarchive
-      IPA_PATH: build/Yomink-unsigned.ipa
+      IPA_PATH: artifacts/Yomink-unsigned.ipa
 
     steps:
       - name: Checkout
@@ -60,15 +60,6 @@ jobs:
             -destination "$SIMULATOR_BUILD_DESTINATION" \
             CODE_SIGNING_ALLOWED=NO
 
-      - name: Run unit tests
-        run: |
-          xcodebuild test \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
-            -configuration Debug \
-            -destination "$SIMULATOR_TEST_DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO
-
       - name: Archive without code signing
         run: |
           xcodebuild archive \
@@ -86,15 +77,37 @@ jobs:
         run: |
           APP_PATH="$ARCHIVE_PATH/Products/Applications/Yomink.app"
           test -d "$APP_PATH"
-          rm -rf build/Payload
+          rm -rf build/Payload artifacts
           mkdir -p build/Payload
+          mkdir -p artifacts
           cp -R "$APP_PATH" build/Payload/
-          (cd build && zip -qry "Yomink-unsigned.ipa" Payload)
+          (cd build && zip -qry "../$IPA_PATH" Payload)
           test -f "$IPA_PATH"
+          ls -lh "$IPA_PATH"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Yomink-unsigned-ipa
-          path: ${{ env.IPA_PATH }}
+          name: Yomink-unsigned-ipa-${{ github.run_number }}
+          path: artifacts/Yomink-unsigned.ipa
           if-no-files-found: error
+          retention-days: 14
+
+      - name: Run unit tests
+        run: |
+          xcodebuild build-for-testing \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination "$SIMULATOR_TEST_DESTINATION" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO
+
+          xcodebuild test-without-building \
+            -project "$PROJECT" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -destination "$SIMULATOR_TEST_DESTINATION" \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            CODE_SIGNING_ALLOWED=NO

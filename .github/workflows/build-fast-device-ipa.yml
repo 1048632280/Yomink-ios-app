@@ -23,7 +23,7 @@ jobs:
       DESTINATION: generic/platform=iOS
       DERIVED_DATA_PATH: build/DerivedData
       APP_PATH: build/DerivedData/Build/Products/Debug-iphoneos/Yomink.app
-      IPA_PATH: build/Yomink-fast-device.ipa
+      IPA_PATH: artifacts/Yomink-fast-device.ipa
 
     steps:
       - name: Checkout
@@ -67,15 +67,24 @@ jobs:
       - name: Package fast IPA
         run: |
           test -d "$APP_PATH"
-          rm -rf build/Payload "$IPA_PATH"
+          rm -rf build/Payload artifacts
           mkdir -p build/Payload
+          mkdir -p artifacts
           cp -R "$APP_PATH" build/Payload/
-          (cd build && zip -qry "Yomink-fast-device.ipa" Payload)
+          (cd build && zip -qry "../$IPA_PATH" Payload)
           test -f "$IPA_PATH"
+          ls -lh "$IPA_PATH"
+          {
+            echo "## Fast Device IPA"
+            echo ""
+            echo "- Artifact: \`Yomink-fast-device-ipa-${{ github.run_number }}\`"
+            echo "- File: \`$IPA_PATH\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload fast IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Yomink-fast-device-ipa
-          path: ${{ env.IPA_PATH }}
+          name: Yomink-fast-device-ipa-${{ github.run_number }}
+          path: artifacts/Yomink-fast-device.ipa
           if-no-files-found: error
+          retention-days: 14
