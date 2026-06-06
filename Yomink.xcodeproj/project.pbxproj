@@ -20,6 +20,7 @@
 		C0DE30000000000000000601 /* ReaderPageRendering.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000600 /* ReaderPageRendering.swift */; };
 		C0DE30000000000000000701 /* ReaderPagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000700 /* ReaderPagination.swift */; };
 		C0DE30000000000000000801 /* ReaderSettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000800 /* ReaderSettingsViewController.swift */; };
+		C0DE30000000000000000901 /* ReaderSettingsPresentationHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000900 /* ReaderSettingsPresentationHelpers.swift */; };
 		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
 		C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */; };
 		C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */; };
@@ -35,6 +36,7 @@
 		6B3A34F5F32A4F6D9B390101 /* GRDBLibraryRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B3A34F5F32A4F6D9B390100 /* GRDBLibraryRepository.swift */; };
 		C0DE40000000000000000101 /* GRDBRecordMappings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE40000000000000000100 /* GRDBRecordMappings.swift */; };
 		C0DE40000000000000000201 /* GRDBLibraryRepositoryQuery.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE40000000000000000200 /* GRDBLibraryRepositoryQuery.swift */; };
+		C0DE40000000000000000301 /* GRDBLibraryRepositoryHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE40000000000000000300 /* GRDBLibraryRepositoryHelpers.swift */; };
 		79E0FD2A01A443B2A7E70101 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 79E0FD2A01A443B2A7E70102 /* Localizable.strings */; };
 		30D7C7B0C8EF4E1BAA23AC01 /* ReadingProgressRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30D7C7B0C8EF4E1BAA23AC00 /* ReadingProgressRecord.swift */; };
 		A24F0C9D3B7A4F2F9C1D0101 /* Chapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A24F0C9D3B7A4F2F9C1D0100 /* Chapter.swift */; };
@@ -94,6 +96,7 @@
 		C0DE30000000000000000600 /* ReaderPageRendering.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPageRendering.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000700 /* ReaderPagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPagination.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000800 /* ReaderSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsViewController.swift; sourceTree = "<group>"; };
+		C0DE30000000000000000900 /* ReaderSettingsPresentationHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsPresentationHelpers.swift; sourceTree = "<group>"; };
 		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailViewController.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailEditViewController.swift; sourceTree = "<group>"; };
@@ -110,6 +113,7 @@
 		6B3A34F5F32A4F6D9B390100 /* GRDBLibraryRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDBLibraryRepository.swift; sourceTree = "<group>"; };
 		C0DE40000000000000000100 /* GRDBRecordMappings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDBRecordMappings.swift; sourceTree = "<group>"; };
 		C0DE40000000000000000200 /* GRDBLibraryRepositoryQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDBLibraryRepositoryQuery.swift; sourceTree = "<group>"; };
+		C0DE40000000000000000300 /* GRDBLibraryRepositoryHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GRDBLibraryRepositoryHelpers.swift; sourceTree = "<group>"; };
 		79E0FD2A01A443B2A7E70100 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = Resources/zh-Hans.lproj/Localizable.strings; sourceTree = "<group>"; };
 		30D7C7B0C8EF4E1BAA23AC00 /* ReadingProgressRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgressRecord.swift; sourceTree = "<group>"; };
 		A24F0C9D3B7A4F2F9C1D0100 /* Chapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chapter.swift; sourceTree = "<group>"; };
@@ -236,6 +240,7 @@
 				6B3A34F5F32A4F6D9B390100 /* GRDBLibraryRepository.swift */,
 				C0DE40000000000000000100 /* GRDBRecordMappings.swift */,
 				C0DE40000000000000000200 /* GRDBLibraryRepositoryQuery.swift */,
+				C0DE40000000000000000300 /* GRDBLibraryRepositoryHelpers.swift */,
 				30DF59321E1C48C5BA5E4800 /* Records */,
 			);
 			path = Database;
@@ -370,6 +375,7 @@
 				C0DE30000000000000000600 /* ReaderPageRendering.swift */,
 				C0DE30000000000000000700 /* ReaderPagination.swift */,
 				C0DE30000000000000000800 /* ReaderSettingsViewController.swift */,
+				C0DE30000000000000000900 /* ReaderSettingsPresentationHelpers.swift */,
 				C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */,
 				C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */,
 				C0DE10000000000000000300 /* ReaderFilterRulesViewController.swift */,
@@ -518,6 +524,7 @@
 				6B3A34F5F32A4F6D9B390101 /* GRDBLibraryRepository.swift in Sources */,
 				C0DE40000000000000000101 /* GRDBRecordMappings.swift in Sources */,
 				C0DE40000000000000000201 /* GRDBLibraryRepositoryQuery.swift in Sources */,
+				C0DE40000000000000000301 /* GRDBLibraryRepositoryHelpers.swift in Sources */,
 				25FE22A19C594380B5A78901 /* BookRecord.swift in Sources */,
 				F6D9017460644F18AA576C01 /* BookGroupRecord.swift in Sources */,
 				30D7C7B0C8EF4E1BAA23AC01 /* ReadingProgressRecord.swift in Sources */,
@@ -567,6 +574,7 @@
 				C0DE30000000000000000601 /* ReaderPageRendering.swift in Sources */,
 				C0DE30000000000000000701 /* ReaderPagination.swift in Sources */,
 				C0DE30000000000000000801 /* ReaderSettingsViewController.swift in Sources */,
+				C0DE30000000000000000901 /* ReaderSettingsPresentationHelpers.swift in Sources */,
 				C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */,
 				C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */,
 				C0DE10000000000000000301 /* ReaderFilterRulesViewController.swift in Sources */,
