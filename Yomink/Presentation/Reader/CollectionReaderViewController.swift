@@ -4492,7 +4492,7 @@ private extension UIButton {
     }
 }
 
-private extension ReaderSettings.LayoutPreset {
+extension ReaderSettings.LayoutPreset {
     var layoutConfiguration: ReaderLayoutConfiguration {
         layoutConfiguration(customValues: nil)
     }
