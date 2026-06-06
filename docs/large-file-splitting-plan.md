@@ -83,7 +83,8 @@
 - 已完成：第 8 步，批次 A 低风险顶层类型一次性拆分。
 - 已完成：第 9 步，批次 B 阶段 A，拆 `CollectionReaderViewController.swift` 底部 ReaderSettings presentation helpers 到 `ReaderSettingsPresentationHelpers.swift`。
 - 已完成：第 10 步，批次 B 阶段 B，拆 `GRDBLibraryRepository.swift` 静态 helper 到 `GRDBLibraryRepositoryHelpers.swift`。
-- 下一步：优先在 macOS + Xcode/CI 环境确认本轮编译；如继续拆分，进入批次 B 阶段 C，先重新评估 `ImportModels.swift` 的引用和访问级别。
+- 已完成：第 11 步，批次 B 阶段 C，拆 `ImportService.swift` 顶部导入模型到 `ImportModels.swift`。
+- 当前低风险拆分阶段收尾完成；下一步优先在 macOS + Xcode/CI 环境确认编译。若继续拆高风险文件，需另起阶段先做只读规划。
 - 后续每次继续拆分前，先读取本文档的“当前进度”“推荐拆分顺序”和“执行记录”。
 
 ## 推荐拆分顺序
@@ -447,14 +448,16 @@
 
 ### 当前推荐下一刀
 
-批次 A 和批次 B 阶段 A/B 已完成。下一轮如果用户说“开始拆”，优先进入批次 B 阶段 C，但仍需先重新读取本文档并做引用确认。当前建议先评估并拆：
+批次 A 和批次 B 阶段 A/B/C 已完成，当前低风险拆分阶段收尾。
 
-- `Yomink/Domain/Services/ImportService.swift`
-- 新增 `Yomink/Domain/Services/ImportModels.swift`
-- 只搬顶部导入模型：`ImportBookMetadata`、`ImportBookPreview`、`ImportBatchProgressPhase`、`ImportBatchProgress`、`ImportBatchFailure`、`ImportBatchSummary`
-- 执行前必须用 `rg` 再次确认这些模型的引用范围和访问级别
-- 同步更新 `Yomink.xcodeproj/project.pbxproj`
-- 完成后更新本文档执行记录
+当前不建议继续直接拆代码；下一步建议：
+
+- 先在 macOS + Xcode/CI 环境运行 build/test，确认第 8 至第 11 步的跨文件访问级别无遗漏。
+- 若 CI 通过，再单独开启高风险拆分阶段，只读评估以下候选，不直接动手：
+  - `CollectionReaderViewController+*.swift` 主控制器 extension 化
+  - `GRDBLibraryRepository+SettingsHistory.swift` / `+TagsGroups.swift` / `+ProgressBookmarks.swift`
+  - `AppDatabase+Migrations.swift` / `AppDatabase+LegacyChapterRepair.swift`
+- `ReaderContentsViewController.swift`、`ReaderContentSearchViewController.swift` 和 `LibraryView.swift` 暂不为行数硬拆。
 
 ## 验证命令
 
@@ -499,6 +502,7 @@ git -c safe.directory=E:/GithubRepo/Yomink-ios-app status --short
 | 2026-06-06 | 第 8 步：批次 A 低风险顶层类型拆分 | `Yomink/Presentation/Library/StorageManagementPage.swift`、`Yomink/Presentation/Library/RandomBookPickerPage.swift`、`Yomink/Presentation/Library/LibraryTagsPage.swift` | 新增 `StorageUsageSupport.swift`、`StorageManagementComponents.swift`、`RandomBookPickerComponents.swift`、`LibraryTagsComponents.swift`；分别搬出 Storage support types、Storage 页面组件、Random picker stats/components、Library tags 子组件；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | Storage support types 从 private 放宽为默认 internal；`StorageUsageChartCard`、`StorageDashboardCard`、`StorageBookManagementCard`、`StorageLoadingCard` 放宽为默认 internal；`RandomPickerStatsPage`、`RandomPickerScopeChip`、`RandomPickerBookCard`、`RandomPickerPlaceholderCard`、`RandomPickerHistoryCard` 放宽为默认 internal；`LibraryTagListRow`、`TaggedBooksPage`、`TagWordCloudView`、`TagWordCloudUIKitView` 放宽为默认 internal；组件内部细节类型尽量保持 private | 已用 `rg` 确认新文件已登记到 Xcode project group 和 Sources；已用 `rg` 确认主要入口类型只在新文件声明、原页面仅保留引用；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；本轮一次性移动多个低风险顶层类型，若 CI 报访问级别错误，应按日志只补必要的 internal/fileprivate 调整 |
 | 2026-06-06 | 第 9 步：批次 B 阶段 A，拆 ReaderSettings presentation helpers | `Yomink/Presentation/Reader/CollectionReaderViewController.swift` | 新增 `Yomink/Presentation/Reader/ReaderSettingsPresentationHelpers.swift`；搬出底部 `ReaderSettings.LayoutPreset`、`ReaderSettings`、`ReaderSettings.Theme` layout/theme extension；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | `ReaderSettings.effectiveLayoutValues` 和 `ReaderSettings.Theme.userInterfaceStyle` 从 `fileprivate` 放宽为默认 internal，供 `CollectionReaderViewController.swift` 跨文件继续调用；`layoutConfiguration(customValues:)` 和 `layoutValues` 继续保持 fileprivate | 已用 `rg` 确认 `ReaderSettingsPresentationHelpers.swift` 已登记到 Xcode project group 和 Sources，并确认 moved extensions 已离开 `CollectionReaderViewController.swift`；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；若 CI 报访问级别错误，应按日志只补必要的 internal/fileprivate 调整 |
 | 2026-06-06 | 第 10 步：批次 B 阶段 B，拆 GRDB repository helpers | `Yomink/Data/Database/GRDBLibraryRepository.swift` | 新增 `Yomink/Data/Database/GRDBLibraryRepositoryHelpers.swift`；搬出 `normalizedGroupName`、`normalizedTagName`、`normalizedBookTitle`、`normalizedOptionalText`、`likePattern(for:)`、`fetchTag(_:, name:)`、`bookNotFoundError()`、`normalizedImportedChapter(_:fallbackSortOrder:)`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | 8 个 helper 从 `private static` 放宽为默认 internal static，供 `GRDBLibraryRepository.swift` 跨文件继续通过 `Self.` 调用 | 已用 `rg` 确认 `GRDBLibraryRepositoryHelpers.swift` 已登记到 Xcode project group 和 Sources，并确认 helper 声明已移至新文件；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；后续拆 repository 方法组前仍需重新评估 `database`、`settingsLogger` 等私有成员访问边界 |
+| 2026-06-06 | 第 11 步：批次 B 阶段 C，拆 Import models 并收尾低风险阶段 | `Yomink/Domain/Services/ImportService.swift` | 新增 `Yomink/Domain/Services/ImportModels.swift`；搬出 `ImportBookMetadata`、`ImportBookPreview`、`ImportBatchProgressPhase`、`ImportBatchProgress`、`ImportBatchFailure`、`ImportBatchSummary`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | 无；这些模型原本已是默认 internal，搬出后继续供 ImportService、Library 页面/ViewModel 和测试使用 | 已用 `rg` 确认 `ImportModels.swift` 已登记到 Xcode project group 和 Sources，并确认 6 个模型声明已移至新文件；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；当前低风险拆分阶段已收尾，后续高风险拆分需另起只读规划 |
 
 ## 后续记录模板
 
