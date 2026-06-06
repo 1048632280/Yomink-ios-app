@@ -18,19 +18,14 @@ enum StorageUsageScanner {
 
             let txtBytes = bookUsages.reduce(Int64(0)) { $0 + $1.bytes }
             let booksDirectoryBytes = Self.directorySize(at: fileStore.booksURL, fileManager: fileManager)
-            let documentsBytes = Self.directorySize(at: fileStore.documentsURL, fileManager: fileManager)
             let applicationSupportBytes = Self.directorySize(
                 at: fileStore.applicationSupportURL,
                 fileManager: fileManager
             )
             let databaseBytes = Self.databaseSize(fileStore: fileStore, fileManager: fileManager)
-            let temporaryExportBytes = Self.directorySize(
-                at: Self.temporaryExportURL(fileManager: fileManager),
-                fileManager: fileManager
-            )
+            let temporaryExportBytes = Self.temporaryExportSize(fileManager: fileManager)
             let indexCacheBytes = max(0, booksDirectoryBytes - txtBytes)
-                + max(0, applicationSupportBytes - databaseBytes)
-            let otherBytes = max(0, documentsBytes - booksDirectoryBytes)
+            let otherBytes = max(0, applicationSupportBytes - booksDirectoryBytes - databaseBytes)
 
             let categories = [
                 StorageUsageCategory(kind: .txt, bytes: txtBytes),
@@ -72,9 +67,19 @@ enum StorageUsageScanner {
         }
     }
 
-    private static func temporaryExportURL(fileManager: FileManager) -> URL {
-        fileManager.temporaryDirectory
-            .appendingPathComponent("YominkExports", isDirectory: true)
+    private static func temporaryExportSize(fileManager: FileManager) -> Int64 {
+        guard let exportURLs = try? fileManager.contentsOfDirectory(
+            at: fileManager.temporaryDirectory,
+            includingPropertiesForKeys: [.isDirectoryKey]
+        ) else {
+            return 0
+        }
+
+        return exportURLs
+            .filter { $0.lastPathComponent.hasPrefix("YominkExports") }
+            .reduce(Int64(0)) { result, url in
+                result + Self.directorySize(at: url, fileManager: fileManager)
+            }
     }
 
     private static func directorySize(at url: URL, fileManager: FileManager) -> Int64 {

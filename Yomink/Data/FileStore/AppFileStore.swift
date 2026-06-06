@@ -15,19 +15,11 @@ final class AppFileStore: @unchecked Sendable {
         }
     }
 
-    let documentsURL: URL
     let booksURL: URL
     let applicationSupportURL: URL
     let databaseURL: URL
 
     init(fileManager: FileManager = .default) throws {
-        guard let documentsURL = fileManager.urls(
-            for: .documentDirectory,
-            in: .userDomainMask
-        ).first else {
-            throw StoreError.missingSystemDirectory(.documentDirectory)
-        }
-
         guard let supportRootURL = fileManager.urls(
             for: .applicationSupportDirectory,
             in: .userDomainMask
@@ -35,32 +27,28 @@ final class AppFileStore: @unchecked Sendable {
             throw StoreError.missingSystemDirectory(.applicationSupportDirectory)
         }
 
-        let booksURL = documentsURL.appendingPathComponent("Books", isDirectory: true)
         let applicationSupportURL = supportRootURL
             .appendingPathComponent("Yomink", isDirectory: true)
+        let booksURL = applicationSupportURL.appendingPathComponent("Books", isDirectory: true)
         let databaseURL = applicationSupportURL
             .appendingPathComponent("yomink.sqlite", isDirectory: false)
 
         try Self.createRequiredDirectories(
             fileManager: fileManager,
-            documentsURL: documentsURL,
             booksURL: booksURL,
             applicationSupportURL: applicationSupportURL
         )
 
-        self.documentsURL = documentsURL
         self.booksURL = booksURL
         self.applicationSupportURL = applicationSupportURL
         self.databaseURL = databaseURL
     }
 
     private init(
-        documentsURL: URL,
         booksURL: URL,
         applicationSupportURL: URL,
         databaseURL: URL
     ) {
-        self.documentsURL = documentsURL
         self.booksURL = booksURL
         self.applicationSupportURL = applicationSupportURL
         self.databaseURL = databaseURL
@@ -70,18 +58,18 @@ final class AppFileStore: @unchecked Sendable {
         let fileManager = FileManager.default
         let rootURL = rootURL ?? fileManager.temporaryDirectory
             .appendingPathComponent("YominkPreview", isDirectory: true)
-        let booksURL = rootURL.appendingPathComponent("Books", isDirectory: true)
-        let supportURL = rootURL.appendingPathComponent("ApplicationSupport", isDirectory: true)
+        let supportURL = rootURL
+            .appendingPathComponent("ApplicationSupport", isDirectory: true)
+            .appendingPathComponent("Yomink", isDirectory: true)
+        let booksURL = supportURL.appendingPathComponent("Books", isDirectory: true)
 
         try createRequiredDirectories(
             fileManager: fileManager,
-            documentsURL: rootURL,
             booksURL: booksURL,
             applicationSupportURL: supportURL
         )
 
         return AppFileStore(
-            documentsURL: rootURL,
             booksURL: booksURL,
             applicationSupportURL: supportURL,
             databaseURL: supportURL.appendingPathComponent("preview.sqlite")
@@ -179,9 +167,9 @@ final class AppFileStore: @unchecked Sendable {
         try FileManager.default.removeItem(at: bookDirectoryURL)
     }
 
-    /// Returns a database-safe path for files stored below the app Documents directory.
+    /// Returns a database-safe path for files stored below the app's private storage root.
     func relativePath(for url: URL) throws -> String {
-        let rootURL = documentsURL.standardizedFileURL
+        let rootURL = applicationSupportURL.standardizedFileURL
         let targetURL = url.standardizedFileURL
         let rootPath = rootURL.path
         let targetPath = targetURL.path
@@ -204,25 +192,20 @@ final class AppFileStore: @unchecked Sendable {
             throw StoreError.invalidRelativePath(relativePath)
         }
 
-        return documentsURL.appendingPathComponent(relativePath, isDirectory: false)
+        return applicationSupportURL.appendingPathComponent(relativePath, isDirectory: false)
     }
 
     private static func createRequiredDirectories(
         fileManager: FileManager,
-        documentsURL: URL,
         booksURL: URL,
         applicationSupportURL: URL
     ) throws {
         try fileManager.createDirectory(
-            at: documentsURL,
+            at: applicationSupportURL,
             withIntermediateDirectories: true
         )
         try fileManager.createDirectory(
             at: booksURL,
-            withIntermediateDirectories: true
-        )
-        try fileManager.createDirectory(
-            at: applicationSupportURL,
             withIntermediateDirectories: true
         )
     }
