@@ -73,8 +73,9 @@
 
 - 已完成：第 1 步，拆分 `ReaderMoreViewControllers.swift`。
 - 已完成：第 2 步，拆分 `LibraryDedicatedPages.swift`。
-- 进行中：第 3 步，拆分 `ReaderHostView.swift`；阶段 A、阶段 B、阶段 C 已完成。
-- 下一步：继续评估第 3 步是否拆主控制器 extension（设置面板、分页流程、进度/自动阅读/手势）；该阶段风险高于顶层类型搬运，需单块处理。
+- 已完成：第 3 步，拆分 `ReaderHostView.swift` 顶层类型；阶段 A、阶段 B、阶段 C 已完成。
+- 进行中：第 4 步，拆分 `LibraryView.swift`；阶段 A 已完成，已拆出 `LibraryViewModel.swift`。
+- 下一步：继续第 4 步，优先拆 `LibraryRoutes.swift` 或 `LibraryPresenters.swift`，保持每次只搬完整顶层类型。
 - 后续每次继续拆分前，先读取本文档的“当前进度”“推荐拆分顺序”和“执行记录”。
 
 ## 推荐拆分顺序
@@ -329,6 +330,7 @@ git -c safe.directory=E:/GithubRepo/Yomink-ios-app status --short
 | 2026-06-06 | 修复第 3 步阶段 B CI 编译错误 | `Yomink/Presentation/Reader/CollectionReaderViewController.swift` | 根据 Debug simulator 日志修复 `ReaderPageRendering.swift` 访问 `ReaderSettings.default.layoutPreset.layoutConfiguration` 时不可见的问题；仅将第一个 `ReaderSettings.LayoutPreset` layout extension 从 private 放宽为默认 internal | `ReaderSettings.LayoutPreset.layoutConfiguration` extension 从 private 放宽为默认 internal | 已从 `logs_72578348690/Build unsigned IPA/6_Build Debug simulator.txt` 定位错误：`layoutConfiguration` 因 `fileprivate` 保护级别不可访问；已用 `rg` 确认 layout extension 可见性和引用位置；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需重新运行 macOS + Xcode/CI build 确认无下一处 Swift 编译错误 |
 | 2026-06-06 | 继续修复第 3 步阶段 B CI 编译错误 | `Yomink/Presentation/Reader/CollectionReaderViewController.swift`、`Yomink/Presentation/Reader/ReaderPageRendering.swift` | 根据新 Debug simulator 日志修复 `readerFontWeight`、`ReaderSettings.effectiveLayoutConfiguration` 和 `ReaderSettings.Theme` 颜色 helper 跨文件不可见问题；只调整访问级别，不改逻辑 | `readerFontWeight`、`ReaderSettings.effectiveLayoutConfiguration`、`ReaderSettings.Theme.backgroundColor`、`ReaderSettings.Theme.textColor`、`ReaderSettings.Theme.secondaryTextColor` 从 private/fileprivate 放宽为默认 internal；`layoutConfiguration(customValues:)`、`layoutValues`、`effectiveLayoutValues`、`userInterfaceStyle` 保持 fileprivate | 已从 `logs_72648676678/Build unsigned IPA/6_Build Debug simulator.txt` 定位错误：`readerFontWeight` 不在作用域，多个 layout/theme helper 因 `fileprivate` 保护级别不可访问；已用 `rg` 确认声明和引用位置；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需重新运行 macOS + Xcode/CI build 确认无下一处 Swift 编译错误 |
 | 2026-06-06 | 第 3 步阶段 C：拆 `ReaderHostView.swift` 设置控制器 | `Yomink/Presentation/Reader/CollectionReaderViewController.swift` | 新增 `ReaderSettingsViewController.swift`，搬出 `ReaderSettingsViewController` 和设置页使用的 `ReaderSettings.PageMode`、`ReaderSettings.LayoutPreset`、`ReaderSettings.Theme` 显示文案/索引 helper；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | `ReaderSettings.PageMode`、`ReaderSettings.LayoutPreset`、`ReaderSettings.Theme` 的设置页 helper extension 从 private 放宽为默认 internal，供 `CollectionReaderViewController.swift` 继续使用；`ReaderSettingsViewController` 仍保持 private | 已用 Git 原文件原始文本逐块对比 `CollectionReaderViewController.swift` 和 `ReaderSettingsViewController.swift`，除上述访问级别调整外正文一致；已确认新增设置控制器文件 sources 登记完成；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；`CollectionReaderViewController.swift` 仍较大，下一阶段若拆主控制器 extension 会涉及更多 private 成员访问边界 |
+| 2026-06-06 | 第 4 步阶段 A：拆 `LibraryView.swift` ViewModel | `Yomink/Presentation/Library/LibraryView.swift` | 新增 `LibraryViewModel.swift`，搬出 `LibraryViewModel` 和其私有使用的 `ImportBatchResultMessage`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | `LibraryViewModel` 从 private 放宽为默认 internal，供 `LibraryView.swift` 的 `@StateObject` 使用；`ImportBatchResultMessage` 继续保持 private | 已用 Git 原文件原始文本逐块对比 `LibraryView.swift` 和 `LibraryViewModel.swift`，除上述访问级别调整和相邻空白行归一化外正文一致；已确认新增 ViewModel 文件 sources 登记完成；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；后续继续拆 route、presenter、书架组件和搜索组件时需逐步处理 private 类型跨文件可见性 |
 
 ## 后续记录模板
 

@@ -50,6 +50,7 @@
 		C0DE20000000000000000801 /* BookExportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000800 /* BookExportService.swift */; };
 		C0DE20000000000000000901 /* ImportBookEditPage.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000000900 /* ImportBookEditPage.swift */; };
 		C0DE20000000000000001001 /* DedicatedPageComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001000 /* DedicatedPageComponents.swift */; };
+		C0DE20000000000000001101 /* LibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001100 /* LibraryViewModel.swift */; };
 		5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5687B1CC7E93495893E4D400 /* ReadingProgress.swift */; };
 		5AE7C8317C0F4440A4C4AF01 /* ReaderTextFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */; };
 		7B3D9F1C4A2E4F50B8C19A01 /* HostingControllerHomeIndicatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */; };
@@ -113,6 +114,7 @@
 		C0DE20000000000000000800 /* BookExportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookExportService.swift; sourceTree = "<group>"; };
 		C0DE20000000000000000900 /* ImportBookEditPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImportBookEditPage.swift; sourceTree = "<group>"; };
 		C0DE20000000000000001000 /* DedicatedPageComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DedicatedPageComponents.swift; sourceTree = "<group>"; };
+		C0DE20000000000000001100 /* LibraryViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryViewModel.swift; sourceTree = "<group>"; };
 		5687B1CC7E93495893E4D400 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
 		5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTextFilter.swift; sourceTree = "<group>"; };
 		7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingControllerHomeIndicatorBridge.swift; sourceTree = "<group>"; };
@@ -237,6 +239,7 @@
 				C0DE20000000000000000800 /* BookExportService.swift */,
 				C0DE20000000000000000900 /* ImportBookEditPage.swift */,
 				C0DE20000000000000001000 /* DedicatedPageComponents.swift */,
+				C0DE20000000000000001100 /* LibraryViewModel.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -507,6 +510,7 @@
 				C0DE20000000000000000801 /* BookExportService.swift in Sources */,
 				C0DE20000000000000000901 /* ImportBookEditPage.swift in Sources */,
 				C0DE20000000000000001001 /* DedicatedPageComponents.swift in Sources */,
+				C0DE20000000000000001101 /* LibraryViewModel.swift in Sources */,
 				A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */,
 				85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */,
 				5A6C90E4D1A9485B8F9A7601 /* SidebarStyle.swift in Sources */,
