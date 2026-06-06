@@ -75,7 +75,9 @@
 - 已完成：第 2 步，拆分 `LibraryDedicatedPages.swift`。
 - 已完成：第 3 步，拆分 `ReaderHostView.swift` 顶层类型；阶段 A、阶段 B、阶段 C 已完成。
 - 已完成：第 4 步，拆分 `LibraryView.swift` 顶层类型；阶段 A 至阶段 F 已完成，已拆出 `LibraryViewModel.swift`、`LibraryRoutes.swift`、`LibraryPresenters.swift`、`BookShelfViews.swift`、`GlobalBookSearchView.swift` 和 `ReadingProgressFormatter.swift`。
-- 下一步：进入第 5 步，按现有 test class 拆测试文件；如需继续压缩 `LibraryView.swift`，需单独评估是否拆主视图 extension，风险高于顶层类型搬运。
+- 已跳过：第 5 步，测试文件拆分；2026-06-06 用户要求跳过，后续如需可单独恢复。
+- 已完成：第 6 步阶段 A，拆 `GRDBLibraryRepository.swift` 尾部 row mapping extensions 到 `GRDBRecordMappings.swift`。
+- 下一步：优先在 macOS + Xcode/CI 环境确认本轮编译；如果继续数据层拆分，先重新读本文档并评估下一刀是否拆 `GRDBLibraryRepository` 的 settings/history 相关方法。
 - 后续每次继续拆分前，先读取本文档的“当前进度”“推荐拆分顺序”和“执行记录”。
 
 ## 推荐拆分顺序
@@ -263,6 +265,8 @@
 
 ### 第 5 步：拆测试文件
 
+2026-06-06 用户要求跳过本步骤。后续如果需要恢复测试文件拆分，仍按以下原计划执行。
+
 建议新文件：
 
 - `YominkTests/DatabaseConstraintsTests.swift`
@@ -301,6 +305,40 @@
 - `AppDatabase+Migrations.swift`
 - `AppDatabase+LegacyChapterRepair.swift`
 
+### 第 6 步只读评估结果（2026-06-06）
+
+用户跳过测试拆分后，已对以下候选文件做只读扫描：
+
+- `Yomink/Data/Database/GRDBLibraryRepository.swift`：约 1368 行，主仓库方法集中在同一类型内，尾部有一组 `private extension Model { init?(row:) }` / `init?(record:)` 映射。
+- `Yomink/Data/Database/AppDatabase.swift`：约 936 行，迁移、删除恢复、旧章节修复高度集中，涉及 `writer`、`fileStore`、迁移顺序和 repair plan 嵌套类型。
+- `Yomink/Domain/Services/ImportService.swift`：约 720 行，导入、批量导入、iCloud 下载、文件协调、hash、失败清理互相依赖，内部 private helper 较多。
+
+推荐第一刀：
+
+- `Yomink/Data/Database/GRDBRecordMappings.swift`
+  - 从 `GRDBLibraryRepository.swift` 尾部搬出：
+    - `Book.init(row:)`
+    - `BookGroup.init(record:)`
+    - `BookTag.init(row:)`
+    - `BookTagUsage.init(row:)`
+    - `Chapter.init(row:)`
+    - `ReadingProgress.init(row:)`
+    - `Bookmark.init(row:)`
+    - `TextFilterRule.init(row:)`
+    - `SearchHistoryItem.init(row:)`
+    - `ReadingHistoryItem.init(row:)`
+  - 选择原因：这些映射是纯 row/record 转 model 的声明级搬运，不访问 `GRDBLibraryRepository.database`，不改变事务边界，不触碰 SQL 执行顺序。
+  - 访问级别影响：原本在 `private extension` 中；搬到新文件后，供 `GRDBLibraryRepository.swift` 调用的 init 需要从 private 放宽为默认 internal。`Book.rowLogger` 可继续保持 private。
+  - 验证重点：确认所有 `Model(row:)` / `BookGroup(record:)` 引用仍可见，确认 `GRDBRecordMappings.swift` 已登记到 Xcode Sources，运行 `git diff --check`；最终仍需 macOS + Xcode/CI 编译确认。
+
+暂不建议立刻拆：
+
+- `GRDBLibraryRepository+Books.swift` / `+TagsGroups.swift` / `+ProgressBookmarks.swift`：会让 extension 跨文件访问 `database`、`BookQuery`、normalization helper、`bookNotFoundError()` 等私有成员，访问级别放宽面较大。
+- `GRDBLibraryRepository+SettingsHistory.swift`：可作为第二或第三刀，但涉及 `settingsLogger`、JSON 编解码、多个 storage key，建议等 `GRDBRecordMappings.swift` 编译稳定后再做。
+- `AppDatabase+Migrations.swift`：迁移体量大且顺序敏感，虽然可拆 `makeMigrator()`，但风险高于 row mapping。
+- `AppDatabase+LegacyChapterRepair.swift`：涉及 `fileStore`、嵌套 repair model、remap 逻辑和文件读取，访问级别与行为风险较高。
+- `ImportService` 拆分：顶部导入进度/预览模型可低风险搬到 `ImportModels.swift`，但主 helper 依赖文件协调、安全作用域、iCloud 下载和清理流程，建议排在 repository 映射稳定之后。
+
 ## 验证命令
 
 本地 Windows 环境无法直接完成 iOS Xcode 构建时，应记录“未运行原因”。在 macOS + Xcode 环境中优先运行：
@@ -336,6 +374,8 @@ git -c safe.directory=E:/GithubRepo/Yomink-ios-app status --short
 | 2026-06-06 | 第 4 步阶段 D：拆 `LibraryView.swift` bookshelf views | `Yomink/Presentation/Library/LibraryView.swift` | 新增 `BookShelfViews.swift`，搬出 `BookShelfItemButton`、`BookRowView`、`BookGridItemView`、`BookCoverPlaceholder`、`PreciseProgressBar`、`BookListStyle`、`BookGridStyle`、`BookCoverStyle`、`FixedWidthImportBatchCountText` 和 `String.firstBookCoverCharacter`；显式补充 `Foundation`/`SwiftUI`/`UIKit` imports；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | `BookShelfItemButton`、`BookGridItemView`、`FixedWidthImportBatchCountText`、`BookGridStyle` 从 private 放宽为默认 internal，供 `LibraryView.swift` 跨文件使用；`BookGridStyle.coverHorizontalInset`、`BookGridStyle.coverInitialFontSize` 收窄为 fileprivate；`BookRowView` 原本已是默认 internal；其余内部样式/封面/进度 helper 继续保持 private；外部入口改用显式 init 并收窄 stored properties | 已用 `rg` 确认书架组件声明已移至 `BookShelfViews.swift`，并确认 `BookShelfViews.swift` 已登记到 Xcode project group 和 Sources；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；下一步拆 `GlobalBookSearchView.swift` 时需处理搜索页 private 类型跨文件可见性 |
 | 2026-06-06 | 第 4 步阶段 E：拆 `LibraryView.swift` global search | `Yomink/Presentation/Library/LibraryView.swift` | 新增 `GlobalBookSearchView.swift`，搬出 `GlobalBookSearchView`、`FocusableSearchTextField` 和 `SearchBarStyle`；显式补充 `Foundation`/`SwiftUI`/`UIKit` imports；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | `GlobalBookSearchView` 从 private 放宽为默认 internal，供 `LibraryView.swift` 跨文件使用；`FocusableSearchTextField`、`SearchBarStyle` 继续保持 private；`GlobalBookSearchView` 改用显式 init 并收窄 stored properties | 已用 `rg` 确认搜索页声明已移至 `GlobalBookSearchView.swift`，并确认 `GlobalBookSearchView.swift` 已登记到 Xcode project group 和 Sources；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；下一步拆 `ReadingProgressFormatter.swift` 后需做一次 `LibraryView.swift` 剩余结构复查 |
 | 2026-06-06 | 第 4 步阶段 F：拆 `LibraryView.swift` reading progress formatter | `Yomink/Presentation/Library/LibraryView.swift` | 新增 `ReadingProgressFormatter.swift`，搬出 `ReadingProgressFormatter`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | 无；`ReadingProgressFormatter` 原本已是默认 internal，供多个 Library 页面使用 | 已用 `rg` 确认 `ReadingProgressFormatter` 声明只保留在 `ReadingProgressFormatter.swift`，并确认 `ReadingProgressFormatter.swift` 已登记到 Xcode project group 和 Sources；`git diff --check` 通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；`LibraryView.swift` 剩余为主页面组合、drawer 状态和 preview，如需进一步压缩应单独规划 extension 化 |
+| 2026-06-06 | 第 6 步只读评估：数据层拆分计划 | `Yomink/Data/Database/GRDBLibraryRepository.swift`、`Yomink/Data/Database/AppDatabase.swift`、`Yomink/Domain/Services/ImportService.swift` | 未改代码；补充第 6 步只读评估结果，记录用户跳过第 5 步测试拆分，并建议第一刀拆 `GRDBRecordMappings.swift` | 无 | 已用 `rg` 和行数统计扫描三个候选文件的顶层类型、private helper 和引用；`git diff --check` 通过 | 尚未执行数据层代码拆分；需等待前序 Library 拆分在 macOS + Xcode/CI build 确认后再动第一刀 |
+| 2026-06-06 | 第 6 步阶段 A：拆 GRDB record mappings | `Yomink/Data/Database/GRDBLibraryRepository.swift` | 新增 `Yomink/Data/Database/GRDBRecordMappings.swift`；搬出 `Book.init(row:)`、`BookGroup.init(record:)`、`BookTag.init(row:)`、`BookTagUsage.init(row:)`、`Chapter.init(row:)`、`ReadingProgress.init(row:)`、`Bookmark.init(row:)`、`TextFilterRule.init(row:)`、`SearchHistoryItem.init(row:)`、`ReadingHistoryItem.init(row:)`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | 映射 extensions 从 `private extension` 放宽为默认 internal，供 `GRDBLibraryRepository.swift` 跨文件调用；`Book.rowLogger` 继续保持 private | 已用 `rg` 确认 `GRDBRecordMappings.swift` 已登记到 Xcode project group 和 Sources，并确认映射 init 已移至新文件；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；后续若继续拆 repository 方法，会涉及 `database`、SQL helper、settings logger 等 private 成员访问边界，风险高于本轮映射搬运 |
 
 ## 后续记录模板
 
