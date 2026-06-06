@@ -16,6 +16,7 @@
 		C0DE30000000000000000A01 /* CollectionReaderViewController+CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000A00 /* CollectionReaderViewController+CollectionView.swift */; };
 		C0DE30000000000000000B01 /* CollectionReaderViewController+Gestures.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000B00 /* CollectionReaderViewController+Gestures.swift */; };
 		C0DE30000000000000000C01 /* CollectionReaderViewController+AutoRead.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000C00 /* CollectionReaderViewController+AutoRead.swift */; };
+		C0DE30000000000000000D01 /* CollectionReaderViewController+Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000D00 /* CollectionReaderViewController+Chrome.swift */; };
 		C0DE30000000000000000201 /* ReaderNavigationHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000200 /* ReaderNavigationHelpers.swift */; };
 		C0DE30000000000000000301 /* ReaderContentTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000300 /* ReaderContentTarget.swift */; };
 		C0DE30000000000000000401 /* ReaderContentsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000400 /* ReaderContentsViewController.swift */; };
@@ -96,6 +97,7 @@
 		C0DE30000000000000000A00 /* CollectionReaderViewController+CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+CollectionView.swift"; sourceTree = "<group>"; };
 		C0DE30000000000000000B00 /* CollectionReaderViewController+Gestures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+Gestures.swift"; sourceTree = "<group>"; };
 		C0DE30000000000000000C00 /* CollectionReaderViewController+AutoRead.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+AutoRead.swift"; sourceTree = "<group>"; };
+		C0DE30000000000000000D00 /* CollectionReaderViewController+Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+Chrome.swift"; sourceTree = "<group>"; };
 		C0DE30000000000000000200 /* ReaderNavigationHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderNavigationHelpers.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000300 /* ReaderContentTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderContentTarget.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000400 /* ReaderContentsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderContentsViewController.swift; sourceTree = "<group>"; };
@@ -380,6 +382,7 @@
 				C0DE30000000000000000A00 /* CollectionReaderViewController+CollectionView.swift */,
 				C0DE30000000000000000B00 /* CollectionReaderViewController+Gestures.swift */,
 				C0DE30000000000000000C00 /* CollectionReaderViewController+AutoRead.swift */,
+				C0DE30000000000000000D00 /* CollectionReaderViewController+Chrome.swift */,
 				C0DE30000000000000000200 /* ReaderNavigationHelpers.swift */,
 				C0DE30000000000000000300 /* ReaderContentTarget.swift */,
 				C0DE30000000000000000400 /* ReaderContentsViewController.swift */,
@@ -583,6 +586,7 @@
 				C0DE30000000000000000A01 /* CollectionReaderViewController+CollectionView.swift in Sources */,
 				C0DE30000000000000000B01 /* CollectionReaderViewController+Gestures.swift in Sources */,
 				C0DE30000000000000000C01 /* CollectionReaderViewController+AutoRead.swift in Sources */,
+				C0DE30000000000000000D01 /* CollectionReaderViewController+Chrome.swift in Sources */,
 				C0DE30000000000000000201 /* ReaderNavigationHelpers.swift in Sources */,
 				C0DE30000000000000000301 /* ReaderContentTarget.swift in Sources */,
 				C0DE30000000000000000401 /* ReaderContentsViewController.swift in Sources */,

@@ -29,26 +29,26 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let fileStore: AppFileStore
     private let repository: any LibraryRepository
     private let onClose: () -> Void
-    private let onStatusBarHiddenChange: (Bool) -> Void
+    let onStatusBarHiddenChange: (Bool) -> Void
     let collectionView: UICollectionView
-    private let verticalTopCoverView = UIView()
-    private let verticalBottomCoverView = UIView()
+    let verticalTopCoverView = UIView()
+    let verticalBottomCoverView = UIView()
     let topBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-    private let titleLabel = UILabel()
-    private let bookmarkButton = UIButton(type: .system)
-    private let moreButton = UIButton(type: .system)
-    private let progressLabel = UILabel()
-    private let progressSlider = ReaderProgressSlider()
-    private let progressTooltipView = UIView()
-    private let progressTooltipLabel = UILabel()
-    private let previousChapterButton = UIButton(type: .system)
-    private let nextChapterButton = UIButton(type: .system)
-    private let catalogButton = UIButton(type: .system)
-    private let settingsButton = UIButton(type: .system)
+    let titleLabel = UILabel()
+    let bookmarkButton = UIButton(type: .system)
+    let moreButton = UIButton(type: .system)
+    let progressLabel = UILabel()
+    let progressSlider = ReaderProgressSlider()
+    let progressTooltipView = UIView()
+    let progressTooltipLabel = UILabel()
+    let previousChapterButton = UIButton(type: .system)
+    let nextChapterButton = UIButton(type: .system)
+    let catalogButton = UIButton(type: .system)
+    let settingsButton = UIButton(type: .system)
     let floatingActionStack = UIStackView()
-    private let autoReadButton = UIButton(type: .system)
-    private let darkModeButton = UIButton(type: .system)
+    let autoReadButton = UIButton(type: .system)
+    let darkModeButton = UIButton(type: .system)
     let autoReadPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
     let autoReadSpeedSlider = UISlider()
     let autoReadExitButton = UIButton(type: .system)
@@ -59,7 +59,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let settingsFontValueButton = UIButton(type: .system)
     private let settingsFontIncreaseButton = UIButton(type: .system)
     private var layoutValueLabels: [LayoutAdjustment: UILabel] = [:]
-    private let fixedWidgetOverlay = ReaderPageWidgetOverlayView()
+    let fixedWidgetOverlay = ReaderPageWidgetOverlayView()
     private let widgetChapterTitleSwitch = UISwitch()
     private let widgetBatteryPercentageSwitch = UISwitch()
     private let widgetBatteryIconSwitch = UISwitch()
@@ -92,7 +92,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             NSLocalizedString("reader.settings.quick.more", comment: "")
         ]
     )
-    private let loadingIndicator = UIActivityIndicatorView(style: .large)
+    let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     enum Layout {
         static let topBarContentHeight: CGFloat = 46
@@ -376,7 +376,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
     }
 
-    private var book: Book
+    var book: Book
     var chapters: [Chapter] = []
     private var bookmarks: [Bookmark] = []
     private var filterRules: [TextFilterRule] = []
@@ -501,7 +501,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         readerSettings.autoHideHomeIndicator ? .bottom : []
     }
 
-    private var shouldHideSystemStatusBar: Bool {
+    var shouldHideSystemStatusBar: Bool {
         if isAutoReading {
             return true
         }
@@ -687,458 +687,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         ])
     }
 
-    private func configureVerticalContentCovers() {
-        [verticalTopCoverView, verticalBottomCoverView].forEach { coverView in
-            coverView.isUserInteractionEnabled = false
-            coverView.isHidden = true
-            view.addSubview(coverView)
-        }
-    }
-
-    private func configureFixedWidgetOverlay() {
-        fixedWidgetOverlay.translatesAutoresizingMaskIntoConstraints = false
-        fixedWidgetOverlay.isUserInteractionEnabled = false
-        fixedWidgetOverlay.isHidden = true
-        view.addSubview(fixedWidgetOverlay)
-        NSLayoutConstraint.activate([
-            fixedWidgetOverlay.topAnchor.constraint(equalTo: view.topAnchor),
-            fixedWidgetOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            fixedWidgetOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            fixedWidgetOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-    }
-
-    private func refreshReaderOverlayOrdering() {
-        [
-            verticalTopCoverView,
-            verticalBottomCoverView,
-            fixedWidgetOverlay,
-            progressTooltipView,
-            topBar,
-            bottomBar,
-            floatingActionStack,
-            settingsPanel,
-            autoReadPanel,
-            loadingIndicator
-        ].forEach { overlayView in
-            guard overlayView.superview === view else {
-                return
-            }
-            view.bringSubviewToFront(overlayView)
-        }
-    }
-
-    private func configureMenus() {
-        topBar.effect = nil
-        topBar.backgroundColor = MenuStyle.barBackgroundColor
-        topBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
-        bottomBar.effect = nil
-        bottomBar.backgroundColor = MenuStyle.barBackgroundColor
-        bottomBar.contentView.backgroundColor = MenuStyle.barBackgroundColor
-        configureTopBar()
-        configureBottomBar()
-        configureProgressTooltip()
-        configureFloatingActionButtons()
-        configureSettingsPanel()
-        configureAutoReadPanel()
-        setMenuVisible(false, animated: false)
-        setSettingsPanelVisible(false, animated: false)
-        setAutoReadPanelVisible(false, animated: false)
-    }
-
-    private func configureTopBar() {
-        topBar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(topBar)
-        addMenuOverlay(to: topBar)
-
-        let closeButton = UIButton(type: .system)
-        closeButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
-        closeButton.tintColor = MenuStyle.primaryTextColor
-        closeButton.accessibilityLabel = NSLocalizedString("reader.close", comment: "")
-        closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-
-        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
-        titleLabel.adjustsFontForContentSizeCategory = true
-        titleLabel.textAlignment = .left
-        titleLabel.numberOfLines = 1
-        titleLabel.lineBreakMode = .byTruncatingTail
-        titleLabel.textColor = MenuStyle.secondaryTextColor
-        titleLabel.text = book.title
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        bookmarkButton.setImage(UIImage(systemName: "bookmark"), for: .normal)
-        bookmarkButton.tintColor = MenuStyle.primaryTextColor
-        bookmarkButton.accessibilityLabel = NSLocalizedString("reader.bookmark.add", comment: "")
-        bookmarkButton.addTarget(self, action: #selector(bookmarkButtonTapped), for: .touchUpInside)
-        bookmarkButton.translatesAutoresizingMaskIntoConstraints = false
-
-        moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
-        moreButton.tintColor = MenuStyle.primaryTextColor
-        moreButton.accessibilityLabel = NSLocalizedString("reader.more", comment: "")
-        moreButton.showsMenuAsPrimaryAction = true
-        moreButton.menu = makeMoreMenu()
-        moreButton.translatesAutoresizingMaskIntoConstraints = false
-
-        let actionStack = UIStackView(arrangedSubviews: [bookmarkButton, moreButton])
-        actionStack.axis = .horizontal
-        actionStack.alignment = .center
-        actionStack.spacing = 4
-        actionStack.translatesAutoresizingMaskIntoConstraints = false
-
-        topBar.contentView.addSubview(closeButton)
-        topBar.contentView.addSubview(titleLabel)
-        topBar.contentView.addSubview(actionStack)
-
-        NSLayoutConstraint.activate([
-            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            topBar.topAnchor.constraint(equalTo: view.topAnchor),
-            topBar.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.topAnchor,
-                constant: Layout.topBarContentHeight
-            ),
-
-            closeButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 6),
-            closeButton.bottomAnchor.constraint(
-                equalTo: topBar.contentView.bottomAnchor,
-                constant: -Layout.topBarButtonBottomInset
-            ),
-            closeButton.widthAnchor.constraint(equalToConstant: 44),
-            closeButton.heightAnchor.constraint(equalToConstant: 36),
-
-            titleLabel.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-            titleLabel.leadingAnchor.constraint(equalTo: closeButton.trailingAnchor, constant: 4),
-
-            actionStack.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 8),
-            actionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12),
-            actionStack.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
-
-            bookmarkButton.widthAnchor.constraint(equalToConstant: 44),
-            bookmarkButton.heightAnchor.constraint(equalToConstant: 36),
-            moreButton.widthAnchor.constraint(equalToConstant: 44),
-            moreButton.heightAnchor.constraint(equalToConstant: 36)
-        ])
-    }
-
-    private func configureBottomBar() {
-        bottomBar.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(bottomBar)
-        addMenuOverlay(to: bottomBar)
-
-        previousChapterButton.setTitle(NSLocalizedString("reader.previousChapter", comment: ""), for: .normal)
-        previousChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
-        previousChapterButton.tintColor = MenuStyle.secondaryTextColor
-        previousChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
-        previousChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
-        previousChapterButton.accessibilityLabel = NSLocalizedString("reader.previousChapter", comment: "")
-        previousChapterButton.addTarget(self, action: #selector(previousChapterButtonTapped), for: .touchUpInside)
-        previousChapterButton.translatesAutoresizingMaskIntoConstraints = false
-
-        nextChapterButton.setTitle(NSLocalizedString("reader.nextChapter", comment: ""), for: .normal)
-        nextChapterButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
-        nextChapterButton.tintColor = MenuStyle.secondaryTextColor
-        nextChapterButton.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
-        nextChapterButton.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
-        nextChapterButton.accessibilityLabel = NSLocalizedString("reader.nextChapter", comment: "")
-        nextChapterButton.addTarget(self, action: #selector(nextChapterButtonTapped), for: .touchUpInside)
-        nextChapterButton.translatesAutoresizingMaskIntoConstraints = false
-
-        progressSlider.minimumValue = 0
-        progressSlider.maximumValue = 1
-        progressSlider.value = 0
-        progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
-        progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
-        progressSlider.thumbTintColor = MenuStyle.progressThumbColor
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .normal)
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .highlighted)
-        progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
-        progressSlider.addTarget(self, action: #selector(progressSliderTouchBegan), for: .touchDown)
-        progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
-        progressSlider.addTarget(
-            self,
-            action: #selector(progressSliderTouchFinished),
-            for: [.touchUpInside, .touchUpOutside, .touchCancel]
-        )
-        progressSlider.translatesAutoresizingMaskIntoConstraints = false
-
-        progressLabel.font = .preferredFont(forTextStyle: .footnote)
-        progressLabel.adjustsFontForContentSizeCategory = true
-        progressLabel.textAlignment = .center
-        progressLabel.textColor = MenuStyle.secondaryTextColor
-        progressLabel.numberOfLines = 2
-        progressLabel.translatesAutoresizingMaskIntoConstraints = false
-
-        catalogButton.setImage(UIImage(systemName: "list.bullet"), for: .normal)
-        catalogButton.setTitle(NSLocalizedString("reader.catalog", comment: ""), for: .normal)
-        configureBottomActionButton(catalogButton)
-        catalogButton.accessibilityLabel = NSLocalizedString("reader.catalog", comment: "")
-        catalogButton.addTarget(self, action: #selector(catalogButtonTapped), for: .touchUpInside)
-
-        settingsButton.setImage(UIImage(systemName: "textformat"), for: .normal)
-        settingsButton.setTitle(NSLocalizedString("reader.settings", comment: ""), for: .normal)
-        configureBottomActionButton(settingsButton)
-        settingsButton.accessibilityLabel = NSLocalizedString("reader.settings", comment: "")
-        settingsButton.addTarget(self, action: #selector(settingsButtonTapped), for: .touchUpInside)
-
-        let leftProgressSeparator = makeVerticalMenuSeparator()
-        let rightProgressSeparator = makeVerticalMenuSeparator()
-        let actionRowTopSeparator = makeHorizontalMenuSeparator()
-        let progressSliderContainer = UIView()
-        progressSliderContainer.translatesAutoresizingMaskIntoConstraints = false
-        progressSliderContainer.addSubview(progressSlider)
-        let progressRowContainer = UIView()
-        progressRowContainer.backgroundColor = MenuStyle.progressRowBackgroundColor
-        progressRowContainer.translatesAutoresizingMaskIntoConstraints = false
-        let progressRow = UIStackView(arrangedSubviews: [
-            previousChapterButton,
-            leftProgressSeparator,
-            progressSliderContainer,
-            rightProgressSeparator,
-            nextChapterButton
-        ])
-        progressRow.axis = .horizontal
-        progressRow.alignment = .fill
-        progressRow.spacing = 0
-        progressRow.translatesAutoresizingMaskIntoConstraints = false
-
-        let actionRow = UIStackView(arrangedSubviews: [catalogButton, settingsButton])
-        actionRow.axis = .horizontal
-        actionRow.alignment = .fill
-        actionRow.distribution = .fillEqually
-        actionRow.spacing = 0
-        actionRow.backgroundColor = MenuStyle.barBackgroundColor
-        actionRow.translatesAutoresizingMaskIntoConstraints = false
-
-        bottomBar.contentView.addSubview(progressRowContainer)
-        progressRowContainer.addSubview(progressRow)
-        bottomBar.contentView.addSubview(actionRowTopSeparator)
-        bottomBar.contentView.addSubview(actionRow)
-
-        NSLayoutConstraint.activate([
-            bottomBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            bottomBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            bottomBar.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-
-            progressRowContainer.topAnchor.constraint(
-                equalTo: bottomBar.topAnchor,
-                constant: Layout.bottomBarTopInset
-            ),
-            progressRowContainer.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
-            progressRowContainer.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
-            progressRowContainer.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
-
-            progressRow.leadingAnchor.constraint(equalTo: progressRowContainer.leadingAnchor),
-            progressRow.trailingAnchor.constraint(equalTo: progressRowContainer.trailingAnchor),
-            progressRow.topAnchor.constraint(equalTo: progressRowContainer.topAnchor),
-            progressRow.bottomAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
-            progressRow.heightAnchor.constraint(equalToConstant: Layout.progressRowHeight),
-
-            previousChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
-            leftProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
-            progressSlider.leadingAnchor.constraint(
-                equalTo: progressSliderContainer.leadingAnchor,
-                constant: Layout.progressSliderHorizontalInset
-            ),
-            progressSlider.trailingAnchor.constraint(
-                equalTo: progressSliderContainer.trailingAnchor,
-                constant: -Layout.progressSliderHorizontalInset
-            ),
-            progressSlider.centerYAnchor.constraint(equalTo: progressSliderContainer.centerYAnchor),
-            rightProgressSeparator.widthAnchor.constraint(equalToConstant: 1),
-            nextChapterButton.widthAnchor.constraint(equalToConstant: Layout.chapterButtonWidth),
-
-            actionRowTopSeparator.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
-            actionRowTopSeparator.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
-            actionRowTopSeparator.topAnchor.constraint(equalTo: progressRowContainer.bottomAnchor),
-            actionRowTopSeparator.heightAnchor.constraint(equalToConstant: Layout.menuSeparatorThickness),
-
-            actionRow.leadingAnchor.constraint(equalTo: bottomBar.leadingAnchor),
-            actionRow.trailingAnchor.constraint(equalTo: bottomBar.trailingAnchor),
-            actionRow.topAnchor.constraint(equalTo: actionRowTopSeparator.bottomAnchor),
-            actionRow.bottomAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -Layout.bottomBarSafeAreaInset
-            ),
-            actionRow.heightAnchor.constraint(equalToConstant: Layout.bottomActionRowHeight)
-        ])
-    }
-
-    private func configureProgressTooltip() {
-        progressTooltipView.backgroundColor = MenuStyle.progressTooltipBackgroundColor
-        progressTooltipView.layer.cornerRadius = 4
-        progressTooltipView.layer.masksToBounds = true
-        progressTooltipView.alpha = 0
-        progressTooltipView.isHidden = true
-        progressTooltipView.isUserInteractionEnabled = false
-        progressTooltipView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(progressTooltipView)
-
-        progressTooltipLabel.font = .systemFont(ofSize: 14, weight: .regular)
-        progressTooltipLabel.textColor = .white
-        progressTooltipLabel.textAlignment = .center
-        progressTooltipLabel.numberOfLines = 1
-        progressTooltipLabel.adjustsFontSizeToFitWidth = true
-        progressTooltipLabel.minimumScaleFactor = 0.86
-        progressTooltipLabel.translatesAutoresizingMaskIntoConstraints = false
-        progressTooltipView.addSubview(progressTooltipLabel)
-
-        NSLayoutConstraint.activate([
-            progressTooltipView.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            progressTooltipView.widthAnchor.constraint(equalToConstant: Layout.progressTooltipWidth),
-            progressTooltipView.bottomAnchor.constraint(
-                equalTo: bottomBar.topAnchor,
-                constant: -Layout.progressTooltipBottomSpacing
-            ),
-            progressTooltipLabel.leadingAnchor.constraint(
-                equalTo: progressTooltipView.leadingAnchor,
-                constant: Layout.progressTooltipHorizontalPadding
-            ),
-            progressTooltipLabel.trailingAnchor.constraint(
-                equalTo: progressTooltipView.trailingAnchor,
-                constant: -Layout.progressTooltipHorizontalPadding
-            ),
-            progressTooltipLabel.topAnchor.constraint(
-                equalTo: progressTooltipView.topAnchor,
-                constant: Layout.progressTooltipVerticalPadding
-            ),
-            progressTooltipLabel.bottomAnchor.constraint(
-                equalTo: progressTooltipView.bottomAnchor,
-                constant: -Layout.progressTooltipVerticalPadding
-            )
-        ])
-    }
-
-    private func configureFloatingActionButtons() {
-        floatingActionStack.axis = .vertical
-        floatingActionStack.alignment = .center
-        floatingActionStack.distribution = .fill
-        floatingActionStack.spacing = Layout.floatingButtonSpacing
-        floatingActionStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(floatingActionStack)
-
-        configureFloatingButton(autoReadButton, systemName: "circle", titleKey: "reader.autoRead.placeholder")
-        autoReadButton.addTarget(self, action: #selector(autoReadButtonTapped), for: .touchUpInside)
-
-        configureFloatingButton(darkModeButton, systemName: "moon.stars", titleKey: "reader.darkMode.placeholder")
-        darkModeButton.addTarget(self, action: #selector(darkModeButtonTapped), for: .touchUpInside)
-
-        floatingActionStack.addArrangedSubview(autoReadButton)
-        floatingActionStack.addArrangedSubview(darkModeButton)
-
-        NSLayoutConstraint.activate([
-            floatingActionStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -Layout.floatingButtonTrailingInset),
-            floatingActionStack.bottomAnchor.constraint(equalTo: bottomBar.topAnchor, constant: -Layout.floatingButtonBottomInset),
-            autoReadButton.widthAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
-            autoReadButton.heightAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
-            darkModeButton.widthAnchor.constraint(equalToConstant: Layout.floatingButtonSize),
-            darkModeButton.heightAnchor.constraint(equalToConstant: Layout.floatingButtonSize)
-        ])
-    }
-
-    private func configureFloatingButton(_ button: UIButton, systemName: String, titleKey: String) {
-        button.setImage(UIImage(systemName: systemName), for: .normal)
-        button.setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
-            forImageIn: .normal
-        )
-        button.tintColor = MenuStyle.floatingButtonIconColor
-        button.backgroundColor = MenuStyle.floatingButtonColor
-        button.layer.cornerRadius = Layout.floatingButtonSize / 2
-        button.layer.masksToBounds = true
-        button.accessibilityLabel = NSLocalizedString(titleKey, comment: "")
-        button.isUserInteractionEnabled = true
-        button.translatesAutoresizingMaskIntoConstraints = false
-    }
-
-    private func addMenuOverlay(to visualEffectView: UIVisualEffectView) {
-        let overlayView = UIView()
-        overlayView.backgroundColor = MenuStyle.barBackgroundColor
-        overlayView.translatesAutoresizingMaskIntoConstraints = false
-        overlayView.isUserInteractionEnabled = false
-        visualEffectView.contentView.insertSubview(overlayView, at: 0)
-        NSLayoutConstraint.activate([
-            overlayView.leadingAnchor.constraint(equalTo: visualEffectView.contentView.leadingAnchor),
-            overlayView.trailingAnchor.constraint(equalTo: visualEffectView.contentView.trailingAnchor),
-            overlayView.topAnchor.constraint(equalTo: visualEffectView.contentView.topAnchor),
-            overlayView.bottomAnchor.constraint(equalTo: visualEffectView.contentView.bottomAnchor)
-        ])
-    }
-
-    private func makeVerticalMenuSeparator() -> UIView {
-        let separator = UIView()
-        separator.backgroundColor = MenuStyle.separatorColor
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        return separator
-    }
-
-    private func makeHorizontalMenuSeparator() -> UIView {
-        let separator = UIView()
-        separator.backgroundColor = MenuStyle.separatorColor
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        let edgeView = UIView()
-        edgeView.backgroundColor = MenuStyle.separatorEdgeColor
-        edgeView.translatesAutoresizingMaskIntoConstraints = false
-        separator.addSubview(edgeView)
-        NSLayoutConstraint.activate([
-            edgeView.leadingAnchor.constraint(equalTo: separator.leadingAnchor),
-            edgeView.trailingAnchor.constraint(equalTo: separator.trailingAnchor),
-            edgeView.bottomAnchor.constraint(equalTo: separator.bottomAnchor),
-            edgeView.heightAnchor.constraint(equalToConstant: 1)
-        ])
-        return separator
-    }
-
-    private func configureBottomActionButton(_ button: UIButton) {
-        button.tintColor = MenuStyle.secondaryTextColor
-        button.setTitleColor(MenuStyle.secondaryTextColor, for: .normal)
-        button.setTitleColor(MenuStyle.primaryTextColor, for: .highlighted)
-        button.setPreferredSymbolConfiguration(
-            UIImage.SymbolConfiguration(pointSize: 18, weight: .regular),
-            forImageIn: .normal
-        )
-        button.titleLabel?.font = .preferredFont(forTextStyle: .caption1)
-        button.titleLabel?.adjustsFontForContentSizeCategory = true
-        button.titleLabel?.textAlignment = .center
-        button.contentHorizontalAlignment = .center
-        button.contentVerticalAlignment = .center
-        button.alignImageAboveTitle(spacing: 4)
-        button.contentEdgeInsets = UIEdgeInsets(top: 12, left: 0, bottom: 0, right: 0)
-        button.translatesAutoresizingMaskIntoConstraints = false
-    }
-
-    private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
-        let size = CGSize(
-            width: Layout.progressThumbHitboxDiameter,
-            height: Layout.progressThumbHitboxDiameter
-        )
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { context in
-            let origin = CGPoint(
-                x: (size.width - diameter) / 2,
-                y: (size.height - diameter) / 2
-            )
-            let bounds = CGRect(
-                x: origin.x,
-                y: origin.y,
-                width: diameter,
-                height: diameter
-            )
-            let cgContext = context.cgContext
-
-            MenuStyle.progressThumbEdgeShadowColor.setStroke()
-            cgContext.setLineWidth(1)
-            cgContext.strokeEllipse(in: bounds.offsetBy(dx: 0, dy: 1).insetBy(dx: 0.5, dy: 0.5))
-            MenuStyle.progressThumbColor.setFill()
-            cgContext.fillEllipse(in: bounds)
-
-            MenuStyle.progressThumbBorderColor.setStroke()
-            cgContext.setLineWidth(1)
-            cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
-        }
-    }
-
-    private func configureSettingsPanel() {
+    func configureSettingsPanel() {
         settingsPanel.translatesAutoresizingMaskIntoConstraints = false
         settingsPanel.effect = nil
         settingsPanel.backgroundColor = MenuStyle.barBackgroundColor
@@ -2367,7 +1916,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return layout
     }
 
-    private func verticalContinuousInsets() -> UIEdgeInsets {
+    func verticalContinuousInsets() -> UIEdgeInsets {
         let widgetInsets = widgetContentInsets()
         return UIEdgeInsets(
             top: widgetInsets.top,
@@ -2408,62 +1957,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         )
     }
 
-    private func updateVerticalContentCovers() {
-        let insets = usesVerticalScrolling ? verticalContinuousInsets() : .zero
-        verticalTopCoverView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalBottomCoverView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalTopCoverView.isHidden = insets.top <= 0
-        verticalBottomCoverView.isHidden = insets.bottom <= 0
-        verticalTopCoverView.frame = CGRect(
-            x: 0,
-            y: 0,
-            width: view.bounds.width,
-            height: max(0, insets.top)
-        )
-        verticalBottomCoverView.frame = CGRect(
-            x: 0,
-            y: max(0, view.bounds.height - max(0, insets.bottom)),
-            width: view.bounds.width,
-            height: max(0, insets.bottom)
-        )
-        refreshReaderOverlayOrdering()
-    }
-
-    private func applyTheme() {
-        overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
-        view.backgroundColor = readerSettings.theme.backgroundColor
-        collectionView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalTopCoverView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalBottomCoverView.backgroundColor = readerSettings.theme.backgroundColor
-        fixedWidgetOverlay.backgroundColor = .clear
-        loadingIndicator.color = readerSettings.theme.secondaryTextColor
-        progressLabel.textColor = readerSettings.theme.secondaryTextColor
-        updateDarkModeButton()
-        updateAutoReadButton()
-        updateFixedWidgetOverlay()
-        refreshSystemStatusBarVisibility()
-    }
-
-    private func updateDarkModeButton() {
-        let imageName = readerSettings.theme == .dark ? "sun.max.fill" : "moon.stars"
-        darkModeButton.setImage(UIImage(systemName: imageName), for: .normal)
-    }
-
-    func updateAutoReadButton() {
-        autoReadButton.setImage(UIImage(systemName: "circle"), for: .normal)
-    }
-
-    func refreshSystemStatusBarVisibility() {
-        let isHidden = shouldHideSystemStatusBar
-        onStatusBarHiddenChange(isHidden)
-        setNeedsStatusBarAppearanceUpdate()
-        navigationController?.setNeedsStatusBarAppearanceUpdate()
-
-        // 强制系统重新读取小横条隐藏状态和边缘手势延迟设置
-        setNeedsUpdateOfHomeIndicatorAutoHidden()
-        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
-    }
-
     func updateReaderChromePreferences() {
         let normalized = readerSettings.normalized
         UIApplication.shared.isIdleTimerDisabled = normalized.keepScreenAwake
@@ -2502,45 +1995,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         for adjustment in LayoutAdjustment.allCases {
             layoutValueLabels[adjustment]?.text = adjustment.formattedValue(adjustment.value(in: values))
         }
-    }
-
-    func setMenuVisible(_ visible: Bool, animated: Bool) {
-        isMenuVisible = visible
-        topBar.isUserInteractionEnabled = visible
-        bottomBar.isUserInteractionEnabled = visible
-        floatingActionStack.isUserInteractionEnabled = visible
-        refreshSystemStatusBarVisibility()
-        view.layoutIfNeeded()
-        if animated {
-            UIView.animate(
-                withDuration: 0.24,
-                delay: 0,
-                options: [.beginFromCurrentState, .curveEaseOut],
-                animations: {
-                    self.applyMenuPosition(animated: true)
-                }
-            )
-        } else {
-            applyMenuPosition(animated: false)
-        }
-    }
-
-    private func applyMenuPosition(animated _: Bool) {
-        let topTranslation = -(topBar.bounds.height + 1)
-        let bottomTranslation = bottomBar.bounds.height + 1
-        let floatingHiddenOffset = floatingActionStack.bounds.width
-            + Layout.floatingButtonTrailingInset
-            + view.safeAreaInsets.right
-            + 1
-        topBar.transform = isMenuVisible
-            ? .identity
-            : CGAffineTransform(translationX: 0, y: topTranslation)
-        bottomBar.transform = isMenuVisible
-            ? .identity
-            : CGAffineTransform(translationX: 0, y: bottomTranslation)
-        floatingActionStack.transform = isMenuVisible
-            ? .identity
-            : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
     func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
@@ -2593,14 +2047,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         autoReadPanel.transform = isAutoReadPanelVisible
             ? .identity
             : CGAffineTransform(translationX: 0, y: hiddenOffset)
-    }
-
-    private func showLoading(_ isLoading: Bool) {
-        if isLoading {
-            loadingIndicator.startAnimating()
-        } else {
-            loadingIndicator.stopAnimating()
-        }
     }
 
     private func updateSessionState(isLoadingNextPage: Bool) {
@@ -2920,7 +2366,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         showError(error)
     }
 
-    private func applyReaderSettings(_ settings: ReaderSettings) {
+    func applyReaderSettings(_ settings: ReaderSettings) {
         let oldSettings = readerSettings.normalized
         let nextSettings = settings.normalized
         let anchor = currentDisplayByteOffset()
@@ -3278,7 +2724,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return String(page.text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(80))
     }
 
-    private func makeMoreMenu() -> UIMenu {
+    func makeMoreMenu() -> UIMenu {
         UIMenu(
             children: [
                 UIAction(
@@ -3404,7 +2850,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         closeReader(animated: true)
     }
 
-    @objc private func bookmarkButtonTapped() {
+    @objc func bookmarkButtonTapped() {
         guard let currentProgress,
               let chapter = chapter(containingAbsoluteOffset: currentDisplayByteOffset()) else {
             return
@@ -3492,7 +2938,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
     }
 
-    @objc private func catalogButtonTapped() {
+    @objc func catalogButtonTapped() {
         stopAutoReading(restoreLayout: true, animated: false)
         saveProgressImmediately()
         let listViewController = ReaderContentsViewController(
@@ -3514,13 +2960,13 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pushReaderPage(listViewController)
     }
 
-    @objc private func settingsButtonTapped() {
+    @objc func settingsButtonTapped() {
         stopAutoReading(restoreLayout: true, animated: false)
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(true, animated: true)
     }
 
-    @objc private func previousChapterButtonTapped() {
+    @objc func previousChapterButtonTapped() {
         stopAutoReading(restoreLayout: true, animated: false)
         guard let index = indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()),
               chapters.indices.contains(index - 1) else {
@@ -3530,7 +2976,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         openPage(absoluteOffset: chapters[index - 1].startOffset, generation: pagingGeneration)
     }
 
-    @objc private func nextChapterButtonTapped() {
+    @objc func nextChapterButtonTapped() {
         stopAutoReading(restoreLayout: true, animated: false)
         guard let index = indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()),
               chapters.indices.contains(index + 1) else {
@@ -3540,18 +2986,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         openPage(absoluteOffset: chapters[index + 1].startOffset, generation: pagingGeneration)
     }
 
-    @objc private func darkModeButtonTapped() {
-        var settings = readerSettings
-        settings.theme = settings.theme == .dark ? .white : .dark
-        applyReaderSettings(settings)
-    }
-
-    @objc private func progressSliderTouchBegan() {
+    @objc func progressSliderTouchBegan() {
         stopAutoReading(restoreLayout: true, animated: true)
         isTrackingProgressSlider = true
     }
 
-    @objc private func progressSliderChanged() {
+    @objc func progressSliderChanged() {
         guard let target = targetProgressInCurrentChapter(progress: Double(progressSlider.value)) else {
             return
         }
@@ -3567,7 +3007,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         setProgressTooltipVisible(true)
     }
 
-    @objc private func progressSliderTouchFinished() {
+    @objc func progressSliderTouchFinished() {
         isTrackingProgressSlider = false
         setProgressTooltipVisible(false)
         guard let target = targetProgressInCurrentChapter(progress: Double(progressSlider.value)) else {

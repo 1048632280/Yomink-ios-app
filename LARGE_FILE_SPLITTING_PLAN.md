@@ -68,8 +68,10 @@ Swift 文件概况：
 - 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+CollectionView.swift`。
 - 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+Gestures.swift`。
 - 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+AutoRead.swift`。
-- `CollectionReaderViewController.swift` 已从 4,098 行降到 3,529 行。
+- 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+Chrome.swift`。
+- `CollectionReaderViewController.swift` 已从 4,098 行降到 3,027 行。
 - `CollectionReaderViewController+AutoRead.swift` 当前 401 行，包含自动阅读面板、速度、display link、暂停恢复和自动阅读拖拽减速。
+- `CollectionReaderViewController+Chrome.swift` 当前 506 行，包含顶部栏、底部栏、菜单、浮动按钮、主题、状态栏和加载状态。
 - 为支持扩展文件访问，已将部分原 `private` 成员放宽为模块内访问；后续职责拆稳后可再评估是否用更小的状态对象收回可见性。
 
 当前问题：
@@ -93,6 +95,7 @@ Swift 文件概况：
 3. `CollectionReaderViewController+Chrome.swift`
    - 移动顶部栏、底部栏、菜单、浮动按钮、主题、状态栏、加载状态相关方法。
    - 包括 `configureTopBar`、`configureBottomBar`、`configureMenus`、`setMenuVisible`、`applyTheme`。
+   - 状态：已完成；代码已拆出、主文件重复定义已移除，并已加入 Xcode Sources。
 
 4. `CollectionReaderViewController+Settings.swift`
    - 移动设置面板、字号、布局调节、开关、设置保存相关方法。
@@ -234,4 +237,5 @@ Swift 文件概况：
 | --- | --- | --- | --- | --- |
 | 2026-06-06 | 拆出阅读器 CollectionView/ScrollView 基础委托和手势扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+CollectionView.swift`、`CollectionReaderViewController+Gestures.swift`、`Yomink.xcodeproj/project.pbxproj` | `git diff --check` 通过；确认新文件已加入 Xcode Sources；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 3,888 行；`scrollViewWillEndDragging` 留待 AutoRead 拆分 |
 | 2026-06-06 | 拆出阅读器自动阅读扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+AutoRead.swift`、`Yomink.xcodeproj/project.pbxproj` | `git diff --check` 通过；确认 AutoRead 新文件已加入 Xcode Sources；静态搜索确认 AutoRead 方法只在扩展中定义；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 3,529 行；AutoRead 扩展 401 行 |
+| 2026-06-06 | 拆出阅读器 Chrome 扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+Chrome.swift`、`Yomink.xcodeproj/project.pbxproj`、`LARGE_FILE_SPLITTING_PLAN.md` | `git diff --check` 通过；静态搜索确认 Chrome 方法只在扩展中定义；确认 Chrome 新文件已加入 Xcode Sources；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 3,027 行；Chrome 扩展 506 行 |
 | 2026-06-06 | 建立新的大文件拆分规划和维护规则 | `LARGE_FILE_SPLITTING_PLAN.md` | 文档新增，未改业务代码 | 后续改动前必须读本文档，改动后必须更新本文档 |
