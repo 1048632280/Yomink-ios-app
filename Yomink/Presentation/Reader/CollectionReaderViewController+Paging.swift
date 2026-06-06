@@ -148,7 +148,11 @@ extension CollectionReaderViewController {
                     self.currentPage = page
                     self.collectionView.reloadData()
                     self.collectionView.layoutIfNeeded()
-                    self.collectionView.setContentOffset(self.contentOffset(forPageAt: 0), animated: false)
+                    if isVerticalViewport {
+                        self.alignViewport(toAbsoluteOffset: requestOffset, prefetch: false)
+                    } else {
+                        self.collectionView.setContentOffset(self.contentOffset(forPageAt: 0), animated: false)
+                    }
                     if self.isReaderActiveTopController {
                         self.rememberPagingLayoutSnapshot(layoutSnapshot)
                     }
@@ -462,14 +466,13 @@ extension CollectionReaderViewController {
 
     private func planPrefixTrim() -> PrefixTrimPlan? {
         guard pages.count > Layout.maximumResidentPages,
-              let currentPage,
-              let currentIndex = pages.firstIndex(of: currentPage),
-              currentIndex > 3 else {
+              let anchorIndex = prefixTrimAnchorIndex(),
+              anchorIndex > 3 else {
             return nil
         }
         let overflow = pages.count - Layout.maximumResidentPages
-        let removableBeforeCurrent = max(0, currentIndex - 3)
-        let removeCount = min(overflow, removableBeforeCurrent)
+        let removableBeforeAnchor = max(0, anchorIndex - 3)
+        let removeCount = min(overflow, removableBeforeAnchor)
         guard removeCount > 0 else {
             return nil
         }
@@ -479,6 +482,16 @@ extension CollectionReaderViewController {
             }
             : CGFloat(removeCount) * pageExtentForCurrentMode()
         return PrefixTrimPlan(removeCount: removeCount, removedDistance: removedDistance)
+    }
+
+    private func prefixTrimAnchorIndex() -> Int? {
+        if usesVerticalScrolling {
+            return topVisibleVerticalPageIndex()
+        }
+        guard let currentPage else {
+            return nil
+        }
+        return pages.firstIndex(of: currentPage)
     }
 
     private func applyPrefixTrim(_ plan: PrefixTrimPlan) {
@@ -498,17 +511,26 @@ extension CollectionReaderViewController {
 
     private func planSuffixTrim() -> SuffixTrimPlan? {
         guard pages.count > Layout.maximumResidentPages,
-              let currentPage,
-              let currentIndex = pages.firstIndex(of: currentPage) else {
+              let anchorIndex = suffixTrimAnchorIndex() else {
             return nil
         }
         let overflow = pages.count - Layout.maximumResidentPages
-        let removableAfterCurrent = max(0, pages.count - currentIndex - 4)
-        let removeCount = min(overflow, removableAfterCurrent)
+        let removableAfterAnchor = max(0, pages.count - anchorIndex - 4)
+        let removeCount = min(overflow, removableAfterAnchor)
         guard removeCount > 0 else {
             return nil
         }
         return SuffixTrimPlan(removeCount: removeCount)
+    }
+
+    private func suffixTrimAnchorIndex() -> Int? {
+        if usesVerticalScrolling {
+            return bottomVisibleVerticalPageIndex()
+        }
+        guard let currentPage else {
+            return nil
+        }
+        return pages.firstIndex(of: currentPage)
     }
 
     private func applySuffixTrim(_ plan: SuffixTrimPlan) {
@@ -795,6 +817,26 @@ extension CollectionReaderViewController {
         let y = collectionView.contentOffset.y
             + collectionView.contentInset.top
             + (isAutoReading ? autoReadPageHeight() * 0.5 : 0)
+        return verticalPageIndex(atContentY: y)
+    }
+
+    private func topVisibleVerticalPageIndex() -> Int? {
+        verticalPageIndex(atContentY: collectionView.contentOffset.y + collectionView.contentInset.top)
+    }
+
+    private func bottomVisibleVerticalPageIndex() -> Int? {
+        verticalPageIndex(
+            atContentY: collectionView.contentOffset.y
+                + collectionView.bounds.height
+                - collectionView.contentInset.bottom
+        )
+    }
+
+    private func verticalPageIndex(atContentY contentY: CGFloat) -> Int? {
+        guard !pages.isEmpty else {
+            return nil
+        }
+        let y = max(0, contentY)
         var accumulatedHeight: CGFloat = 0
 
         for index in pages.indices {
@@ -894,7 +936,7 @@ extension CollectionReaderViewController {
         }
     }
 
-    func alignViewport(toAbsoluteOffset offset: Int) {
+    func alignViewport(toAbsoluteOffset offset: Int, prefetch: Bool = true) {
         guard !pages.isEmpty else {
             return
         }
@@ -926,7 +968,9 @@ extension CollectionReaderViewController {
         }
         currentPage = page
         updateCurrentProgress()
-        prefetchPagesNearCurrent()
+        if prefetch {
+            prefetchPagesNearCurrent()
+        }
     }
 
     func finishPageTurn() {

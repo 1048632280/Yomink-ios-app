@@ -353,7 +353,9 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             return
         }
 
-        let offset = currentDisplayByteOffset()
+        let offset = usesVerticalScrolling
+            ? (topAnchorAbsoluteOffset() ?? currentDisplayByteOffset())
+            : currentDisplayByteOffset()
         reopen(atAbsoluteOffset: offset, enforceChapterBoundary: true)
     }
 
