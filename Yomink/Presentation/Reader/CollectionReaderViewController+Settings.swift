@@ -687,7 +687,7 @@ extension CollectionReaderViewController {
         }
     }
 
-    private func applySettingsPanelPosition(animated _: Bool) {
+    func applySettingsPanelPosition(animated _: Bool) {
         let hiddenOffset = settingsPanel.bounds.height + 1
         settingsPanel.transform = isSettingsPanelVisible
             ? .identity

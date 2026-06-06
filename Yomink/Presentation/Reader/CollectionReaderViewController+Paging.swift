@@ -71,7 +71,7 @@ extension CollectionReaderViewController {
         return currentSnapshot
     }
 
-    private func rememberPagingLayoutSnapshot(_ snapshot: PagingLayoutSnapshot) {
+    func rememberPagingLayoutSnapshot(_ snapshot: PagingLayoutSnapshot) {
         guard !isMenuVisible else {
             return
         }
