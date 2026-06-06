@@ -4497,7 +4497,7 @@ extension ReaderSettings.LayoutPreset {
         layoutConfiguration(customValues: nil)
     }
 
-    func layoutConfiguration(customValues: ReaderSettings.LayoutValues?) -> ReaderLayoutConfiguration {
+    fileprivate func layoutConfiguration(customValues: ReaderSettings.LayoutValues?) -> ReaderLayoutConfiguration {
         let values = customValues?.normalized ?? layoutValues
         switch self {
         case .compact:
@@ -4566,7 +4566,7 @@ extension ReaderSettings.LayoutPreset {
         }
     }
 
-    var layoutValues: ReaderSettings.LayoutValues {
+    fileprivate var layoutValues: ReaderSettings.LayoutValues {
         switch self {
         case .compact:
             return .compact
@@ -4578,8 +4578,8 @@ extension ReaderSettings.LayoutPreset {
     }
 }
 
-private extension ReaderSettings {
-    var effectiveLayoutValues: LayoutValues {
+extension ReaderSettings {
+    fileprivate var effectiveLayoutValues: LayoutValues {
         normalized.layoutPreset == .custom
             ? (normalized.customLayoutValues?.normalized ?? .standard)
             : normalized.layoutPreset.layoutValues
@@ -4594,7 +4594,7 @@ private extension ReaderSettings {
     }
 }
 
-private extension ReaderSettings.Theme {
+extension ReaderSettings.Theme {
     var backgroundColor: UIColor {
         switch self {
         case .white:
@@ -4630,7 +4630,7 @@ private extension ReaderSettings.Theme {
         }
     }
 
-    var userInterfaceStyle: UIUserInterfaceStyle {
+    fileprivate var userInterfaceStyle: UIUserInterfaceStyle {
         self == .dark ? .dark : .light
     }
 }

@@ -238,7 +238,7 @@ struct ReaderTypography: @unchecked Sendable {
     }
 }
 
-private func readerFontWeight(for value: Double) -> UIFont.Weight {
+func readerFontWeight(for value: Double) -> UIFont.Weight {
     switch Int(value.rounded()) {
     case 0:
         return .regular
