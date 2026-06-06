@@ -79,7 +79,9 @@
 - 已完成：第 6 步阶段 A，拆 `GRDBLibraryRepository.swift` 尾部 row mapping extensions 到 `GRDBRecordMappings.swift`。
 - 已完成：第 6 步阶段 B 只读评估，建议下一刀拆 `GRDBLibraryRepository` 的查询 helper 到 `GRDBLibraryRepositoryQuery.swift`。
 - 已完成：第 6 步阶段 C，拆 `GRDBLibraryRepository` 查询 helper 到 `GRDBLibraryRepositoryQuery.swift`。
-- 下一步：优先在 macOS + Xcode/CI 环境确认本轮编译；如继续拆数据层，先重新评估 normalization helper 或 settings/history，暂不直接扩大访问级别。
+- 已完成：第 7 步只读全量评估，已补充剩余大文件拆分路线图。
+- 已完成：第 8 步，批次 A 低风险顶层类型一次性拆分。
+- 下一步：优先在 macOS + Xcode/CI 环境确认本轮编译；如继续拆分，进入批次 B，先重新评估 `ReaderSettingsPresentationHelpers.swift` 的引用和访问级别。
 - 后续每次继续拆分前，先读取本文档的“当前进度”“推荐拆分顺序”和“执行记录”。
 
 ## 推荐拆分顺序
@@ -366,6 +368,92 @@
 - `GRDBLibraryRepository+SearchHistory.swift`：方法短，但拆成 protocol conformance extension 后仍要跨文件访问 `database`，收益小于风险。
 - `GRDBLibraryRepository+TagsGroups.swift` / `+ProgressBookmarks.swift`：会同时牵动 normalization helper、`fetchTag`、`bookNotFoundError()` 等私有 helper，建议等 query helper 稳定后再重新评估。
 
+## 剩余大文件全量路线图（2026-06-06）
+
+本轮只读扫描当前 Swift 文件体量后，超过约 700 行且需要继续关注的文件如下：
+
+| 文件 | 当前行数 | 评估结论 | 风险 |
+| --- | ---: | --- | --- |
+| `Yomink/Presentation/Reader/CollectionReaderViewController.swift` | 约 4599 | 仍是最大文件；只建议先搬底部 ReaderSettings layout/theme 顶层 extension，暂不拆主控制器方法 | 中到高 |
+| `Yomink/Presentation/Library/StorageManagementPage.swift` | 约 1192 | 有大量顶层 private support types，可按模型/扫描器和视图组件分两刀拆 | 低到中 |
+| `Yomink/Presentation/Library/RandomBookPickerPage.swift` | 约 1107 | 尾部 stats/components 已是顶层 private types，可整块搬到组件文件 | 低 |
+| `Yomink/Data/Database/GRDBLibraryRepository.swift` | 约 1077 | 已拆 mappings 和 query helper；下一步只建议拆静态 normalization/helper，暂缓拆 repository 方法组 | 中到高 |
+| `YominkTests/AppDatabaseConstraintsTests.swift` | 约 1059 | 用户已要求跳过测试文件拆分 | 跳过 |
+| `Yomink/Data/Database/AppDatabase.swift` | 约 936 | 迁移和 legacy repair 顺序敏感，继续暂缓 | 高 |
+| `Yomink/Presentation/Reader/ReaderContentsViewController.swift` | 约 832 | 单一目录/书签控制器，结构相对聚合；不作为近期优先项 | 中 |
+| `Yomink/Presentation/Library/LibraryTagsPage.swift` | 约 822 | Tag word cloud 和 tag 子组件可拆，收益明确 | 低到中 |
+| `Yomink/Presentation/Reader/ReaderContentSearchViewController.swift` | 约 782 | 单一搜索控制器，内部 search helper 可拆但优先级低 | 中 |
+| `Yomink/Domain/Services/ImportService.swift` | 约 720 | 顶部 import model 可低风险搬出，但主流程依赖文件协调/iCloud/清理，暂不拆主服务 | 中到高 |
+
+### 推荐后续批次
+
+#### 批次 A：低风险顶层类型搬运
+
+2026-06-06 已完成本批次一次性拆分：
+
+1. `StorageUsageSupport.swift`
+   - 原文件：`Yomink/Presentation/Library/StorageManagementPage.swift`
+   - 搬出：`StorageUsageScanner`、`StorageUsageSnapshot`、`StorageUsageCategory`、`StorageUsageKind`、`StorageDonutSlice`、`StorageBookUsage`、`StorageBookSort`、`StorageBookFilter`、`StorageByteCountFormatter`、`StorageDateFormatter`、`StorageExportPayload`
+   - 选择原因：这些类型位于文件尾部，主要是 scanner、model、sort/filter、formatter 和 export payload，不依赖 `StorageManagementPage` 的私有状态。
+   - 访问级别影响：上述类型从 private 放宽为默认 internal，供 `StorageManagementPage.swift` 和后续组件文件使用。
+
+2. `StorageManagementComponents.swift`
+   - 原文件：`Yomink/Presentation/Library/StorageManagementPage.swift`
+   - 搬出：`StorageUsageChartCard`、`StorageDonutChart`、`StorageLegendRow`、`StorageDashboardCard`、`StorageMetricTile`、`StorageBookManagementCard`、`StorageSortMenu`、`StorageFilterMenu`、`StorageSelectorLabel`、`StorageBookUsageRow`、`StorageBookDetailPage`、`StorageBookDetailRow`、`StorageBookTagsDisplayRow`、`StorageBookActionRow`、`StorageLoadingCard`
+   - 选择原因：这些是页面内部视图组件，已经是连续顶层类型；建议在 support types 拆出并稳定后执行。
+   - 访问级别影响：被 `StorageManagementPage.swift` 直接引用的入口组件需要默认 internal，其余仅组件文件内部使用的类型可继续 private。
+
+3. `RandomBookPickerComponents.swift`
+   - 原文件：`Yomink/Presentation/Library/RandomBookPickerPage.swift`
+   - 搬出：`RandomPickerStatsPage`、`RandomPickerCountedBook`、`RandomPickerRankedBook`、`RandomPickerStatsRow`、`RandomPickerScopeChip`、`RandomPickerBookCard`、`RandomPickerPlaceholderCard`、`RandomPickerHistoryCard`、`RandomPickerCoverView`、`RandomPickerCoverStyle`
+   - 选择原因：这些类型位于主页面之后，边界清晰；主页面只保留抽书状态、动画和数据加载。
+   - 访问级别影响：主页面直接引用的组件需默认 internal；只在新组件文件内部互相使用的类型可继续 private。
+
+4. `LibraryTagsComponents.swift`
+   - 原文件：`Yomink/Presentation/Library/LibraryTagsPage.swift`
+   - 搬出：`LibraryTagListRow`、`TaggedBooksPage`、`TagWordCloudView`、`TagWordCloudUIKitView`、`TagWordCloudPalette`
+   - 选择原因：tag 列表、tagged books 子页面和 word cloud 组件都已是顶层声明，可按组件组搬运。
+   - 访问级别影响：`LibraryTagsPage.swift` 直接引用的入口类型需默认 internal；`TagWordCloudUIKitView` 和 palette 可按组件文件内部依赖尽量保持 private。
+
+#### 批次 B：小收益但可控的辅助声明搬运
+
+5. `ReaderSettingsPresentationHelpers.swift`
+   - 原文件：`Yomink/Presentation/Reader/CollectionReaderViewController.swift`
+   - 搬出：底部 `ReaderSettings.LayoutPreset`、`ReaderSettings`、`ReaderSettings.Theme` layout/theme extension。
+   - 选择原因：这些已经是顶层 extension，不是主控制器方法；可减少 Reader 主控制器尾部杂项。
+   - 风险点：`effectiveLayoutValues` 和 `userInterfaceStyle` 当前被 `CollectionReaderViewController.swift` 调用，搬走后需从 fileprivate 放宽为默认 internal；执行前必须再次用 `rg` 确认引用。
+
+6. `GRDBLibraryRepositoryHelpers.swift`
+   - 原文件：`Yomink/Data/Database/GRDBLibraryRepository.swift`
+   - 搬出：`normalizedGroupName`、`normalizedTagName`、`normalizedBookTitle`、`normalizedOptionalText`、`likePattern(for:)`、`fetchTag(_:, name:)`、`bookNotFoundError()`、`normalizedImportedChapter(_:fallbackSortOrder:)`
+   - 选择原因：这些是静态 helper，不访问 `database` 实例属性；比拆 repository 方法组更稳。
+   - 风险点：多个仓库方法通过 `Self.` 调用，搬到 extension 后 helper 需从 private 放宽为默认 internal。
+
+7. `ImportModels.swift`
+   - 原文件：`Yomink/Domain/Services/ImportService.swift`
+   - 搬出：`ImportBookMetadata`、`ImportBookPreview`、`ImportBatchProgressPhase`、`ImportBatchProgress`、`ImportBatchFailure`、`ImportBatchSummary`
+   - 选择原因：这些模型位于文件顶部，已经是顶层声明，且不依赖 `ImportService` 私有状态。
+   - 风险点：收益较小，只能略微压缩 `ImportService.swift`；主导入流程暂不拆。
+
+#### 批次 C：暂缓或需单独确认的高风险拆分
+
+- `CollectionReaderViewController+*.swift` 主控制器 extension 化：会让大量 private 属性、状态和方法跨文件可见，风险高；除非先有 macOS + Xcode/CI 编译绿灯，否则不建议作为下一批。
+- `GRDBLibraryRepository+SettingsHistory.swift`、`+TagsGroups.swift`、`+ProgressBookmarks.swift`：会迫使 `database`、`settingsLogger` 或多个 repository helper 放宽访问级别，需在 helper 拆分稳定后重新评估。
+- `AppDatabase+Migrations.swift` / `AppDatabase+LegacyChapterRepair.swift`：迁移顺序、修复计划和 `fileStore` 访问敏感，继续暂缓。
+- `ReaderContentsViewController.swift`、`ReaderContentSearchViewController.swift`：虽然超过 700 行，但职责仍比较单一，近期不为行数硬拆。
+- `LibraryView.swift`：剩余主要是主页面组合、drawer 和 preview；不建议为了压缩行数拆 body 逻辑。
+
+### 当前推荐下一刀
+
+批次 A 已完成。下一轮如果用户说“开始拆”，优先进入批次 B，但仍需先重新读取本文档并做引用确认。当前建议先评估并拆：
+
+- `Yomink/Presentation/Reader/CollectionReaderViewController.swift`
+- 新增 `Yomink/Presentation/Reader/ReaderSettingsPresentationHelpers.swift`
+- 只搬底部 `ReaderSettings.LayoutPreset`、`ReaderSettings`、`ReaderSettings.Theme` layout/theme extension
+- 执行前必须用 `rg` 再次确认 `effectiveLayoutValues`、`userInterfaceStyle`、`layoutConfiguration(customValues:)`、`layoutValues` 的引用和访问级别
+- 同步更新 `Yomink.xcodeproj/project.pbxproj`
+- 完成后更新本文档执行记录
+
 ## 验证命令
 
 本地 Windows 环境无法直接完成 iOS Xcode 构建时，应记录“未运行原因”。在 macOS + Xcode 环境中优先运行：
@@ -405,6 +493,8 @@ git -c safe.directory=E:/GithubRepo/Yomink-ios-app status --short
 | 2026-06-06 | 第 6 步阶段 A：拆 GRDB record mappings | `Yomink/Data/Database/GRDBLibraryRepository.swift` | 新增 `Yomink/Data/Database/GRDBRecordMappings.swift`；搬出 `Book.init(row:)`、`BookGroup.init(record:)`、`BookTag.init(row:)`、`BookTagUsage.init(row:)`、`Chapter.init(row:)`、`ReadingProgress.init(row:)`、`Bookmark.init(row:)`、`TextFilterRule.init(row:)`、`SearchHistoryItem.init(row:)`、`ReadingHistoryItem.init(row:)`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | 映射 extensions 从 `private extension` 放宽为默认 internal，供 `GRDBLibraryRepository.swift` 跨文件调用；`Book.rowLogger` 继续保持 private | 已用 `rg` 确认 `GRDBRecordMappings.swift` 已登记到 Xcode project group 和 Sources，并确认映射 init 已移至新文件；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；后续若继续拆 repository 方法，会涉及 `database`、SQL helper、settings logger 等 private 成员访问边界，风险高于本轮映射搬运 |
 | 2026-06-06 | 第 6 步阶段 B 只读评估：下一刀 query helper | `Yomink/Data/Database/GRDBLibraryRepository.swift` | 未改代码；评估映射拆出后的下一刀，建议新增 `GRDBLibraryRepositoryQuery.swift` 并只搬 `BookQuery` 与 `fetchBook(_:, contentHash:)` | 无 | 已用 `rg` 和局部文件读取确认 `BookQuery` / `fetchBook` 的引用范围；确认 settings/history 拆分会更早触碰 `database`、`settingsLogger` 和 JSON 编解码兜底；本轮未改 Swift 代码 | 尚未执行 query helper 拆分；执行时仍需登记 Xcode Sources，并在 macOS + Xcode/CI 编译确认 |
 | 2026-06-06 | 第 6 步阶段 C：拆 GRDB query helper | `Yomink/Data/Database/GRDBLibraryRepository.swift` | 新增 `Yomink/Data/Database/GRDBLibraryRepositoryQuery.swift`；搬出 `BookQuery` 和 `GRDBLibraryRepository.fetchBook(_:, contentHash:)`；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | `BookQuery` 从嵌套 `private enum` 放宽为默认 internal；`fetchBook(_:, contentHash:)` 从 `private static` 放宽为默认 internal static，供 `GRDBLibraryRepository.swift` 继续调用；`BookQuery.orderClause(for:)` 保持 private | 已用 `rg` 确认 `GRDBLibraryRepositoryQuery.swift` 已登记到 Xcode project group 和 Sources，并确认 `BookQuery` / `fetchBook` 已移至新文件；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；后续拆 settings/history 或 repository 方法前需重新评估 `database`、`settingsLogger` 与 normalization helper 的访问边界 |
+| 2026-06-06 | 第 7 步只读评估：剩余大文件全量路线图 | 多个剩余大文件 | 未改 Swift 代码；补充“剩余大文件全量路线图”，按低风险顶层类型搬运、可控辅助声明搬运、高风险暂缓三批规划后续拆分；明确下一刀优先拆 `StorageUsageSupport.swift` | 无 | 已用行数统计扫描当前 Swift 文件体量；已用 `rg` 扫描 `CollectionReaderViewController.swift`、`StorageManagementPage.swift`、`RandomBookPickerPage.swift`、`LibraryTagsPage.swift`、`GRDBLibraryRepository.swift`、`AppDatabase.swift`、`ImportService.swift` 的顶层声明和关键引用 | 尚未执行后续代码拆分；每轮仍需先读本文档、只拆一个原始文件，并在 macOS + Xcode/CI 做最终编译确认 |
+| 2026-06-06 | 第 8 步：批次 A 低风险顶层类型拆分 | `Yomink/Presentation/Library/StorageManagementPage.swift`、`Yomink/Presentation/Library/RandomBookPickerPage.swift`、`Yomink/Presentation/Library/LibraryTagsPage.swift` | 新增 `StorageUsageSupport.swift`、`StorageManagementComponents.swift`、`RandomBookPickerComponents.swift`、`LibraryTagsComponents.swift`；分别搬出 Storage support types、Storage 页面组件、Random picker stats/components、Library tags 子组件；同步更新 `Yomink.xcodeproj/project.pbxproj` source entries | Storage support types 从 private 放宽为默认 internal；`StorageUsageChartCard`、`StorageDashboardCard`、`StorageBookManagementCard`、`StorageLoadingCard` 放宽为默认 internal；`RandomPickerStatsPage`、`RandomPickerScopeChip`、`RandomPickerBookCard`、`RandomPickerPlaceholderCard`、`RandomPickerHistoryCard` 放宽为默认 internal；`LibraryTagListRow`、`TaggedBooksPage`、`TagWordCloudView`、`TagWordCloudUIKitView` 放宽为默认 internal；组件内部细节类型尽量保持 private | 已用 `rg` 确认新文件已登记到 Xcode project group 和 Sources；已用 `rg` 确认主要入口类型只在新文件声明、原页面仅保留引用；`git diff --check` 通过；行尾空白检查通过；`xcodebuild` 在当前 Windows 环境不可用，未运行本地 Xcode 构建 | 需在 macOS + Xcode/CI build 确认编译；本轮一次性移动多个低风险顶层类型，若 CI 报访问级别错误，应按日志只补必要的 internal/fileprivate 调整 |
 
 ## 后续记录模板
 

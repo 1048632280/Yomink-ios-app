@@ -58,6 +58,10 @@
 		C0DE20000000000000001401 /* BookShelfViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001400 /* BookShelfViews.swift */; };
 		C0DE20000000000000001501 /* GlobalBookSearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001500 /* GlobalBookSearchView.swift */; };
 		C0DE20000000000000001601 /* ReadingProgressFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001600 /* ReadingProgressFormatter.swift */; };
+		C0DE20000000000000001701 /* StorageUsageSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001700 /* StorageUsageSupport.swift */; };
+		C0DE20000000000000001801 /* StorageManagementComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001800 /* StorageManagementComponents.swift */; };
+		C0DE20000000000000001901 /* RandomBookPickerComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000001900 /* RandomBookPickerComponents.swift */; };
+		C0DE20000000000000002001 /* LibraryTagsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE20000000000000002000 /* LibraryTagsComponents.swift */; };
 		5687B1CC7E93495893E4D401 /* ReadingProgress.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5687B1CC7E93495893E4D400 /* ReadingProgress.swift */; };
 		5AE7C8317C0F4440A4C4AF01 /* ReaderTextFilter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */; };
 		7B3D9F1C4A2E4F50B8C19A01 /* HostingControllerHomeIndicatorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */; };
@@ -129,6 +133,10 @@
 		C0DE20000000000000001400 /* BookShelfViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookShelfViews.swift; sourceTree = "<group>"; };
 		C0DE20000000000000001500 /* GlobalBookSearchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalBookSearchView.swift; sourceTree = "<group>"; };
 		C0DE20000000000000001600 /* ReadingProgressFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgressFormatter.swift; sourceTree = "<group>"; };
+		C0DE20000000000000001700 /* StorageUsageSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageUsageSupport.swift; sourceTree = "<group>"; };
+		C0DE20000000000000001800 /* StorageManagementComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageManagementComponents.swift; sourceTree = "<group>"; };
+		C0DE20000000000000001900 /* RandomBookPickerComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RandomBookPickerComponents.swift; sourceTree = "<group>"; };
+		C0DE20000000000000002000 /* LibraryTagsComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryTagsComponents.swift; sourceTree = "<group>"; };
 		5687B1CC7E93495893E4D400 /* ReadingProgress.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadingProgress.swift; sourceTree = "<group>"; };
 		5AE7C8317C0F4440A4C4AF00 /* ReaderTextFilter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTextFilter.swift; sourceTree = "<group>"; };
 		7B3D9F1C4A2E4F50B8C19A00 /* HostingControllerHomeIndicatorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostingControllerHomeIndicatorBridge.swift; sourceTree = "<group>"; };
@@ -261,6 +269,10 @@
 				C0DE20000000000000001400 /* BookShelfViews.swift */,
 				C0DE20000000000000001500 /* GlobalBookSearchView.swift */,
 				C0DE20000000000000001600 /* ReadingProgressFormatter.swift */,
+				C0DE20000000000000001700 /* StorageUsageSupport.swift */,
+				C0DE20000000000000001800 /* StorageManagementComponents.swift */,
+				C0DE20000000000000001900 /* RandomBookPickerComponents.swift */,
+				C0DE20000000000000002000 /* LibraryTagsComponents.swift */,
 			);
 			path = Library;
 			sourceTree = "<group>";
@@ -539,6 +551,10 @@
 				C0DE20000000000000001401 /* BookShelfViews.swift in Sources */,
 				C0DE20000000000000001501 /* GlobalBookSearchView.swift in Sources */,
 				C0DE20000000000000001601 /* ReadingProgressFormatter.swift in Sources */,
+				C0DE20000000000000001701 /* StorageUsageSupport.swift in Sources */,
+				C0DE20000000000000001801 /* StorageManagementComponents.swift in Sources */,
+				C0DE20000000000000001901 /* RandomBookPickerComponents.swift in Sources */,
+				C0DE20000000000000002001 /* LibraryTagsComponents.swift in Sources */,
 				A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */,
 				85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */,
 				5A6C90E4D1A9485B8F9A7601 /* SidebarStyle.swift in Sources */,
