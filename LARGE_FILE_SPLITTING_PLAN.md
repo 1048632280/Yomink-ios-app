@@ -69,9 +69,16 @@ Swift 文件概况：
 - 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+Gestures.swift`。
 - 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+AutoRead.swift`。
 - 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+Chrome.swift`。
-- `CollectionReaderViewController.swift` 已从 4,098 行降到 3,027 行。
-- `CollectionReaderViewController+AutoRead.swift` 当前 401 行，包含自动阅读面板、速度、display link、暂停恢复和自动阅读拖拽减速。
-- `CollectionReaderViewController+Chrome.swift` 当前 506 行，包含顶部栏、底部栏、菜单、浮动按钮、主题、状态栏和加载状态。
+- 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+Settings.swift`。
+- 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+Paging.swift`。
+- 已拆出 `Yomink/Presentation/Reader/CollectionReaderViewController+ProgressAndBookmarks.swift`。
+- `CollectionReaderViewController.swift` 已从 4,098 行降到 916 行。
+- `CollectionReaderViewController+AutoRead.swift` 当前 433 行，包含自动阅读面板、速度、display link、暂停恢复和自动阅读拖拽减速。
+- `CollectionReaderViewController+Chrome.swift` 当前 564 行，包含顶部栏、底部栏、菜单、浮动按钮、主题、状态栏和加载状态。
+- `CollectionReaderViewController+Settings.swift` 当前 904 行，包含设置面板、布局调节、开关、设置保存和设置事件。
+- `CollectionReaderViewController+Paging.swift` 当前 1,075 行，包含页面打开、加载、前插/追加、trim、prefetch、布局快照、滚动定位和章节翻页。
+- `CollectionReaderViewController+ProgressAndBookmarks.swift` 当前 387 行，包含进度计算、进度保存、阅读历史、书签状态、书签按钮和进度滑杆事件。
+- 本轮 Settings、Paging、ProgressAndBookmarks 三阶段已完成；主文件仍高于 700 行，后续可继续拆 `Navigation/Lifecycle` 或继续细分过大的 `Paging`、`Settings` 扩展。
 - 为支持扩展文件访问，已将部分原 `private` 成员放宽为模块内访问；后续职责拆稳后可再评估是否用更小的状态对象收回可见性。
 
 当前问题：
@@ -100,10 +107,12 @@ Swift 文件概况：
 4. `CollectionReaderViewController+Settings.swift`
    - 移动设置面板、字号、布局调节、开关、设置保存相关方法。
    - 包括 `configureSettingsPanel`、`layoutAdjustment...`、`settings...Changed`、`saveSettingsImmediately`。
+   - 状态：已完成；代码已拆出、主文件重复定义已移除，并已加入 Xcode Sources。
 
 5. `CollectionReaderViewController+Paging.swift`
    - 移动加载页面、追加/前插、trim、prefetch、滚动定位、页码计算。
    - 包括 `openPage`、`loadPage`、`appendPage`、`prependPage`、`prefetchPagesNearCurrent`。
+   - 状态：已完成；代码已拆出、主文件重复定义已移除，并已加入 Xcode Sources。
 
 6. `CollectionReaderViewController+AutoRead.swift`
    - 移动自动阅读面板、速度、display link、暂停恢复。
@@ -113,6 +122,7 @@ Swift 文件概况：
 7. `CollectionReaderViewController+ProgressAndBookmarks.swift`
    - 移动当前进度、书签状态、进度保存、阅读历史。
    - 包括 `updateCurrentProgress`、`scheduleProgressSave`、`bookmarkButtonTapped`。
+   - 状态：已完成；代码已拆出、主文件重复定义已移除，并已加入 Xcode Sources。
 
 拆分完成判定：
 
@@ -239,4 +249,7 @@ Swift 文件概况：
 | 2026-06-06 | 拆出阅读器自动阅读扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+AutoRead.swift`、`Yomink.xcodeproj/project.pbxproj` | `git diff --check` 通过；确认 AutoRead 新文件已加入 Xcode Sources；静态搜索确认 AutoRead 方法只在扩展中定义；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 3,529 行；AutoRead 扩展 401 行 |
 | 2026-06-06 | 拆出阅读器 Chrome 扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+Chrome.swift`、`Yomink.xcodeproj/project.pbxproj`、`LARGE_FILE_SPLITTING_PLAN.md` | `git diff --check` 通过；静态搜索确认 Chrome 方法只在扩展中定义；确认 Chrome 新文件已加入 Xcode Sources；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 3,027 行；Chrome 扩展 506 行 |
 | 2026-06-06 | 修复 Chrome 拆分后的 UIButton helper 访问级别 | `CollectionReaderViewController.swift`、`LARGE_FILE_SPLITTING_PLAN.md` | 从构建日志确认 `alignImageAboveTitle` 因 `fileprivate` 跨文件不可见；已改为模块内 extension；待重新跑 CI/Xcode 编译确认 | 修复 `CollectionReaderViewController+Chrome.swift` 调用 `alignImageAboveTitle` 的编译错误 |
+| 2026-06-06 | 拆出阅读器 Settings 扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+Settings.swift`、`Yomink.xcodeproj/project.pbxproj`、`LARGE_FILE_SPLITTING_PLAN.md` | `git diff --check` 通过；静态搜索确认 Settings 方法只在扩展中定义；确认 Settings 新文件已加入 Xcode Sources；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 2,197 行；Settings 扩展 834 行 |
+| 2026-06-06 | 拆出阅读器 Paging 扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+Paging.swift`、`Yomink.xcodeproj/project.pbxproj`、`LARGE_FILE_SPLITTING_PLAN.md` | `git diff --check` 通过；静态搜索确认 Paging 方法只在扩展中定义；确认 Paging 新文件已加入 Xcode Sources；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 1,305 行；Paging 扩展 1,075 行 |
+| 2026-06-06 | 拆出阅读器 ProgressAndBookmarks 扩展 | `CollectionReaderViewController.swift`、`CollectionReaderViewController+ProgressAndBookmarks.swift`、`Yomink.xcodeproj/project.pbxproj`、`LARGE_FILE_SPLITTING_PLAN.md` | `git diff --check` 通过；静态搜索确认 ProgressAndBookmarks 方法只在扩展中定义；确认 ProgressAndBookmarks 新文件已加入 Xcode Sources；本环境无 `xcodebuild`/`swift`，未能编译 | 主文件降至 916 行；ProgressAndBookmarks 扩展 387 行 |
 | 2026-06-06 | 建立新的大文件拆分规划和维护规则 | `LARGE_FILE_SPLITTING_PLAN.md` | 文档新增，未改业务代码 | 后续改动前必须读本文档，改动后必须更新本文档 |
