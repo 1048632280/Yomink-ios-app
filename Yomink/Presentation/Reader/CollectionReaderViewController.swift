@@ -123,7 +123,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let horizontalPrefetchDistance = 4
     }
 
-    private static let widgetTimeFormatter: DateFormatter = {
+    static let widgetTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.locale = .current
         formatter.dateFormat = DateFormatter.dateFormat(
