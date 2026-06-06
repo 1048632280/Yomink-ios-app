@@ -9,7 +9,7 @@ let readerLogger = Logger(
     category: "Reader"
 )
 
-private final class ReaderSettingsPanelScrollView: UIScrollView {
+final class ReaderSettingsPanelScrollView: UIScrollView {
     override func touchesShouldCancel(in view: UIView) -> Bool {
         true
     }
@@ -30,11 +30,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let repository: any LibraryRepository
     private let onClose: () -> Void
     private let onStatusBarHiddenChange: (Bool) -> Void
-    private let collectionView: UICollectionView
+    let collectionView: UICollectionView
     private let verticalTopCoverView = UIView()
     private let verticalBottomCoverView = UIView()
-    private let topBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
-    private let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    let topBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
+    let bottomBar = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterial))
     private let titleLabel = UILabel()
     private let bookmarkButton = UIButton(type: .system)
     private let moreButton = UIButton(type: .system)
@@ -46,14 +46,14 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let nextChapterButton = UIButton(type: .system)
     private let catalogButton = UIButton(type: .system)
     private let settingsButton = UIButton(type: .system)
-    private let floatingActionStack = UIStackView()
+    let floatingActionStack = UIStackView()
     private let autoReadButton = UIButton(type: .system)
     private let darkModeButton = UIButton(type: .system)
-    private let autoReadPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    let autoReadPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
     private let autoReadSpeedSlider = UISlider()
     private let autoReadExitButton = UIButton(type: .system)
-    private let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
-    private let settingsPanelScrollView = ReaderSettingsPanelScrollView()
+    let settingsPanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemChromeMaterialDark))
+    let settingsPanelScrollView = ReaderSettingsPanelScrollView()
     private let settingsPanelStack = UIStackView()
     private let settingsFontDecreaseButton = UIButton(type: .system)
     private let settingsFontValueButton = UIButton(type: .system)
@@ -66,7 +66,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private let widgetTimeSwitch = UISwitch()
     private let widgetChapterPageProgressSwitch = UISwitch()
     private let widgetGlobalProgressSwitch = UISwitch()
-    private var settingsControlPanRecognizers: [UIPanGestureRecognizer] = []
+    var settingsControlPanRecognizers: [UIPanGestureRecognizer] = []
     private var settingsControlDragLastY: CGFloat = 0
     private let keepScreenAwakeSwitch = UISwitch()
     private let autoHideHomeIndicatorSwitch = UISwitch()
@@ -380,11 +380,11 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private var chapters: [Chapter] = []
     private var bookmarks: [Bookmark] = []
     private var filterRules: [TextFilterRule] = []
-    private var pages: [CollectionReaderPage] = []
+    var pages: [CollectionReaderPage] = []
     private var currentPage: CollectionReaderPage?
     private var currentProgress: ReadingProgress?
     private var currentBookmark: Bookmark?
-    private var readerSettings = ReaderSettings.default
+    var readerSettings = ReaderSettings.default
     private var settingsQuickMode: SettingsQuickMode = .page
     private var loadTask: Task<Void, Never>?
     private var pageTask: Task<Void, Never>?
@@ -405,26 +405,26 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     // 这样滑动期间 pages 可以持续增长,不会撞到 contentSize 边界翻不动。
     // 头部修剪(trimResidentPagesIfNeeded)在 defer 窗口里被跳过,由 flush 统一补做。
     private var pendingPagePrepends: [CollectionReaderPage] = []
-    private var isMenuVisible = false
-    private var isSettingsPanelVisible = false
-    private var isAutoReading = false
+    var isMenuVisible = false
+    var isSettingsPanelVisible = false
+    var isAutoReading = false
     private var isAutoReadingPausedForBackground = false
     private var isAutoReadingPausedForInteractiveReturn = false
-    private var isAutoReadPanelVisible = false
+    var isAutoReadPanelVisible = false
     private var isTrackingProgressSlider = false
-    private var isApplyingProgrammaticScroll = false
+    var isApplyingProgrammaticScroll = false
     private var didStartOpening = false
     private var didReachEndOfBook = false
     private var isLoadingNextPage = false
-    private var pendingTapTargetPageIndex: Int?
+    var pendingTapTargetPageIndex: Int?
     private var pendingRestoreAbsoluteOffset: Int?
     private var previousBatteryMonitoringEnabled = false
     private var autoReadDisplayLink: CADisplayLink?
-    private var lastAutoReadTimestamp: CFTimeInterval?
+    var lastAutoReadTimestamp: CFTimeInterval?
     private var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
     private var autoReadVelocity: CGFloat = 0
-    private var shouldSuppressNextAutoReadTap = false
-    private weak var autoReadTouchResetGesture: UIGestureRecognizer?
+    var shouldSuppressNextAutoReadTap = false
+    weak var autoReadTouchResetGesture: UIGestureRecognizer?
     private weak var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
     private weak var configuredInteractivePopGesture: UIGestureRecognizer?
     private static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
@@ -435,7 +435,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     private weak var settingsLayoutSection: UIView?
     private weak var settingsMoreSection: UIView?
 
-    private var usesVerticalScrolling: Bool {
+    var usesVerticalScrolling: Bool {
         isAutoReading || readerSettings.pageMode == .scroll
     }
 
@@ -1999,7 +1999,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         openPage(absoluteOffset: offset, generation: pagingGeneration)
     }
 
-    private func loadNextPageIfNeeded(scrollAfterLoading: Bool = false) {
+    func loadNextPageIfNeeded(scrollAfterLoading: Bool = false) {
         guard pageTask == nil,
               !didReachEndOfBook,
               let lastPage = pages.last else {
@@ -2024,7 +2024,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         )
     }
 
-    private func loadPreviousPageIfNeeded(scrollAfterLoading: Bool = false) {
+    func loadPreviousPageIfNeeded(scrollAfterLoading: Bool = false) {
         guard pageTask == nil,
               let firstPage = leadingBoundaryPage(),
               firstPage.startAbsoluteOffset > 0 else {
@@ -2219,7 +2219,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     /// scrollView 静止后统一补做被推迟的两件事:
     /// 1. 头部修剪(append 路径里被跳过的);2. 提交挂起的 prepend。
-    private func flushPendingPageInsertions() {
+    func flushPendingPageInsertions() {
         if !pages.isEmpty,
            let plan = planPrefixTrim() {
             applyPrefixTrim(plan)
@@ -2367,7 +2367,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         currentPage = page
     }
 
-    private func prefetchPagesNearCurrent() {
+    func prefetchPagesNearCurrent() {
         guard let currentPage,
               let index = pages.firstIndex(of: currentPage) else {
             return
@@ -2489,7 +2489,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return layout
     }
 
-    private func displayLayoutForCurrentMode() -> ReaderLayoutConfiguration {
+    func displayLayoutForCurrentMode() -> ReaderLayoutConfiguration {
         var layout = effectiveReaderLayout()
         if usesVerticalScrolling {
             layout.topMargin = 0
@@ -2635,7 +2635,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
     }
 
-    private func setMenuVisible(_ visible: Bool, animated: Bool) {
+    func setMenuVisible(_ visible: Bool, animated: Bool) {
         isMenuVisible = visible
         topBar.isUserInteractionEnabled = visible
         bottomBar.isUserInteractionEnabled = visible
@@ -2674,7 +2674,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
-    private func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
+    func setSettingsPanelVisible(_ visible: Bool, animated: Bool) {
         isSettingsPanelVisible = visible
         settingsPanel.isUserInteractionEnabled = visible
         refreshSystemStatusBarVisibility()
@@ -2700,7 +2700,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
-    private func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
+    func setAutoReadPanelVisible(_ visible: Bool, animated: Bool) {
         isAutoReadPanelVisible = visible
         autoReadPanel.isUserInteractionEnabled = visible
         refreshSystemStatusBarVisibility()
@@ -2844,7 +2844,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
     }
 
-    private func pageWidgetSnapshot(for page: CollectionReaderPage) -> ReaderPageWidgetSnapshot {
+    func pageWidgetSnapshot(for page: CollectionReaderPage) -> ReaderPageWidgetSnapshot {
         ReaderPageWidgetSnapshot(
             chapterTitle: page.containsChapterTitle ? book.title : page.chapterTitle,
             batteryLevel: UIDevice.current.batteryLevel,
@@ -2855,7 +2855,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         )
     }
 
-    private func widgetLayoutConfiguration() -> ReaderWidgetLayoutConfiguration {
+    func widgetLayoutConfiguration() -> ReaderWidgetLayoutConfiguration {
         let values = readerSettings.normalized.effectiveLayoutValues
         return ReaderWidgetLayoutConfiguration(
             horizontalMargin: CGFloat(values.widgetHorizontalMargin),
@@ -3078,7 +3078,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         return currentPage?.startAbsoluteOffset ?? 0
     }
 
-    private func updateCurrentPageFromVisiblePage() {
+    func updateCurrentPageFromVisiblePage() {
         guard let visibleIndex = visiblePageIndex(),
               pages.indices.contains(visibleIndex) else {
             return
@@ -3154,7 +3154,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
     }
 
-    private func verticalExtentForPage(at index: Int) -> CGFloat {
+    func verticalExtentForPage(at index: Int) -> CGFloat {
         guard pages.indices.contains(index) else {
             return verticalContinuousPageHeight()
         }
@@ -3276,7 +3276,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         lastAutoReadTimestamp = nil
     }
 
-    private func finishPageTurn() {
+    func finishPageTurn() {
         flushPendingPageInsertions()
         snapToNearestHorizontalPageIfNeeded()
         updateCurrentPageFromVisiblePage()
@@ -3284,7 +3284,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         scheduleProgressSave()
     }
 
-    private func snapToNearestHorizontalPageIfNeeded() {
+    func snapToNearestHorizontalPageIfNeeded() {
         guard !usesVerticalScrolling,
               !pages.isEmpty,
               let index = visiblePageIndex(),
@@ -3303,7 +3303,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         isApplyingProgrammaticScroll = false
     }
 
-    private func moveToNextPage() {
+    func moveToNextPage() {
         updateCurrentPageFromVisiblePage()
         guard let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage) else {
@@ -3317,7 +3317,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         loadNextPageIfNeeded(scrollAfterLoading: true)
     }
 
-    private func moveToPreviousPage() {
+    func moveToPreviousPage() {
         updateCurrentPageFromVisiblePage()
         guard let currentPage,
               let currentIndex = pages.firstIndex(of: currentPage) else {
@@ -3715,7 +3715,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         }
     }
 
-    private func navigationStackControllerForReader() -> UIViewController? {
+    func navigationStackControllerForReader() -> UIViewController? {
         guard let navigationController else {
             return nil
         }
@@ -3767,7 +3767,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         openPage(absoluteOffset: absolute, generation: pagingGeneration)
     }
 
-    @objc private func closeButtonTapped() {
+    @objc func closeButtonTapped() {
         stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         saveSettingsImmediately()
@@ -4104,97 +4104,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         resetAutoReadVelocityToBaseSpeed()
     }
 
-    @objc private func handleTap(_ gesture: UITapGestureRecognizer) {
-        guard gesture.state == .ended else {
-            return
-        }
-        let location = gesture.location(in: view)
-        if isAutoReading {
-            if shouldSuppressNextAutoReadTap {
-                shouldSuppressNextAutoReadTap = false
-                return
-            }
-            guard !autoReadPanel.frame.contains(location) else {
-                return
-            }
-            guard tapAction(at: location) == .menu else {
-                return
-            }
-            setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
-            return
-        }
-        if isSettingsPanelVisible {
-            guard !settingsPanel.frame.contains(location) else {
-                return
-            }
-            setSettingsPanelVisible(false, animated: true)
-            return
-        }
-
-        if isMenuVisible {
-            guard !topBar.frame.contains(location),
-                  !bottomBar.frame.contains(location),
-                  !floatingActionStack.frame.contains(location) else {
-                return
-            }
-            setMenuVisible(false, animated: true)
-            return
-        }
-
-        switch tapAction(at: location) {
-        case .menu:
-            setMenuVisible(!isMenuVisible, animated: true)
-        case .previousPage:
-            moveToPreviousPage()
-        case .nextPage:
-            moveToNextPage()
-        case .none:
-            break
-        }
-    }
-
-    @objc private func handlePageSwipe(_ gesture: UISwipeGestureRecognizer) {
-        guard gesture.state == .ended,
-              readerSettings.pageMode == .curl,
-              !isMenuVisible,
-              !isSettingsPanelVisible,
-              !isAutoReading else {
-            return
-        }
-        if gesture.direction == .left {
-            moveToNextPage()
-        } else if gesture.direction == .right {
-            moveToPreviousPage()
-        }
-    }
-
-    private func tapAction(at location: CGPoint) -> ReaderSettings.TouchAreaAction {
-        let width = max(view.bounds.width, 1)
-        let height = max(view.bounds.height, 1)
-        let column = min(max(Int(location.x / (width / 3)), 0), 2)
-        let row = min(max(Int(location.y / (height / 3)), 0), 2)
-        let index = row * 3 + column
-        let map = readerSettings.normalized.touchAreaMap
-        guard map.indices.contains(index) else {
-            return ReaderSettings.default.touchAreaMap[index]
-        }
-        return map[index]
-    }
-
-    @objc private func handleEdgeBack(_ gesture: UIScreenEdgePanGestureRecognizer) {
-        guard navigationController == nil,
-              readerSettings.edgeSwipeBackEnabled,
-              gesture.state == .ended else {
-            return
-        }
-        let translation = gesture.translation(in: view)
-        let velocity = gesture.velocity(in: view)
-        guard translation.x > view.bounds.width * 0.18 || velocity.x > 520 else {
-            return
-        }
-        closeButtonTapped()
-    }
-
     @objc private func appDidEnterBackground() {
         pauseAutoReadingForBackground()
         saveProgressImmediately()
@@ -4277,93 +4186,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pushReaderPage(viewController, prefersNavigationBarHidden: true)
     }
 
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        pages.count
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        cellForItemAt indexPath: IndexPath
-    ) -> UICollectionViewCell {
-        guard pages.indices.contains(indexPath.item),
-              let cell = collectionView.dequeueReusableCell(
-                withReuseIdentifier: CollectionReaderPageCell.reuseIdentifier,
-                for: indexPath
-              ) as? CollectionReaderPageCell else {
-            return UICollectionViewCell()
-        }
-        cell.configure(
-            page: pages[indexPath.item],
-            settings: readerSettings.normalized,
-            layout: displayLayoutForCurrentMode(),
-            widgetSnapshot: pageWidgetSnapshot(for: pages[indexPath.item]),
-            widgetLayout: widgetLayoutConfiguration(),
-            showsWidgets: !usesVerticalScrolling
-        )
-        return cell
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        willDisplay cell: UICollectionViewCell,
-        forItemAt indexPath: IndexPath
-    ) {
-        guard collectionView.isDragging || collectionView.isDecelerating || isAutoReading else {
-            return
-        }
-        if indexPath.item <= 1 {
-            loadPreviousPageIfNeeded()
-        }
-        if indexPath.item >= pages.count - 2 {
-            loadNextPageIfNeeded()
-        }
-    }
-
-    func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        guard scrollView === collectionView,
-              !isApplyingProgrammaticScroll else {
-            return
-        }
-        updateCurrentPageFromVisiblePage()
-        if !isAutoReading {
-            prefetchPagesNearCurrent()
-        }
-    }
-
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
-        finishPageTurn()
-        if isAutoReading {
-            lastAutoReadTimestamp = nil
-        }
-    }
-
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
-        finishPageTurn()
-        if isAutoReading {
-            lastAutoReadTimestamp = nil
-        }
-    }
-
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard !decelerate else {
-            return
-        }
-        finishPageTurn()
-        if isAutoReading {
-            lastAutoReadTimestamp = nil
-        }
-    }
-
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
-        flushPendingPageInsertions()
-        snapToNearestHorizontalPageIfNeeded()
-        pendingTapTargetPageIndex = nil
-        updateCurrentPageFromVisiblePage()
-        if isAutoReading {
-            lastAutoReadTimestamp = nil
-        }
-    }
-
     func scrollViewWillEndDragging(
         _ scrollView: UIScrollView,
         withVelocity velocity: CGPoint,
@@ -4392,57 +4214,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             autoReadVelocity = max(releaseSpeed, baseSpeed)
         }
         lastAutoReadTimestamp = nil
-    }
-
-    func collectionView(
-        _ collectionView: UICollectionView,
-        layout collectionViewLayout: UICollectionViewLayout,
-        sizeForItemAt indexPath: IndexPath
-    ) -> CGSize {
-        if usesVerticalScrolling {
-            return CGSize(
-                width: collectionView.bounds.width,
-                height: verticalExtentForPage(at: indexPath.item)
-            )
-        }
-        return collectionView.bounds.size
-    }
-
-    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        if let panGesture = gestureRecognizer as? UIPanGestureRecognizer,
-           settingsControlPanRecognizers.contains(where: { $0 === panGesture }) {
-            let velocity = panGesture.velocity(in: settingsPanelScrollView)
-            return abs(velocity.y) >= abs(velocity.x)
-        }
-        if let interactivePopGesture = navigationController?.interactivePopGestureRecognizer,
-           gestureRecognizer === interactivePopGesture {
-            guard (navigationController?.viewControllers.count ?? 0) > 1 else {
-                return false
-            }
-
-            if let topViewController = navigationController?.topViewController,
-               let readerStackController = navigationStackControllerForReader(),
-               topViewController !== readerStackController {
-                return true
-            }
-
-            return readerSettings.edgeSwipeBackEnabled
-        }
-        if gestureRecognizer is UIScreenEdgePanGestureRecognizer {
-            return navigationController == nil && readerSettings.edgeSwipeBackEnabled
-        }
-        return true
-    }
-
-    func gestureRecognizer(
-        _ gestureRecognizer: UIGestureRecognizer,
-        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
-    ) -> Bool {
-        if gestureRecognizer === autoReadTouchResetGesture
-            || otherGestureRecognizer === autoReadTouchResetGesture {
-            return true
-        }
-        return settingsControlPanRecognizers.contains { $0 === gestureRecognizer || $0 === otherGestureRecognizer }
     }
 
     private static func selectedChapter(
