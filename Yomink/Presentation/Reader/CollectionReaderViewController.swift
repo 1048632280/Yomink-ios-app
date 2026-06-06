@@ -3250,7 +3250,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 }
 
-private extension UIButton {
+extension UIButton {
     func alignImageAboveTitle(spacing: CGFloat) {
         guard let imageView = imageView,
               let titleLabel = titleLabel
