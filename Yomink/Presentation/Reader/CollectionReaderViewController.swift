@@ -318,6 +318,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        HostingControllerHomeIndicatorBridge.ensureInstalledForCurrentlyRegisteredClasses()
+        refreshHomeIndicatorDeferralPreferences()
         navigationController?.setNavigationBarHidden(true, animated: animated)
         restoreNativeInteractivePopGesture()
         bindReaderGesturesToEdgeBackIfNeeded()

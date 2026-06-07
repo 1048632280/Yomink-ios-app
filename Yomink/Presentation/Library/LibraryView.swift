@@ -1029,11 +1029,18 @@ struct LibraryView: View {
 
     private func closeDrawer() {
         guard isDrawerOpen else {
+            activeDrawer = nil
             return
         }
 
         withAnimation(Self.drawerAnimation) {
             isDrawerOpen = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.drawerAnimationDuration) {
+            guard !isDrawerOpen else {
+                return
+            }
+            activeDrawer = nil
         }
     }
 
