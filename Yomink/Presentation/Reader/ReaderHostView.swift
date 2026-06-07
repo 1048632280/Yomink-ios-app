@@ -26,7 +26,7 @@ struct ReaderHostView: UIViewControllerRepresentable {
 
     func makeUIViewController(context: Context) -> CollectionReaderViewController {
         HostingControllerHomeIndicatorBridge.ensureInstalledForCurrentlyRegisteredClasses()
-        CollectionReaderViewController(
+        return CollectionReaderViewController(
             book: book,
             fileStore: fileStore,
             repository: repository,
