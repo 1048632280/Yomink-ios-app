@@ -1,32 +1,56 @@
-# Yomink iOS App
+# Yomink
 
-Yomink is a native iOS TXT reader targeting iOS 15.5 and later. The app is designed as a local-only, lightweight reader with SwiftUI for product screens, UIKit for the high-performance reading surface, GRDB for SQLite storage, and the iOS file system for book content.
+<p align="center">
+  <img src="Yomink/App/Assets.xcassets/AppIcon.appiconset/AppIcon-180.png" width="96" alt="Yomink 图标">
+</p>
 
-## Current Status
+Yomink 是一款模仿香色闺阁 UI 与阅读交互制作的 iOS 纯本地 TXT 阅读器。
 
-The app currently includes the core local reader workflow:
+它去掉了联网能力，只保留本地导入、本地书架、本地阅读与本地数据管理，并加入了一些个人阅读习惯需要的功能。这个项目是纯 vibe coding 产物，目标不是做一个通用阅读平台，而是把自己想用的本地阅读体验一点点堆出来。
 
-- TXT import with UTF-8/GBK/GB2312 decoding and local file storage.
-- Library list/grid views, grouping, sorting, multi-select move/delete/export, and global title search.
-- UIKit reader surface with paged/scroll modes, progress, bookmarks, catalog, content search, filters, reading settings, and auto-read controls.
-- Storage management, reading history, random picker, and app bootstrap retry handling.
-- GRDB-backed local persistence and XCTest coverage for the highest-risk import, reader, database, and storage paths.
-- GitHub Actions workflow for Debug simulator build/test and unsigned Release IPA archive.
+> [!NOTE]
+> 本项目主要面向个人学习与自用场景。香色闺阁的名称、产品与相关权益归其原作者或权利方所有；Yomink 不包含香色闺阁的联网功能。
 
-## Build On GitHub Actions
+## 它是什么
 
-Use the `Build Unsigned IPA` workflow from the Actions tab. It resolves Swift packages, builds the Debug simulator target, runs unit tests, archives the Release app without code signing, and uploads `Yomink-unsigned.ipa` as an artifact.
+- 纯本地 TXT 阅读器，书籍正文、阅读进度、书签、过滤规则、标签和设置都保存在本机。
+- 原生 iOS 应用，使用 SwiftUI 承担书架、设置、表单等页面，UIKit 承担阅读器核心交互与渲染。
+- 本地 SQLite 持久化，基于 GRDB 管理书籍、章节、书签、历史、设置等数据。
+- 导入后会将 TXT 转换为 App 管理的 UTF-8 正文文件，阅读与导出都以本地副本为准。
 
-The resulting IPA is unsigned. It is suitable as a CI build artifact and must be signed before installation on a physical device.
+## 现在能做什么
 
-## Local Verification
+- 从文件导入 TXT，也支持从文件夹批量导入 TXT。
+- 支持 UTF-8、GBK、GB2312 等常见中文 TXT 编码识别与转换。
+- 自动识别章节，识别失败时回落为伪章节，保证文本可以继续阅读。
+- 书架支持列表/网格视图、分组、标签、排序、全局书名搜索和搜索历史。
+- 支持多选移动、删除、反选和 TXT 导出。
+- 阅读器支持阅读进度、章节跳转、目录、书签、内容搜索和内容过滤。
+- 阅读设置支持字号、主题、排版、翻页区域、屏幕常亮、状态栏/小横条隐藏和阅读小部件显示。
+- 支持自动阅读、速度调整、暗黑主题快捷切换。
+- 提供足迹、随机抽取和存储管理等个人使用功能。
 
-Local Windows machines cannot build this project because iOS builds require Xcode on macOS.
+## 纯本地说明
 
-On macOS, run the same core checks before opening a PR:
+Yomink 当前没有业务网络请求入口，也没有集成广告、统计、追踪或崩溃上报 SDK。书籍文件通过系统文件选择器导入，正文会复制到 App 私有目录；导出时使用系统分享面板把本地 TXT 副本交给用户选择的目标。
 
-```sh
-xcodebuild -resolvePackageDependencies -project Yomink.xcodeproj -scheme Yomink
-xcodebuild build -project Yomink.xcodeproj -scheme Yomink -configuration Debug -destination "generic/platform=iOS Simulator" CODE_SIGNING_ALLOWED=NO
-xcodebuild test -project Yomink.xcodeproj -scheme Yomink -configuration Debug -destination "platform=iOS Simulator,name=iPhone 16" CODE_SIGNING_ALLOWED=NO
-```
+项目目前唯一的 Swift Package 依赖是 GRDB，用于本地 SQLite 数据库。
+
+## 当前状态
+
+App 已经具备完整的本地阅读闭环：导入、整理、阅读、搜索、过滤、导出、删除清理和本地持久化都已经打通。
+
+仍然需要继续打磨的是阅读体验的细节一致性、部分翻页方式的完成度，以及更贴近 iOS 系统入口的导入方式。
+
+## TODO
+
+- 完善翻页方式：仿真翻页、上下滚动仍有体验细节需要继续打磨。
+- 实现 iOS 分享面板导入候选：从其他 App 分享 TXT 到 Yomink 并进入导入流程。
+
+## 技术栈
+
+- iOS 15.5+
+- Swift / SwiftUI / UIKit
+- GRDB / SQLite
+- XCTest
+- GitHub Actions unsigned IPA 构建流程
