@@ -30,6 +30,12 @@ extension CollectionReaderViewController {
         }
 
         if isMenuVisible {
+            if isMoreMenuVisible,
+               !moreMenuContainer.frame.contains(location),
+               !moreButton.convert(moreButton.bounds, to: view).contains(location) {
+                setMoreMenuVisible(false, animated: true)
+                return
+            }
             guard !topBar.frame.contains(location),
                   !bottomBar.frame.contains(location),
                   !floatingActionStack.frame.contains(location) else {
@@ -49,6 +55,14 @@ extension CollectionReaderViewController {
         case .none:
             break
         }
+    }
+
+    @objc func handleMoreMenuDismissTap(_ gesture: UITapGestureRecognizer) {
+        guard gesture.state == .ended,
+              isMoreMenuVisible else {
+            return
+        }
+        setMoreMenuVisible(false, animated: true)
     }
 
     @objc func handlePageSwipe(_ gesture: UISwipeGestureRecognizer) {
@@ -94,6 +108,18 @@ extension CollectionReaderViewController {
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === moreMenuDismissTapGesture {
+            guard isMoreMenuVisible else {
+                return false
+            }
+            let location = gestureRecognizer.location(in: view)
+            let isInReaderChrome = topBar.frame.contains(location)
+                || bottomBar.frame.contains(location)
+                || floatingActionStack.frame.contains(location)
+            return isInReaderChrome
+                && !moreMenuContainer.frame.contains(location)
+                && !moreButton.convert(moreButton.bounds, to: view).contains(location)
+        }
         if let panGesture = gestureRecognizer as? UIPanGestureRecognizer,
            settingsControlPanRecognizers.contains(where: { $0 === panGesture }) {
             let velocity = panGesture.velocity(in: settingsPanelScrollView)

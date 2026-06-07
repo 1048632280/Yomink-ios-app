@@ -1098,6 +1098,7 @@ extension CollectionReaderViewController {
     }
 
     @objc func previousChapterButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         stopAutoReading(restoreLayout: true, animated: false)
         guard let index = indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()),
               chapters.indices.contains(index - 1) else {
@@ -1108,6 +1109,7 @@ extension CollectionReaderViewController {
     }
 
     @objc func nextChapterButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         stopAutoReading(restoreLayout: true, animated: false)
         guard let index = indexOfChapter(containingAbsoluteOffset: currentDisplayByteOffset()),
               chapters.indices.contains(index + 1) else {

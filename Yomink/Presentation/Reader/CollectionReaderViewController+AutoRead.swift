@@ -374,6 +374,7 @@ extension CollectionReaderViewController {
     }
 
     @objc func autoReadButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         if isAutoReading {
             setAutoReadPanelVisible(!isAutoReadPanelVisible, animated: true)
         } else {

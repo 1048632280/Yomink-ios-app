@@ -263,6 +263,7 @@ extension CollectionReaderViewController {
     }
 
     @objc func bookmarkButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         guard let currentProgress,
               let chapter = chapter(containingAbsoluteOffset: currentDisplayByteOffset()) else {
             return

@@ -33,6 +33,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     let titleLabel = UILabel()
     let bookmarkButton = UIButton(type: .system)
     let moreButton = UIButton(type: .system)
+    let moreMenuContainer = UIView()
+    let moreMenuStack = UIStackView()
     let progressLabel = UILabel()
     let progressSlider = ReaderProgressSlider()
     let progressTooltipView = UIView()
@@ -107,6 +109,12 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
         static let floatingButtonBottomInset: CGFloat = 20
+        static let moreMenuWidth: CGFloat = 188
+        static let moreMenuRowHeight: CGFloat = 46
+        static let moreMenuTopSpacing: CGFloat = 6
+        static let moreMenuTrailingInset: CGFloat = 12
+        static let moreMenuCornerRadius: CGFloat = 8
+        static let moreMenuHorizontalInset: CGFloat = 18
         static let settingsPanelContentHeight: CGFloat = 315
         static let settingsPanelHorizontalInset: CGFloat = 20
         static let settingsPanelTopInset: CGFloat = 22
@@ -183,6 +191,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     // 头部修剪(trimResidentPagesIfNeeded)在 defer 窗口里被跳过,由 flush 统一补做。
     var pendingPagePrepends: [CollectionReaderPage] = []
     var isMenuVisible = false
+    var isMoreMenuVisible = false
     var isSettingsPanelVisible = false
     var isAutoReading = false
     var isAutoReadingPausedForBackground = false
@@ -202,6 +211,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     var autoReadVelocity: CGFloat = 0
     var shouldSuppressNextAutoReadTap = false
     weak var autoReadTouchResetGesture: UIGestureRecognizer?
+    weak var moreMenuDismissTapGesture: UIGestureRecognizer?
     private weak var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
     private weak var configuredInteractivePopGesture: UIGestureRecognizer?
     static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
@@ -449,6 +459,15 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         tapGesture.delegate = self
         collectionView.addGestureRecognizer(tapGesture)
 
+        let moreMenuDismissTapGesture = UITapGestureRecognizer(
+            target: self,
+            action: #selector(handleMoreMenuDismissTap(_:))
+        )
+        moreMenuDismissTapGesture.cancelsTouchesInView = false
+        moreMenuDismissTapGesture.delegate = self
+        view.addGestureRecognizer(moreMenuDismissTapGesture)
+        self.moreMenuDismissTapGesture = moreMenuDismissTapGesture
+
         let autoReadTouchResetGesture = UILongPressGestureRecognizer(
             target: self,
             action: #selector(handleAutoReadTouchReset(_:))
@@ -643,37 +662,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
             : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
-    func makeMoreMenu() -> UIMenu {
-        UIMenu(
-            children: [
-                UIAction(
-                    title: NSLocalizedString("reader.more.bookDetail", comment: ""),
-                    image: UIImage(systemName: "book")
-                ) { [weak self] _ in
-                    self?.showBookDetail()
-                },
-                UIAction(
-                    title: NSLocalizedString("reader.more.contentSearch", comment: ""),
-                    image: UIImage(systemName: "magnifyingglass")
-                ) { [weak self] _ in
-                    self?.showContentSearch()
-                },
-                UIAction(
-                    title: NSLocalizedString("reader.more.contentFilter", comment: ""),
-                    image: UIImage(systemName: "line.3.horizontal.decrease.circle")
-                ) { [weak self] _ in
-                    self?.showFilterRules()
-                },
-                UIAction(
-                    title: NSLocalizedString("reader.more.pageTouchAreas", comment: ""),
-                    image: UIImage(systemName: "square.grid.3x3")
-                ) { [weak self] _ in
-                    self?.showPageTouchAreas()
-                }
-            ]
-        )
-    }
-
     private func pushReaderPage(
         _ viewController: UIViewController,
         prefersNavigationBarHidden: Bool = false
@@ -763,6 +751,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     @objc func closeButtonTapped() {
+        setMoreMenuVisible(false, animated: false)
         stopAutoReading(restoreLayout: false, animated: false)
         saveProgressImmediately()
         saveSettingsImmediately()
@@ -770,6 +759,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     }
 
     @objc func catalogButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         stopAutoReading(restoreLayout: true, animated: false)
         saveProgressImmediately()
         let listViewController = ReaderContentsViewController(
@@ -801,7 +791,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         refreshHomeIndicatorDeferralPreferencesOnNextRunLoop()
     }
 
-    @objc private func showBookDetail() {
+    @objc func showBookDetail() {
         stopAutoReading(restoreLayout: true, animated: false)
         saveProgressImmediately()
         let detailViewController = ReaderBookDetailViewController(
@@ -832,7 +822,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pushReaderPage(detailViewController)
     }
 
-    @objc private func showContentSearch() {
+    @objc func showContentSearch() {
         stopAutoReading(restoreLayout: true, animated: false)
         let searchViewController = ReaderContentSearchViewController(
             book: book,
@@ -849,7 +839,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pushReaderPage(searchViewController)
     }
 
-    @objc private func showFilterRules() {
+    @objc func showFilterRules() {
         stopAutoReading(restoreLayout: true, animated: false)
         let filterViewController = ReaderFilterRulesViewController(
             bookID: book.id,
@@ -866,7 +856,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         pushReaderPage(filterViewController)
     }
 
-    @objc private func showPageTouchAreas() {
+    @objc func showPageTouchAreas() {
         stopAutoReading(restoreLayout: true, animated: false)
         let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
             self?.applyReaderSettings(settings)

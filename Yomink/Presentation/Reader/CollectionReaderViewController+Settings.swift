@@ -770,6 +770,7 @@ extension CollectionReaderViewController {
     }
 
     @objc func settingsButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         stopAutoReading(restoreLayout: true, animated: false)
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(true, animated: true)

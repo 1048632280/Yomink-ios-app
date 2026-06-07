@@ -32,6 +32,7 @@ extension CollectionReaderViewController {
             topBar,
             bottomBar,
             floatingActionStack,
+            moreMenuContainer,
             settingsPanel,
             autoReadPanel,
             loadingIndicator
@@ -54,9 +55,11 @@ extension CollectionReaderViewController {
         configureBottomBar()
         configureProgressTooltip()
         configureFloatingActionButtons()
+        configureMoreMenu()
         configureSettingsPanel()
         configureAutoReadPanel()
         setMenuVisible(false, animated: false)
+        setMoreMenuVisible(false, animated: false)
         setSettingsPanelVisible(false, animated: false)
         setAutoReadPanelVisible(false, animated: false)
     }
@@ -91,8 +94,7 @@ extension CollectionReaderViewController {
         moreButton.setImage(UIImage(systemName: "ellipsis"), for: .normal)
         moreButton.tintColor = MenuStyle.primaryTextColor
         moreButton.accessibilityLabel = NSLocalizedString("reader.more", comment: "")
-        moreButton.showsMenuAsPrimaryAction = true
-        moreButton.menu = makeMoreMenu()
+        moreButton.addTarget(self, action: #selector(moreButtonTapped), for: .touchUpInside)
         moreButton.translatesAutoresizingMaskIntoConstraints = false
 
         let actionStack = UIStackView(arrangedSubviews: [bookmarkButton, moreButton])
@@ -366,6 +368,89 @@ extension CollectionReaderViewController {
         button.translatesAutoresizingMaskIntoConstraints = false
     }
 
+    func configureMoreMenu() {
+        moreMenuContainer.backgroundColor = MenuStyle.barBackgroundColor
+        moreMenuContainer.layer.cornerRadius = Layout.moreMenuCornerRadius
+        moreMenuContainer.layer.masksToBounds = true
+        moreMenuContainer.layer.borderColor = MenuStyle.separatorColor.cgColor
+        moreMenuContainer.layer.borderWidth = 1
+        moreMenuContainer.alpha = 0
+        moreMenuContainer.isHidden = true
+        moreMenuContainer.isUserInteractionEnabled = false
+        moreMenuContainer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(moreMenuContainer)
+
+        moreMenuStack.axis = .vertical
+        moreMenuStack.alignment = .fill
+        moreMenuStack.distribution = .fill
+        moreMenuStack.spacing = 0
+        moreMenuStack.translatesAutoresizingMaskIntoConstraints = false
+        moreMenuContainer.addSubview(moreMenuStack)
+
+        let items: [(titleKey: String, action: Selector)] = [
+            ("reader.more.bookDetail", #selector(moreBookDetailButtonTapped)),
+            ("reader.more.contentSearch", #selector(moreContentSearchButtonTapped)),
+            ("reader.more.contentFilter", #selector(moreContentFilterButtonTapped)),
+            ("reader.more.pageTouchAreas", #selector(morePageTouchAreasButtonTapped))
+        ]
+        let separatorCount = max(items.count - 1, 0)
+        let menuHeight = CGFloat(items.count) * Layout.moreMenuRowHeight
+            + CGFloat(separatorCount)
+
+        for (index, item) in items.enumerated() {
+            let button = makeMoreMenuButton(titleKey: item.titleKey, action: item.action)
+            moreMenuStack.addArrangedSubview(button)
+            button.heightAnchor.constraint(equalToConstant: Layout.moreMenuRowHeight).isActive = true
+
+            guard index < items.count - 1 else {
+                continue
+            }
+            let separator = makeHorizontalMenuSeparator()
+            moreMenuStack.addArrangedSubview(separator)
+            separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        }
+
+        NSLayoutConstraint.activate([
+            moreMenuContainer.topAnchor.constraint(
+                equalTo: topBar.bottomAnchor,
+                constant: Layout.moreMenuTopSpacing
+            ),
+            moreMenuContainer.trailingAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.trailingAnchor,
+                constant: -Layout.moreMenuTrailingInset
+            ),
+            moreMenuContainer.widthAnchor.constraint(equalToConstant: Layout.moreMenuWidth),
+            moreMenuContainer.heightAnchor.constraint(equalToConstant: menuHeight),
+
+            moreMenuStack.leadingAnchor.constraint(equalTo: moreMenuContainer.leadingAnchor),
+            moreMenuStack.trailingAnchor.constraint(equalTo: moreMenuContainer.trailingAnchor),
+            moreMenuStack.topAnchor.constraint(equalTo: moreMenuContainer.topAnchor),
+            moreMenuStack.bottomAnchor.constraint(equalTo: moreMenuContainer.bottomAnchor)
+        ])
+    }
+
+    func makeMoreMenuButton(titleKey: String, action: Selector) -> UIButton {
+        let button = UIButton(type: .system)
+        button.setTitle(NSLocalizedString(titleKey, comment: ""), for: .normal)
+        button.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        button.titleLabel?.adjustsFontForContentSizeCategory = true
+        button.titleLabel?.lineBreakMode = .byTruncatingTail
+        button.contentHorizontalAlignment = .leading
+        button.contentEdgeInsets = UIEdgeInsets(
+            top: 0,
+            left: Layout.moreMenuHorizontalInset,
+            bottom: 0,
+            right: Layout.moreMenuHorizontalInset
+        )
+        button.tintColor = MenuStyle.primaryTextColor
+        button.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
+        button.setTitleColor(.white, for: .highlighted)
+        button.backgroundColor = MenuStyle.barBackgroundColor
+        button.addTarget(self, action: action, for: .touchUpInside)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
     func addMenuOverlay(to visualEffectView: UIVisualEffectView) {
         let overlayView = UIView()
         overlayView.backgroundColor = MenuStyle.barBackgroundColor
@@ -543,6 +628,9 @@ extension CollectionReaderViewController {
     }
 
     func setMenuVisible(_ visible: Bool, animated: Bool) {
+        if !visible {
+            setMoreMenuVisible(false, animated: animated)
+        }
         isMenuVisible = visible
         topBar.isUserInteractionEnabled = visible
         bottomBar.isUserInteractionEnabled = visible
@@ -581,6 +669,54 @@ extension CollectionReaderViewController {
             : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
+    func setMoreMenuVisible(_ visible: Bool, animated: Bool) {
+        guard isMoreMenuVisible != visible || moreMenuContainer.isHidden == visible else {
+            return
+        }
+
+        isMoreMenuVisible = visible
+        moreMenuContainer.isUserInteractionEnabled = visible
+        moreButton.isSelected = visible
+        moreButton.tintColor = visible ? .white : MenuStyle.primaryTextColor
+
+        if visible {
+            moreMenuContainer.isHidden = false
+            moreMenuContainer.alpha = 0
+            moreMenuContainer.transform = CGAffineTransform(scaleX: 0.96, y: 0.96)
+                .translatedBy(x: 4, y: -4)
+            refreshReaderOverlayOrdering()
+        }
+
+        let animations = {
+            self.moreMenuContainer.alpha = visible ? 1 : 0
+            self.moreMenuContainer.transform = visible
+                ? .identity
+                : CGAffineTransform(scaleX: 0.96, y: 0.96).translatedBy(x: 4, y: -4)
+        }
+        let completion: (Bool) -> Void = { _ in
+            guard !visible,
+                  !self.isMoreMenuVisible else {
+                return
+            }
+            self.moreMenuContainer.isHidden = true
+            self.moreMenuContainer.transform = .identity
+            self.moreMenuContainer.isUserInteractionEnabled = false
+        }
+
+        if animated {
+            UIView.animate(
+                withDuration: 0.18,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: animations,
+                completion: completion
+            )
+        } else {
+            animations()
+            completion(true)
+        }
+    }
+
     func showLoading(_ isLoading: Bool) {
         if isLoading {
             loadingIndicator.startAnimating()
@@ -590,8 +726,34 @@ extension CollectionReaderViewController {
     }
 
     @objc func darkModeButtonTapped() {
+        setMoreMenuVisible(false, animated: true)
         var settings = readerSettings
         settings.theme = settings.theme == .dark ? .white : .dark
         applyReaderSettings(settings)
+    }
+
+    @objc func moreButtonTapped() {
+        setMoreMenuVisible(!isMoreMenuVisible, animated: true)
+    }
+
+    @objc func moreBookDetailButtonTapped() {
+        performMoreMenuAction { showBookDetail() }
+    }
+
+    @objc func moreContentSearchButtonTapped() {
+        performMoreMenuAction { showContentSearch() }
+    }
+
+    @objc func moreContentFilterButtonTapped() {
+        performMoreMenuAction { showFilterRules() }
+    }
+
+    @objc func morePageTouchAreasButtonTapped() {
+        performMoreMenuAction { showPageTouchAreas() }
+    }
+
+    func performMoreMenuAction(_ action: () -> Void) {
+        setMenuVisible(false, animated: true)
+        action()
     }
 }
