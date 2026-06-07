@@ -313,6 +313,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         // 二次扫描 hosting controller 子类: App 启动时部分 SwiftUI hosting
         // controller 还未实例化,这里兜底覆盖在 reader 显示前才生成的新泛型类。
         HostingControllerHomeIndicatorBridge.ensureInstalledForCurrentlyRegisteredClasses()
+        refreshHomeIndicatorDeferralPreferencesOnNextRunLoop()
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -795,6 +796,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     @objc private func appDidBecomeActive() {
         resumeAutoReadingAfterBackgroundIfNeeded()
+        refreshHomeIndicatorDeferralPreferencesOnNextRunLoop()
     }
 
     @objc private func showBookDetail() {

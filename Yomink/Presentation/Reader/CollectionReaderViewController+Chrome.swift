@@ -505,8 +505,41 @@ extension CollectionReaderViewController {
         navigationController?.setNeedsStatusBarAppearanceUpdate()
 
         // 强制系统重新读取小横条隐藏状态和边缘手势延迟设置
-        setNeedsUpdateOfHomeIndicatorAutoHidden()
-        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        refreshHomeIndicatorDeferralPreferences()
+    }
+
+    func refreshHomeIndicatorDeferralPreferences() {
+        var controllers: [UIViewController] = [self]
+
+        if let navigationController {
+            controllers.append(navigationController)
+        }
+
+        var ancestor = parent
+        while let current = ancestor {
+            controllers.append(current)
+            ancestor = current.parent
+        }
+
+        if let rootViewController = view.window?.rootViewController {
+            controllers.append(rootViewController)
+        }
+
+        var visited = Set<ObjectIdentifier>()
+        for controller in controllers {
+            guard visited.insert(ObjectIdentifier(controller)).inserted else {
+                continue
+            }
+            controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
+            controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        }
+    }
+
+    func refreshHomeIndicatorDeferralPreferencesOnNextRunLoop() {
+        refreshHomeIndicatorDeferralPreferences()
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshHomeIndicatorDeferralPreferences()
+        }
     }
 
     func setMenuVisible(_ visible: Bool, animated: Bool) {

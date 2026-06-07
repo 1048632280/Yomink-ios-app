@@ -11,7 +11,7 @@ import ObjectiveC
 ///
 /// 1. `childForHomeIndicatorAutoHidden` /
 ///    `childForScreenEdgesDeferringSystemGestures`
-///    返回 `presentedViewController` 或 `children.last`,
+///    返回 `presentedViewController`、导航控制器当前页或 `children.last`,
 ///    打通从 root 到内层 UIKit VC 的 child 查询链。
 ///
 /// 2. `preferredScreenEdgesDeferringSystemGestures` getter 本身
@@ -112,17 +112,11 @@ enum HostingControllerHomeIndicatorBridge {
 /// hosting controller 实例。
 private final class HostingHomeIndicatorBridgeDonor: UIViewController {
     @objc func bridge_childForHomeIndicatorAutoHidden() -> UIViewController? {
-        if let presented = presentedViewController, !presented.isBeingDismissed {
-            return presented
-        }
-        return children.last
+        Self.nextHomeIndicatorController(from: self)
     }
 
     @objc func bridge_childForScreenEdgesDeferringSystemGestures() -> UIViewController? {
-        if let presented = presentedViewController, !presented.isBeingDismissed {
-            return presented
-        }
-        return children.last
+        Self.nextHomeIndicatorController(from: self)
     }
 
     @objc func bridge_preferredScreenEdgesDeferringSystemGestures() -> UIRectEdge {
@@ -131,22 +125,32 @@ private final class HostingHomeIndicatorBridgeDonor: UIViewController {
         return tail.preferredScreenEdgesDeferringSystemGestures
     }
 
-    /// 沿 `presentedViewController`(优先)或 `children.last` 一路向下,
-    /// 直到没有更深层的 VC 为止。`visited` 防止循环引用。
+    /// 沿 `presentedViewController`(优先)、导航控制器当前页或 `children.last`
+    /// 一路向下,直到没有更深层的 VC 为止。`visited` 防止循环引用。
     private static func findChainTail(from start: UIViewController) -> UIViewController {
         var current: UIViewController = start
         var visited: Set<ObjectIdentifier> = [ObjectIdentifier(current)]
         while true {
-            let next: UIViewController?
-            if let presented = current.presentedViewController, !presented.isBeingDismissed {
-                next = presented
-            } else {
-                next = current.children.last
-            }
+            let next = nextHomeIndicatorController(from: current)
             guard let n = next else { return current }
             let id = ObjectIdentifier(n)
             if visited.insert(id).inserted == false { return current }
             current = n
         }
+    }
+
+    private static func nextHomeIndicatorController(from controller: UIViewController) -> UIViewController? {
+        if let presented = controller.presentedViewController,
+           !presented.isBeingDismissed {
+            return presented
+        }
+
+        if let navigationController = controller as? UINavigationController {
+            return navigationController.visibleViewController
+                ?? navigationController.topViewController
+                ?? navigationController.children.last
+        }
+
+        return controller.children.last
     }
 }

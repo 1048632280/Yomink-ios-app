@@ -632,8 +632,6 @@ extension CollectionReaderViewController {
         let normalized = readerSettings.normalized
         UIApplication.shared.isIdleTimerDisabled = normalized.keepScreenAwake
         refreshSystemStatusBarVisibility()
-        setNeedsUpdateOfHomeIndicatorAutoHidden()
-        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         settingsPageModeControl.selectedSegmentIndex = normalized.pageMode.settingsPageTurnIndex
         settingsThemeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases.firstIndex(of: normalized.theme) ?? 0
         settingsLayoutPresetControl.selectedSegmentIndex = ReaderSettings.LayoutPreset.allCases.firstIndex(of: normalized.layoutPreset) ?? 0
