@@ -112,7 +112,7 @@ extension ReaderSettings.Theme {
         case .paper:
             return UIColor(red: 0.97, green: 0.94, blue: 0.86, alpha: 1)
         case .dark:
-            return UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
+            return UIColor(red: 22 / 255, green: 22 / 255, blue: 22 / 255, alpha: 1)
         }
     }
 
@@ -125,7 +125,7 @@ extension ReaderSettings.Theme {
         case .paper:
             return UIColor(red: 0.18, green: 0.13, blue: 0.08, alpha: 1)
         case .dark:
-            return UIColor(red: 0.88, green: 0.88, blue: 0.86, alpha: 1)
+            return UIColor(red: 147 / 255, green: 151 / 255, blue: 158 / 255, alpha: 1)
         }
     }
 
@@ -134,7 +134,7 @@ extension ReaderSettings.Theme {
         case .white:
             return UIColor(red: 176 / 255, green: 176 / 255, blue: 176 / 255, alpha: 1)
         case .dark:
-            return UIColor(red: 0.70, green: 0.70, blue: 0.68, alpha: 1)
+            return UIColor(red: 109 / 255, green: 113 / 255, blue: 121 / 255, alpha: 1)
         default:
             return .secondaryLabel
         }
