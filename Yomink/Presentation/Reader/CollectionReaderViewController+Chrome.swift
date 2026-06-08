@@ -541,8 +541,9 @@ extension CollectionReaderViewController {
 
     func updateVerticalContentCovers() {
         let insets = usesVerticalScrolling ? verticalContinuousInsets() : .zero
-        verticalTopCoverView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalBottomCoverView.backgroundColor = readerSettings.theme.backgroundColor
+        let coverColor = readerSettings.theme.obscuringBackgroundColor
+        verticalTopCoverView.backgroundColor = coverColor
+        verticalBottomCoverView.backgroundColor = coverColor
         verticalTopCoverView.isHidden = insets.top <= 0
         verticalBottomCoverView.isHidden = insets.bottom <= 0
         verticalTopCoverView.frame = CGRect(
@@ -563,9 +564,11 @@ extension CollectionReaderViewController {
     func applyTheme() {
         overrideUserInterfaceStyle = readerSettings.theme.userInterfaceStyle
         view.backgroundColor = readerSettings.theme.backgroundColor
-        collectionView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalTopCoverView.backgroundColor = readerSettings.theme.backgroundColor
-        verticalBottomCoverView.backgroundColor = readerSettings.theme.backgroundColor
+        backgroundTextureView.backgroundColor = readerSettings.theme.obscuringBackgroundColor
+        collectionView.backgroundColor = .clear
+        let coverColor = readerSettings.theme.obscuringBackgroundColor
+        verticalTopCoverView.backgroundColor = coverColor
+        verticalBottomCoverView.backgroundColor = coverColor
         fixedWidgetOverlay.backgroundColor = .clear
         loadingIndicator.color = readerSettings.theme.secondaryTextColor
         progressLabel.textColor = readerSettings.theme.secondaryTextColor

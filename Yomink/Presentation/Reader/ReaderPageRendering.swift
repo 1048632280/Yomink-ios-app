@@ -263,7 +263,10 @@ final class CollectionReaderPageCell: UICollectionViewCell {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        contentView.backgroundColor = .systemBackground
+        backgroundColor = .clear
+        isOpaque = false
+        contentView.backgroundColor = .clear
+        contentView.isOpaque = false
         pageView.translatesAutoresizingMaskIntoConstraints = false
         widgetOverlay.translatesAutoresizingMaskIntoConstraints = false
         widgetOverlay.isUserInteractionEnabled = false
@@ -289,11 +292,15 @@ final class CollectionReaderPageCell: UICollectionViewCell {
 
     override func prepareForReuse() {
         super.prepareForReuse()
+        backgroundColor = .clear
+        isOpaque = false
+        contentView.backgroundColor = .clear
+        contentView.isOpaque = false
         pageView.configure(
             attributedText: NSAttributedString(string: ""),
             layout: CollectionReaderPaginator.withDisabledWidgets(ReaderSettings.default)
                 .effectiveLayoutConfiguration,
-            backgroundColor: ReaderSettings.default.theme.backgroundColor
+            backgroundColor: .clear
         )
         widgetOverlay.isHidden = true
     }
@@ -306,12 +313,18 @@ final class CollectionReaderPageCell: UICollectionViewCell {
         widgetLayout: ReaderWidgetLayoutConfiguration,
         showsWidgets: Bool
     ) {
-        let backgroundColor = settings.theme.backgroundColor
-        contentView.backgroundColor = backgroundColor
+        let usesBackgroundTexture = settings.theme.backgroundTextureColor != nil
+        let pageBackgroundColor = usesBackgroundTexture
+            ? .clear
+            : settings.theme.backgroundColor
+        backgroundColor = .clear
+        isOpaque = false
+        contentView.backgroundColor = pageBackgroundColor
+        contentView.isOpaque = !usesBackgroundTexture
         pageView.configure(
             attributedText: page.attributedText,
             layout: showsWidgets ? page.contentLayout : layout,
-            backgroundColor: backgroundColor
+            backgroundColor: pageBackgroundColor
         )
         widgetOverlay.isHidden = !showsWidgets
         if showsWidgets {
@@ -330,7 +343,8 @@ private final class CollectionCoreTextPageView: UIView {
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        isOpaque = true
+        isOpaque = false
+        backgroundColor = .clear
         contentMode = .redraw
     }
 
@@ -347,6 +361,7 @@ private final class CollectionCoreTextPageView: UIView {
         self.attributedText = attributedText
         self.layout = layout
         self.backgroundColor = backgroundColor
+        isOpaque = !backgroundColor.isEqual(UIColor.clear)
         setNeedsDisplay()
     }
 

@@ -25,6 +25,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     let repository: any LibraryRepository
     private let onClose: () -> Void
     let onStatusBarHiddenChange: (Bool) -> Void
+    let backgroundTextureView = UIView()
     let collectionView: UICollectionView
     let verticalTopCoverView = UIView()
     let verticalBottomCoverView = UIView()
@@ -311,6 +312,7 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         super.viewDidLoad()
         previousBatteryMonitoringEnabled = UIDevice.current.isBatteryMonitoringEnabled
         UIDevice.current.isBatteryMonitoringEnabled = true
+        configureBackgroundTextureView()
         configureCollectionView()
         configureVerticalContentCovers()
         configureFixedWidgetOverlay()
@@ -424,9 +426,23 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         startInitialLoad()
     }
 
+    private func configureBackgroundTextureView() {
+        backgroundTextureView.translatesAutoresizingMaskIntoConstraints = false
+        backgroundTextureView.isUserInteractionEnabled = false
+        backgroundTextureView.isOpaque = false
+        view.addSubview(backgroundTextureView)
+        NSLayoutConstraint.activate([
+            backgroundTextureView.topAnchor.constraint(equalTo: view.topAnchor),
+            backgroundTextureView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backgroundTextureView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            backgroundTextureView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
     private func configureCollectionView() {
         collectionView.translatesAutoresizingMaskIntoConstraints = false
-        collectionView.backgroundColor = readerSettings.theme.backgroundColor
+        collectionView.backgroundColor = .clear
+        collectionView.isOpaque = false
         collectionView.isPagingEnabled = true
         collectionView.showsHorizontalScrollIndicator = false
         collectionView.showsVerticalScrollIndicator = false

@@ -106,7 +106,7 @@ extension ReaderSettings.Theme {
     var backgroundColor: UIColor {
         switch self {
         case .white:
-            return .systemBackground
+            return UIColor(red: 249 / 255, green: 249 / 255, blue: 249 / 255, alpha: 1)
         case .eyeCare:
             return UIColor(red: 0.92, green: 0.97, blue: 0.90, alpha: 1)
         case .paper:
@@ -119,7 +119,7 @@ extension ReaderSettings.Theme {
     var textColor: UIColor {
         switch self {
         case .white:
-            return .label
+            return UIColor(red: 62 / 255, green: 62 / 255, blue: 62 / 255, alpha: 1)
         case .eyeCare:
             return UIColor(red: 0.11, green: 0.18, blue: 0.12, alpha: 1)
         case .paper:
@@ -131,11 +131,29 @@ extension ReaderSettings.Theme {
 
     var secondaryTextColor: UIColor {
         switch self {
+        case .white:
+            return UIColor(red: 176 / 255, green: 176 / 255, blue: 176 / 255, alpha: 1)
         case .dark:
             return UIColor(red: 0.70, green: 0.70, blue: 0.68, alpha: 1)
         default:
             return .secondaryLabel
         }
+    }
+
+    var backgroundTextureColor: UIColor? {
+        switch self {
+        case .white:
+            guard let image = UIImage(named: "theme_bg5") else {
+                return nil
+            }
+            return UIColor(patternImage: image)
+        default:
+            return nil
+        }
+    }
+
+    var obscuringBackgroundColor: UIColor {
+        backgroundTextureColor ?? backgroundColor
     }
 
     var userInterfaceStyle: UIUserInterfaceStyle {
