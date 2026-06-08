@@ -28,6 +28,7 @@ extension CollectionReaderViewController {
             verticalTopCoverView,
             verticalBottomCoverView,
             fixedWidgetOverlay,
+            textSelectionOverlay,
             progressTooltipView,
             topBar,
             bottomBar,
@@ -629,6 +630,9 @@ extension CollectionReaderViewController {
 
     func setMenuVisible(_ visible: Bool, animated: Bool) {
         if !visible {
+            clearTextSelection()
+        }
+        if !visible {
             setMoreMenuVisible(false, animated: animated)
         }
         isMenuVisible = visible
@@ -670,6 +674,9 @@ extension CollectionReaderViewController {
     }
 
     func setMoreMenuVisible(_ visible: Bool, animated: Bool) {
+        if visible {
+            clearTextSelection()
+        }
         guard isMoreMenuVisible != visible || moreMenuContainer.isHidden == visible else {
             return
         }
@@ -753,6 +760,7 @@ extension CollectionReaderViewController {
     }
 
     func performMoreMenuAction(_ action: () -> Void) {
+        clearTextSelection()
         setMenuVisible(false, animated: true)
         action()
     }

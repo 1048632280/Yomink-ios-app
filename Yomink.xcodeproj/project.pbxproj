@@ -20,6 +20,8 @@
 		C0DE30000000000000000E01 /* CollectionReaderViewController+Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000E00 /* CollectionReaderViewController+Settings.swift */; };
 		C0DE30000000000000000F01 /* CollectionReaderViewController+Paging.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000F00 /* CollectionReaderViewController+Paging.swift */; };
 		C0DE30000000000000001001 /* CollectionReaderViewController+ProgressAndBookmarks.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000001000 /* CollectionReaderViewController+ProgressAndBookmarks.swift */; };
+		C0DE30000000000000001101 /* CollectionReaderViewController+TextSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000001100 /* CollectionReaderViewController+TextSelection.swift */; };
+		C0DE30000000000000001201 /* ReaderTextSelection.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000001200 /* ReaderTextSelection.swift */; };
 		C0DE30000000000000000201 /* ReaderNavigationHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000200 /* ReaderNavigationHelpers.swift */; };
 		C0DE30000000000000000301 /* ReaderContentTarget.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000300 /* ReaderContentTarget.swift */; };
 		C0DE30000000000000000401 /* ReaderContentsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000400 /* ReaderContentsViewController.swift */; };
@@ -104,6 +106,8 @@
 		C0DE30000000000000000E00 /* CollectionReaderViewController+Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+Settings.swift"; sourceTree = "<group>"; };
 		C0DE30000000000000000F00 /* CollectionReaderViewController+Paging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+Paging.swift"; sourceTree = "<group>"; };
 		C0DE30000000000000001000 /* CollectionReaderViewController+ProgressAndBookmarks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+ProgressAndBookmarks.swift"; sourceTree = "<group>"; };
+		C0DE30000000000000001100 /* CollectionReaderViewController+TextSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CollectionReaderViewController+TextSelection.swift"; sourceTree = "<group>"; };
+		C0DE30000000000000001200 /* ReaderTextSelection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderTextSelection.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000200 /* ReaderNavigationHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderNavigationHelpers.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000300 /* ReaderContentTarget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderContentTarget.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000400 /* ReaderContentsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderContentsViewController.swift; sourceTree = "<group>"; };
@@ -392,11 +396,13 @@
 				C0DE30000000000000000E00 /* CollectionReaderViewController+Settings.swift */,
 				C0DE30000000000000000F00 /* CollectionReaderViewController+Paging.swift */,
 				C0DE30000000000000001000 /* CollectionReaderViewController+ProgressAndBookmarks.swift */,
+				C0DE30000000000000001100 /* CollectionReaderViewController+TextSelection.swift */,
 				C0DE30000000000000000200 /* ReaderNavigationHelpers.swift */,
 				C0DE30000000000000000300 /* ReaderContentTarget.swift */,
 				C0DE30000000000000000400 /* ReaderContentsViewController.swift */,
 				C0DE30000000000000000500 /* ReaderPageWidgets.swift */,
 				C0DE30000000000000000600 /* ReaderPageRendering.swift */,
+				C0DE30000000000000001200 /* ReaderTextSelection.swift */,
 				C0DE30000000000000000700 /* ReaderPagination.swift */,
 				C0DE30000000000000000800 /* ReaderSettingsViewController.swift */,
 				C0DE30000000000000000900 /* ReaderSettingsPresentationHelpers.swift */,
@@ -599,11 +605,13 @@
 				C0DE30000000000000000E01 /* CollectionReaderViewController+Settings.swift in Sources */,
 				C0DE30000000000000000F01 /* CollectionReaderViewController+Paging.swift in Sources */,
 				C0DE30000000000000001001 /* CollectionReaderViewController+ProgressAndBookmarks.swift in Sources */,
+				C0DE30000000000000001101 /* CollectionReaderViewController+TextSelection.swift in Sources */,
 				C0DE30000000000000000201 /* ReaderNavigationHelpers.swift in Sources */,
 				C0DE30000000000000000301 /* ReaderContentTarget.swift in Sources */,
 				C0DE30000000000000000401 /* ReaderContentsViewController.swift in Sources */,
 				C0DE30000000000000000501 /* ReaderPageWidgets.swift in Sources */,
 				C0DE30000000000000000601 /* ReaderPageRendering.swift in Sources */,
+				C0DE30000000000000001201 /* ReaderTextSelection.swift in Sources */,
 				C0DE30000000000000000701 /* ReaderPagination.swift in Sources */,
 				C0DE30000000000000000801 /* ReaderSettingsViewController.swift in Sources */,
 				C0DE30000000000000000901 /* ReaderSettingsPresentationHelpers.swift in Sources */,

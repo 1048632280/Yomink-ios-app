@@ -80,6 +80,7 @@ extension CollectionReaderViewController {
     }
 
     func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        clearTextSelection()
         flushPendingPageInsertions()
         snapToNearestHorizontalPageIfNeeded()
         pendingTapTargetPageIndex = nil

@@ -5,17 +5,21 @@ import UIKit
 final class ReaderFilterRulesViewController: UITableViewController {
     private let bookID: UUID
     private let repository: any LibraryRepository
+    private let initialSource: String?
     private var rules: [TextFilterRule]
     private let onRulesChanged: ([TextFilterRule]) -> Void
+    private var didShowInitialRuleEditor = false
 
     init(
         bookID: UUID,
         repository: any LibraryRepository,
         rules: [TextFilterRule],
+        initialSource: String? = nil,
         onRulesChanged: @escaping ([TextFilterRule]) -> Void
     ) {
         self.bookID = bookID
         self.repository = repository
+        self.initialSource = initialSource?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.rules = rules
         self.onRulesChanged = onRulesChanged
         super.init(style: .plain)
@@ -37,6 +41,11 @@ final class ReaderFilterRulesViewController: UITableViewController {
             action: #selector(addButtonTapped)
         )
         updateEmptyState()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        showInitialRuleEditorIfNeeded()
     }
 
     private func configureCloseButtonIfNeeded() {
@@ -135,6 +144,10 @@ final class ReaderFilterRulesViewController: UITableViewController {
     }
 
     private func showRuleEditor(rule: TextFilterRule?) {
+        showRuleEditor(rule: rule, initialSource: nil)
+    }
+
+    private func showRuleEditor(rule: TextFilterRule?, initialSource: String?) {
         let alert = UIAlertController(
             title: NSLocalizedString(
                 rule == nil ? "reader.filter.addTitle" : "reader.filter.editTitle",
@@ -145,7 +158,7 @@ final class ReaderFilterRulesViewController: UITableViewController {
         )
         alert.addTextField { textField in
             textField.placeholder = NSLocalizedString("reader.filter.source", comment: "")
-            textField.text = rule?.source
+            textField.text = rule?.source ?? initialSource
         }
         alert.addTextField { textField in
             textField.placeholder = NSLocalizedString("reader.filter.replacement", comment: "")
@@ -165,7 +178,23 @@ final class ReaderFilterRulesViewController: UITableViewController {
                 self.createRule(source: source, replacement: replacement)
             }
         })
-        present(alert, animated: true)
+        present(alert, animated: true) {
+            if initialSource != nil {
+                DispatchQueue.main.async {
+                    alert.textFields?[safe: 1]?.becomeFirstResponder()
+                }
+            }
+        }
+    }
+
+    private func showInitialRuleEditorIfNeeded() {
+        guard !didShowInitialRuleEditor,
+              let initialSource,
+              !initialSource.isEmpty else {
+            return
+        }
+        didShowInitialRuleEditor = true
+        showRuleEditor(rule: nil, initialSource: initialSource)
     }
 
     private func createRule(source: String, replacement: String?) {

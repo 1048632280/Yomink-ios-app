@@ -14,6 +14,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
     private let fileStore: AppFileStore
     private let chapters: [Chapter]
     private let filterRules: [TextFilterRule]
+    private let initialKeyword: String?
     private let onSelect: (ReaderContentTarget) -> Void
     private let searchBar = UISearchBar(frame: .zero)
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -51,12 +52,14 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         fileStore: AppFileStore,
         chapters: [Chapter],
         filterRules: [TextFilterRule],
+        initialKeyword: String? = nil,
         onSelect: @escaping (ReaderContentTarget) -> Void
     ) {
         self.book = book
         self.fileStore = fileStore
         self.chapters = chapters
         self.filterRules = filterRules
+        self.initialKeyword = initialKeyword?.trimmingCharacters(in: .whitespacesAndNewlines)
         self.onSelect = onSelect
         super.init(nibName: nil, bundle: nil)
         title = NSLocalizedString("reader.search.title", comment: "")
@@ -73,6 +76,7 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
         configureCloseButtonIfNeeded()
         configureViews()
         updateFooter()
+        applyInitialKeywordIfNeeded()
     }
 
     override func viewDidLayoutSubviews() {
@@ -135,6 +139,17 @@ final class ReaderContentSearchViewController: UIViewController, UITableViewData
             tableView.topAnchor.constraint(equalTo: searchBar.bottomAnchor),
             tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    private func applyInitialKeywordIfNeeded() {
+        guard let initialKeyword,
+              !initialKeyword.isEmpty else {
+            return
+        }
+        keyword = initialKeyword
+        searchBar.text = initialKeyword
+        resultHighlightKeyword = initialKeyword
+        restartSearch()
     }
 
     func numberOfSections(in tableView: UITableView) -> Int {

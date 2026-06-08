@@ -167,6 +167,7 @@ extension CollectionReaderViewController {
         guard !pages.isEmpty else {
             return
         }
+        clearTextSelection()
         // 进入前在当前(paged / curl / scroll)布局下抓取顶部字节锚点;
         // 切到自动阅读垂直布局后用同一个锚点精确还原顶部第一行。
         let anchor = topAnchorAbsoluteOffset() ?? currentPage?.startAbsoluteOffset ?? 0
@@ -185,6 +186,7 @@ extension CollectionReaderViewController {
         guard isAutoReading || autoReadDisplayLink != nil else {
             return
         }
+        clearTextSelection()
         // 先在自动阅读垂直布局下记录顶部锚点,然后再切回原模式;
         // 这样无论原模式是 paged / curl / scroll,都能落到锚点所在的位置。
         let anchor = topAnchorAbsoluteOffset()

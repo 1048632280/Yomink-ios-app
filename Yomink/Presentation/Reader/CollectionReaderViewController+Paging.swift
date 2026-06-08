@@ -87,6 +87,7 @@ extension CollectionReaderViewController {
         fileStore: AppFileStore? = nil,
         showsLoadingIndicator: Bool = true
     ) {
+        clearTextSelection()
         guard !chapters.isEmpty else {
             showLoading(false)
             return
@@ -895,6 +896,7 @@ extension CollectionReaderViewController {
         guard pages.indices.contains(index) else {
             return
         }
+        clearTextSelection()
         collectionView.layoutIfNeeded()
         collectionView.setContentOffset(contentOffset(forPageAt: index), animated: false)
         currentPage = pages[index]
@@ -974,6 +976,7 @@ extension CollectionReaderViewController {
     }
 
     func finishPageTurn() {
+        clearTextSelection()
         flushPendingPageInsertions()
         snapToNearestHorizontalPageIfNeeded()
         updateCurrentPageFromVisiblePage()
