@@ -396,7 +396,8 @@ final class ReaderV2CoreTests: XCTestCase {
         )
 
         XCTAssertEqual(try provider.text(forChapterAt: 0), fixture.firstText)
-        XCTAssertEqual(try await provider.textAsync(forChapterAt: 1), fixture.secondText)
+        let secondText = try await provider.textAsync(forChapterAt: 1)
+        XCTAssertEqual(secondText, fixture.secondText)
     }
 
     func testChapterProviderThrowsForMissingChapter() throws {

@@ -721,6 +721,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | 验收：单章分页 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖多页切分、连续 `displayRange` 和分页后文本拼接一致 |
 | 验收：字号、边距、行距重排 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖字号/行距增大、左右边距变窄后的页数变化 |
 | 验收：空章节和分页边界 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖空章节占位、极小页面兜底、纵向高度、双栏接口、富文本属性和字体范围 |
+| CI 日志编译修复 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 修复 `XCTAssertEqual(try await ...)` 触发的 XCTest autoclosure 并发编译错误，先取出 async 结果再断言 |
 | 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
 ### Phase 3：页面绘制
