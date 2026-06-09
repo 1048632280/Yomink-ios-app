@@ -14,6 +14,10 @@ struct ReaderScrollSection {
 @MainActor
 final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     let tableView = UITableView(frame: .zero, style: .plain)
+    let headerOverlayView = UIView()
+    let chapterTitleLabel = UILabel()
+    let bottomWidgetView = ReaderBottomWidgetView()
+
     private(set) var sections: [ReaderScrollSection] = []
     private(set) var currentPageModel: ReaderPageModel?
     private var layout = ReaderLayout.notchedPhone
@@ -25,6 +29,8 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)?
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)?
     var onTextSelectionAction: (@MainActor (ReaderTextSelectionAction, String) -> Void)?
+    var onLoadPreviousChapter: (() -> Void)?
+    var onLoadNextChapter: (() -> Void)?
 
     var turnPageType: ReaderTurnPageType {
         .verticalContinuous
@@ -36,37 +42,44 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.separatorStyle = .none
-        tableView.backgroundColor = theme.backgroundColor
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.register(
-            ReaderScrollPageCell.self,
-            forCellReuseIdentifier: ReaderScrollPageCell.reuseIdentifier
-        )
-        view.addSubview(tableView)
-        NSLayoutConstraint.activate([
-            tableView.topAnchor.constraint(equalTo: view.topAnchor),
-            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
+        configureTableView()
+        configureWidgets()
+        updateWidgetAppearance()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateWidgetFrames()
+        updateTableInsets()
     }
 
     func reload(
         sections: [ReaderScrollSection],
         layout: ReaderLayout,
         theme: ReaderTheme,
-        widgetVisibility: ReaderSettings.WidgetVisibility = .default
+        widgetVisibility: ReaderSettings.WidgetVisibility = .default,
+        preservesVisualPosition: Bool = false
     ) {
+        let oldContentHeight = tableView.contentSize.height
+        let oldOffset = tableView.contentOffset
+
         self.sections = sections
         self.layout = layout
         self.theme = theme
         self.widgetVisibility = widgetVisibility
         view.backgroundColor = theme.backgroundColor
         tableView.backgroundColor = theme.backgroundColor
+        updateWidgetAppearance()
+        updateTableInsets()
         tableView.reloadData()
+        tableView.layoutIfNeeded()
+
+        if preservesVisualPosition {
+            let delta = tableView.contentSize.height - oldContentHeight
+            let nextOffset = CGPoint(x: oldOffset.x, y: oldOffset.y + delta)
+            tableView.setContentOffset(clampedContentOffset(nextOffset), animated: false)
+        }
+        updateCurrentWidgetContent()
     }
 
     func display(
@@ -76,17 +89,22 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         animated: Bool
     ) {
         currentPageModel = pageModel
+        updateCurrentWidgetContent()
         guard isViewLoaded,
               let indexPath = indexPath(for: pageModel) else {
             return
         }
 
         isProgrammaticScroll = true
-        tableView.scrollToRow(
-            at: indexPath,
-            at: .top,
-            animated: animated
+        tableView.layoutIfNeeded()
+        let rowRect = tableView.rectForRow(at: indexPath)
+        let targetOffset = clampedContentOffset(
+            CGPoint(
+                x: tableView.contentOffset.x,
+                y: rowRect.minY - tableView.adjustedContentInset.top
+            )
         )
+        tableView.setContentOffset(targetOffset, animated: animated)
         if !animated {
             isProgrammaticScroll = false
         }
@@ -99,6 +117,7 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         tableView.visibleCells.forEach { cell in
             cell.backgroundColor = .clear
         }
+        updateWidgetAppearance()
     }
 
     func indexPath(for pageModel: ReaderPageModel) -> IndexPath? {
@@ -117,14 +136,18 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     }
 
     func visiblePageModel() -> ReaderPageModel? {
-        let visibleIndexPaths = tableView.indexPathsForVisibleRows ?? []
-        let target = visibleIndexPaths.sorted {
-            if $0.section == $1.section {
-                return $0.row < $1.row
-            }
-            return $0.section < $1.section
-        }.first
-            ?? tableView.indexPathForRow(at: CGPoint(x: tableView.bounds.midX, y: tableView.contentOffset.y + 1))
+        let anchorPoint = CGPoint(
+            x: tableView.bounds.midX,
+            y: tableView.contentOffset.y + tableView.bounds.height * 0.48
+        )
+        let target = tableView.indexPathForRow(at: anchorPoint)
+            ?? (tableView.indexPathsForVisibleRows ?? []).sorted {
+                if $0.section == $1.section {
+                    return $0.row < $1.row
+                }
+                return $0.section < $1.section
+            }.first
+
         guard let target,
               sections.indices.contains(target.section),
               sections[target.section].pageModels.indices.contains(target.row) else {
@@ -137,6 +160,147 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         notifyVisiblePageIfNeeded()
     }
 
+    func maybeLoadMoreForAutoRead() {
+        guard tableView.contentSize.height > 0 else {
+            return
+        }
+        let maxOffsetY = max(
+            -tableView.adjustedContentInset.top,
+            tableView.contentSize.height
+                + tableView.adjustedContentInset.bottom
+                - tableView.bounds.height
+        )
+        let threshold = maxOffsetY - tableView.bounds.height * 0.5
+        if tableView.contentOffset.y >= threshold {
+            onLoadNextChapter?()
+        }
+    }
+
+    private func configureTableView() {
+        view.backgroundColor = theme.backgroundColor
+        tableView.translatesAutoresizingMaskIntoConstraints = false
+        tableView.separatorStyle = .none
+        tableView.backgroundColor = theme.backgroundColor
+        tableView.showsVerticalScrollIndicator = false
+        tableView.scrollsToTop = false
+        tableView.contentInsetAdjustmentBehavior = .never
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.register(
+            ReaderScrollPageCell.self,
+            forCellReuseIdentifier: ReaderScrollPageCell.reuseIdentifier
+        )
+        view.addSubview(tableView)
+        NSLayoutConstraint.activate([
+            tableView.topAnchor.constraint(equalTo: view.topAnchor),
+            tableView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tableView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tableView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+
+    private func configureWidgets() {
+        headerOverlayView.backgroundColor = .clear
+        headerOverlayView.isUserInteractionEnabled = false
+        chapterTitleLabel.backgroundColor = .clear
+        chapterTitleLabel.textAlignment = .left
+        chapterTitleLabel.font = ReaderPageWidgetLayout.font
+        chapterTitleLabel.numberOfLines = 1
+        chapterTitleLabel.lineBreakMode = .byTruncatingTail
+        chapterTitleLabel.isUserInteractionEnabled = false
+        bottomWidgetView.isUserInteractionEnabled = false
+        view.addSubview(headerOverlayView)
+        view.addSubview(chapterTitleLabel)
+        view.addSubview(bottomWidgetView)
+    }
+
+    private func updateWidgetFrames() {
+        let titleFrame = ReaderPageWidgetLayout.titleFrame(
+            screenSize: view.bounds.size,
+            layout: layout
+        )
+        headerOverlayView.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: view.bounds.width,
+            height: max(layout.topMargin, titleFrame.maxY + 8)
+        )
+        chapterTitleLabel.frame = titleFrame
+        bottomWidgetView.frame = ReaderPageWidgetLayout.bottomFrame(
+            screenSize: view.bounds.size,
+            layout: layout
+        )
+        bottomWidgetView.updateWidgetLayout(
+            screenSize: bottomWidgetView.bounds.size,
+            layoutConfig: layout
+        )
+    }
+
+    private func updateTableInsets() {
+        let titleBottom = layout.widgetTitleTop + ReaderPageWidgetLayout.height + 8
+        let topInset = widgetVisibility.chapterTitle
+            ? max(layout.topMargin, titleBottom)
+            : layout.topMargin
+        let bottomInset = max(
+            layout.bottomMargin,
+            layout.widgetBottom + ReaderPageWidgetLayout.height + 8
+        )
+        let insets = UIEdgeInsets(top: topInset, left: 0, bottom: bottomInset, right: 0)
+        tableView.contentInset = insets
+        tableView.scrollIndicatorInsets = insets
+    }
+
+    private func updateWidgetAppearance() {
+        chapterTitleLabel.textColor = theme.headerColor
+        chapterTitleLabel.font = ReaderPageWidgetLayout.font
+        chapterTitleLabel.isHidden = !widgetVisibility.chapterTitle
+        bottomWidgetView.updateTheme(headerColor: theme.headerColor)
+        bottomWidgetView.updateFont(ReaderPageWidgetLayout.font)
+        bottomWidgetView.updateSettings(
+            showTime: widgetVisibility.time,
+            showBatteryView: widgetVisibility.batteryIcon,
+            showBatteryLabel: widgetVisibility.batteryPercentage,
+            showChapterTitle: widgetVisibility.chapterTitle,
+            showPageProgress: widgetVisibility.chapterPageProgress,
+            showFullProgress: widgetVisibility.globalProgress
+        )
+        updateCurrentWidgetContent()
+        updateWidgetFrames()
+    }
+
+    private func updateCurrentWidgetContent() {
+        guard let pageModel = currentPageModel,
+              let section = section(forChapterAt: pageModel.chapterIndex) else {
+            chapterTitleLabel.text = nil
+            bottomWidgetView.updateContent(
+                chapterTitle: "",
+                pageIndex: 0,
+                pageCount: 1,
+                fullProgress: 0
+            )
+            return
+        }
+
+        let fullProgress = section.fullProgresses.indices.contains(pageModel.pageIndex)
+            ? section.fullProgresses[pageModel.pageIndex]
+            : 0
+        chapterTitleLabel.text = ReaderPageWidgetLayout.headerTitle(
+            bookTitle: section.bookTitle,
+            chapterTitle: section.title,
+            pageIndex: pageModel.pageIndex
+        )
+        bottomWidgetView.updateContent(
+            chapterTitle: section.title,
+            pageIndex: pageModel.pageIndex,
+            pageCount: pageModel.pageCount,
+            fullProgress: fullProgress
+        )
+    }
+
+    private func section(forChapterAt chapterIndex: Int) -> ReaderScrollSection? {
+        sections.first { $0.chapterIndex == chapterIndex }
+    }
+
     private func notifyVisiblePageIfNeeded() {
         guard !isProgrammaticScroll,
               let pageModel = visiblePageModel(),
@@ -144,7 +308,22 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
             return
         }
         currentPageModel = pageModel
+        updateCurrentWidgetContent()
         onPageTurnCompleted?(pageModel)
+    }
+
+    private func clampedContentOffset(_ offset: CGPoint) -> CGPoint {
+        let minOffsetY = -tableView.adjustedContentInset.top
+        let maxOffsetY = max(
+            minOffsetY,
+            tableView.contentSize.height
+                + tableView.adjustedContentInset.bottom
+                - tableView.bounds.height
+        )
+        return CGPoint(
+            x: offset.x,
+            y: min(max(offset.y, minOffsetY), maxOffsetY)
+        )
     }
 }
 
@@ -196,6 +375,15 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
         return max(section.heights[indexPath.row], 1)
     }
 
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let topThreshold = -scrollView.adjustedContentInset.top + scrollView.bounds.height * 0.2
+        if (scrollView.isDragging || scrollView.isTracking),
+           scrollView.contentOffset.y <= topThreshold {
+            onLoadPreviousChapter?()
+        }
+        maybeLoadMoreForAutoRead()
+    }
+
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if !decelerate {
             notifyVisiblePageIfNeeded()
@@ -208,5 +396,6 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
 
     func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         isProgrammaticScroll = false
+        notifyVisiblePageIfNeeded()
     }
 }

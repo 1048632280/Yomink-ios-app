@@ -584,12 +584,12 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertFalse(controller.bottomWidgetView.batteryView.isHidden)
         XCTAssertFalse(controller.bottomWidgetView.batteryLabel.isHidden)
         XCTAssertLessThan(
-            controller.bottomWidgetView.batteryLabel.frame.minX,
+            controller.bottomWidgetView.timeLabel.frame.minX,
             controller.bottomWidgetView.batteryView.frame.minX
         )
         XCTAssertLessThan(
             controller.bottomWidgetView.batteryView.frame.minX,
-            controller.bottomWidgetView.timeLabel.frame.minX
+            controller.bottomWidgetView.batteryLabel.frame.minX
         )
     }
 
@@ -740,8 +740,14 @@ final class ReaderV2CoreTests: XCTestCase {
             layout: .phone,
             theme: .standard
         )
+        container.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        container.view.layoutIfNeeded()
 
         XCTAssertEqual(container.turnPageType, .verticalContinuous)
+        XCTAssertFalse(container.tableView.showsVerticalScrollIndicator)
+        XCTAssertEqual(container.tableView.contentInset.top, 50, accuracy: 0.1)
+        XCTAssertEqual(container.tableView.contentInset.bottom, 35, accuracy: 0.1)
+        XCTAssertFalse(container.bottomWidgetView.progressLabel.isHidden)
         XCTAssertEqual(container.tableView.numberOfSections, 1)
         XCTAssertEqual(container.tableView.numberOfRows(inSection: 0), 2)
         XCTAssertEqual(
@@ -777,6 +783,8 @@ final class ReaderV2CoreTests: XCTestCase {
             layout: .phone,
             theme: .dark
         )
+        cell.frame = CGRect(x: 0, y: 0, width: 320, height: 180)
+        cell.layoutIfNeeded()
 
         XCTAssertEqual(cell.pageModel, Optional(model))
     }
@@ -1123,6 +1131,14 @@ final class ReaderV2CoreTests: XCTestCase {
         controller.stop()
         XCTAssertFalse(controller.isReading)
         XCTAssertFalse(controller.hasDisplayLink)
+    }
+
+    @MainActor
+    func testReaderAutoReadSpeedRangeStaysPointBased() {
+        XCTAssertEqual(ReaderSettings.minimumAutoReadSpeed, 20)
+        XCTAssertEqual(ReaderSettings.maximumAutoReadSpeed, 180)
+        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(1), 20)
+        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(400), 180)
     }
 
     @MainActor

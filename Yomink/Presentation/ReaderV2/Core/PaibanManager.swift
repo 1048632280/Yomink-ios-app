@@ -248,12 +248,17 @@ struct PaibanManager {
                 fullText: attributedText.string
             )
 
+            let pageAttributedText = attributedText.attributedSubstring(from: range)
             let height = returnsHeights
-                ? Self.usedHeight(for: frame, fallback: pageRect.height)
+                ? Self.suggestedHeight(
+                    for: pageAttributedText,
+                    width: pageRect.width,
+                    fallback: pageRect.height
+                )
                 : pageRect.height
             pages.append(
                 ReaderDivisionPage(
-                    attributedText: attributedText.attributedSubstring(from: range),
+                    attributedText: pageAttributedText,
                     displayRange: range,
                     usedHeight: height
                 )
@@ -300,39 +305,23 @@ struct PaibanManager {
         )
     }
 
-    private static func usedHeight(
-        for frame: CTFrame,
+    private static func suggestedHeight(
+        for attributedText: NSAttributedString,
+        width: CGFloat,
         fallback: CGFloat
     ) -> CGFloat {
-        let lines = CTFrameGetLines(frame)
-        let lineCount = CFArrayGetCount(lines)
-        guard lineCount > 0 else {
+        guard attributedText.length > 0,
+              width > 0 else {
             return max(1, fallback)
         }
-
-        var origins = Array(repeating: CGPoint.zero, count: lineCount)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-        let firstLine = unsafeBitCast(
-            CFArrayGetValueAtIndex(lines, 0),
-            to: CTLine.self
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            CGSize(width: width, height: CGFloat.greatestFiniteMagnitude),
+            nil
         )
-        let lastLine = unsafeBitCast(
-            CFArrayGetValueAtIndex(lines, lineCount - 1),
-            to: CTLine.self
-        )
-
-        var firstAscent: CGFloat = 0
-        var firstDescent: CGFloat = 0
-        var firstLeading: CGFloat = 0
-        CTLineGetTypographicBounds(firstLine, &firstAscent, &firstDescent, &firstLeading)
-
-        var lastAscent: CGFloat = 0
-        var lastDescent: CGFloat = 0
-        var lastLeading: CGFloat = 0
-        CTLineGetTypographicBounds(lastLine, &lastAscent, &lastDescent, &lastLeading)
-
-        let top = origins[0].y + firstAscent
-        let bottom = origins[lineCount - 1].y - lastDescent
-        return min(max(1, ceil(top - bottom)), max(1, fallback))
+        return min(max(1, ceil(size.height) + 2), max(1, fallback))
     }
 }

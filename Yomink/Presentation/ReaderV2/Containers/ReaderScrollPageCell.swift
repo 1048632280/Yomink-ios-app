@@ -6,8 +6,6 @@ final class ReaderScrollPageCell: UITableViewCell {
 
     private let backgroundPageView = ReaderPageBackgroundView(frame: .zero)
     private let textView = TextReadView(frame: .zero)
-    private let chapterTitleLabel = UILabel()
-    private let bottomWidgetView = ReaderBottomWidgetView()
     private(set) var pageModel: ReaderPageModel?
     var onTextSelectionAction: ((ReaderTextSelectionAction, String) -> Void)? {
         didSet {
@@ -16,10 +14,8 @@ final class ReaderScrollPageCell: UITableViewCell {
     }
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
-    private var chapterTitle = ""
-    private var bookTitle = ""
-    private var fullProgress: Double = 0
-    private var widgetVisibility = ReaderSettings.WidgetVisibility.default
+    private var textLeadingConstraint: NSLayoutConstraint?
+    private var textTrailingConstraint: NSLayoutConstraint?
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -31,9 +27,17 @@ final class ReaderScrollPageCell: UITableViewCell {
         textView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(backgroundPageView)
         contentView.addSubview(textView)
-        configureWidgets()
-        contentView.addSubview(chapterTitleLabel)
-        contentView.addSubview(bottomWidgetView)
+        let textLeadingConstraint = textView.leadingAnchor.constraint(
+            equalTo: contentView.leadingAnchor,
+            constant: layout.leftMargin
+        )
+        let textTrailingConstraint = textView.trailingAnchor.constraint(
+            equalTo: contentView.trailingAnchor,
+            constant: -layout.rightMargin
+        )
+        self.textLeadingConstraint = textLeadingConstraint
+        self.textTrailingConstraint = textTrailingConstraint
+
         NSLayoutConstraint.activate([
             backgroundPageView.topAnchor.constraint(equalTo: contentView.topAnchor),
             backgroundPageView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
@@ -41,8 +45,8 @@ final class ReaderScrollPageCell: UITableViewCell {
             backgroundPageView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             textView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            textView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
-            textView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            textLeadingConstraint,
+            textTrailingConstraint,
             textView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor)
         ])
     }
@@ -55,36 +59,15 @@ final class ReaderScrollPageCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         pageModel = nil
-        chapterTitle = ""
-        bookTitle = ""
-        fullProgress = 0
         textView.setAttributedText(NSAttributedString(string: ""))
         textView.setHighlightedRanges([])
         textView.setSelectedRange(nil)
         textView.onSelectionAction = onTextSelectionAction
-        chapterTitleLabel.text = nil
-        bottomWidgetView.updateContent(
-            chapterTitle: "",
-            pageIndex: 0,
-            pageCount: 1,
-            fullProgress: 0
-        )
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        chapterTitleLabel.frame = ReaderPageWidgetLayout.titleFrame(
-            screenSize: contentView.bounds.size,
-            layout: layout
-        )
-        bottomWidgetView.frame = ReaderPageWidgetLayout.bottomFrame(
-            screenSize: contentView.bounds.size,
-            layout: layout
-        )
-        bottomWidgetView.updateWidgetLayout(
-            screenSize: bottomWidgetView.bounds.size,
-            layoutConfig: layout
-        )
+        textView.contentRectOverride = textView.bounds
     }
 
     func configure(
@@ -92,61 +75,22 @@ final class ReaderScrollPageCell: UITableViewCell {
         pageModel: ReaderPageModel,
         layout: ReaderLayout,
         theme: ReaderTheme,
-        chapterTitle: String = "",
-        bookTitle: String = "",
-        fullProgress: Double = 0,
-        widgetVisibility: ReaderSettings.WidgetVisibility = .default
+        chapterTitle _: String = "",
+        bookTitle _: String = "",
+        fullProgress _: Double = 0,
+        widgetVisibility _: ReaderSettings.WidgetVisibility = .default
     ) {
         self.pageModel = pageModel
         self.layout = layout
         self.theme = theme
-        self.chapterTitle = chapterTitle
-        self.bookTitle = bookTitle
-        self.fullProgress = ReaderPageModel.clampedProgress(fullProgress)
-        self.widgetVisibility = widgetVisibility
+        textLeadingConstraint?.constant = layout.leftMargin
+        textTrailingConstraint?.constant = -layout.rightMargin
         backgroundPageView.apply(theme: theme)
         textView.layout = layout
         textView.contentColor = theme.contentColor
+        textView.contentRectOverride = textView.bounds
         textView.onSelectionAction = onTextSelectionAction
         textView.setAttributedText(attributedText)
-        applyWidgets()
-    }
-
-    private func configureWidgets() {
-        chapterTitleLabel.backgroundColor = .clear
-        chapterTitleLabel.textAlignment = .left
-        chapterTitleLabel.font = ReaderPageWidgetLayout.font
-        chapterTitleLabel.numberOfLines = 1
-        chapterTitleLabel.lineBreakMode = .byTruncatingTail
-        chapterTitleLabel.isUserInteractionEnabled = false
-        bottomWidgetView.isUserInteractionEnabled = false
-    }
-
-    private func applyWidgets() {
-        chapterTitleLabel.textColor = theme.headerColor
-        chapterTitleLabel.font = ReaderPageWidgetLayout.font
-        chapterTitleLabel.text = ReaderPageWidgetLayout.headerTitle(
-            bookTitle: bookTitle,
-            chapterTitle: chapterTitle,
-            pageIndex: pageModel?.pageIndex ?? 0
-        )
-        chapterTitleLabel.isHidden = !widgetVisibility.chapterTitle
-        bottomWidgetView.updateTheme(headerColor: theme.headerColor)
-        bottomWidgetView.updateFont(ReaderPageWidgetLayout.font)
-        bottomWidgetView.updateSettings(
-            showTime: widgetVisibility.time,
-            showBatteryView: widgetVisibility.batteryIcon,
-            showBatteryLabel: widgetVisibility.batteryPercentage,
-            showChapterTitle: widgetVisibility.chapterTitle,
-            showPageProgress: widgetVisibility.chapterPageProgress,
-            showFullProgress: widgetVisibility.globalProgress
-        )
-        bottomWidgetView.updateContent(
-            chapterTitle: chapterTitle,
-            pageIndex: pageModel?.pageIndex ?? 0,
-            pageCount: pageModel?.pageCount ?? 1,
-            fullProgress: fullProgress
-        )
         setNeedsLayout()
     }
 }

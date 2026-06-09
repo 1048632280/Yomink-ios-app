@@ -68,7 +68,8 @@ final class ReaderAutoReadController {
         guard isReading,
               let scrollView,
               !scrollView.isDragging,
-              !scrollView.isTracking else {
+              !scrollView.isTracking,
+              !scrollView.isDecelerating else {
             return
         }
 

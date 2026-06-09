@@ -383,29 +383,33 @@ final class ReaderBottomWidgetView: UIView {
 
     private func layoutLeftWidgets() {
         var nextX: CGFloat = 0
+        if showTime {
+            let width = max(38, ceil((timeLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
+            timeLabel.frame = CGRect(
+                x: nextX,
+                y: 0,
+                width: width,
+                height: ReaderPageWidgetLayout.height
+            ).integral
+            nextX = timeLabel.frame.maxX + 5
+        }
+        if showBatteryView {
+            batteryView.frame = CGRect(
+                x: nextX,
+                y: (ReaderPageWidgetLayout.height - 8) / 2,
+                width: 17,
+                height: 8
+            ).integral
+            nextX = batteryView.frame.maxX + 5
+        }
         if showBatteryLabel {
-            let width = max(24, ceil((batteryLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
+            let width = max(38, ceil((batteryLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
             batteryLabel.frame = CGRect(
                 x: nextX,
                 y: 0,
                 width: width,
                 height: ReaderPageWidgetLayout.height
             ).integral
-            nextX = batteryLabel.frame.maxX + 4
-        }
-        if showBatteryView {
-            batteryView.frame = CGRect(
-                x: nextX,
-                y: (ReaderPageWidgetLayout.height - 10) / 2,
-                width: 22,
-                height: 10
-            ).integral
-            nextX = batteryView.frame.maxX + 4
-        }
-        if showTime {
-            let width = max(34, ceil((timeLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
-            timeLabel.frame = CGRect(x: nextX, y: 0, width: width, height: ReaderPageWidgetLayout.height)
-                .integral
         }
     }
 

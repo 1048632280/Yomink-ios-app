@@ -12,6 +12,12 @@ class TextReadViewBase: UIView {
             setNeedsDisplay()
         }
     }
+    var contentRectOverride: CGRect? {
+        didSet {
+            resetFrame()
+            setNeedsDisplay()
+        }
+    }
     var contentColor = UIColor.label {
         didSet {
             applyContentColor()
@@ -255,7 +261,7 @@ class TextReadViewBase: UIView {
             return
         }
 
-        let contentRect = layout.contentRect(in: bounds)
+        let contentRect = contentRectOverride ?? layout.contentRect(in: bounds)
         let path = CGMutablePath()
         path.addRect(contentRect)
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText)

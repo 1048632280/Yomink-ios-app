@@ -612,7 +612,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 
 ### 阶段进度总表
 
-最后更新：2026-06-09
+最后更新：2026-06-10
 
 | 阶段 | 状态 | 已完成进度 | 下一步计划 | 备注 |
 | --- | --- | --- | --- | --- |
@@ -914,6 +914,30 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | 旧 reader 自动阅读设置对齐 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2AutoReadPanelView.swift`、`Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 自动阅读速度面板改为旧样式深色底部 190pt 面板；滑杆、龟兔图标、自定义 thumb、退出按钮和底部滑入滑出动画对齐旧 reader |
 | 过滤规则正文生效 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | V2 分页前使用 `ReaderTextFilter.readingFilteredText`，更多菜单修改过滤规则后清缓存并按当前记录重开页面 |
 | 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；当前环境缺少 `swift` / `xcodebuild`，XCTest 和 1MB、10MB、30MB TXT 真机验收需在 Xcode/CI 补跑 |
+
+### 上下滚动和自动阅读五阶段收口
+
+本轮目标：对照解包出的上下滚动和自动阅读行为，一步内分 5 个阶段完成 17 项收口；其中自动阅读面板 UI 和自动阅读速度系统按用户确认保留不变。
+
+| 阶段 | 序号 | 模块 | 状态 | 落点 | 说明 |
+| --- | ---: | --- | --- | --- | --- |
+| 阶段 1：滚动容器和页面绘制 | 1 | `UITableView` 铺满阅读容器 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | tableView 仍然全屏约束到阅读容器，不再通过裁剪 frame 避开页眉页脚 |
+| 阶段 1：滚动容器和页面绘制 | 2 | 顶部章节标题和底部小组件 overlay | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | `chapterTitleLabel`、`ReaderBottomWidgetView` 归属滚动容器本体，不再放在每个 cell 内 |
+| 阶段 1：滚动容器和页面绘制 | 3 | `contentInset` 阅读区域 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | top/bottom inset 按正文排版和 widget 布局共同计算，滚动内容视觉上位于上下小组件之间 |
+| 阶段 1：滚动容器和页面绘制 | 4 | 纵向 cell 精简 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollPageCell.swift` | cell 只保留背景和 CoreText 正文 view；正文 x/width 使用左右边距，y 从 0 开始，高度随 row |
+| 阶段 2：分页和 CoreText 区域 | 5 | 滚动模式分页尺寸 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 纵向分页宽度为屏幕宽减左右边距，高度使用屏幕高，不减上下 widget |
+| 阶段 2：分页和 CoreText 区域 | 6 | row 高度计算 | 完成 | `Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | `returnsHeights` 使用 `CTFramesetterSuggestFrameSizeWithConstraints` 计算每个 page block 的实际高度并加 2pt 缓冲 |
+| 阶段 2：分页和 CoreText 区域 | 7 | CoreText 绘制区域覆盖 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadViewBase.swift`、`Yomink/Presentation/ReaderV2/Containers/ReaderScrollPageCell.swift` | 新增 `contentRectOverride`，纵向 cell 内正文使用自身 bounds 绘制，避免二次套用整屏上下边距 |
+| 阶段 3：章节加载和跳转 | 8 | loaded chapter 顺序 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 新增 `loadedScrollChapterIndexes`，纵向 section 顺序由显式数组控制，不再依赖缓存 key 排序 |
+| 阶段 3：章节加载和跳转 | 9 | 下一章加载 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | 进入纵向、滚动接近底部、自动阅读接近底部时加载下一章并追加 section |
+| 阶段 3：章节加载和跳转 | 10 | 上一章加载和视觉补偿 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | 手动上拉到顶部附近加载上一章，reload 后按 content height delta 补偿 offset，避免视觉跳动 |
+| 阶段 3：章节加载和跳转 | 11 | 目录/搜索/书签跳转重建滚动链 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | `open(record:)` 在纵向模式下清理旧 loaded chapters 和 preload task，再从目标章节重新铺开 |
+| 阶段 3：章节加载和跳转 | 12 | 纵向跳转 offset | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | `display` 直接用 row rect 计算 `contentOffset = row.minY - inset.top`，不再先 scrollToRow 再二次扣 inset |
+| 阶段 4：自动阅读联动 | 13 | 拖动/追踪/减速时暂停推进 | 完成 | `Yomink/Presentation/ReaderV2/AutoRead/ReaderAutoReadController.swift` | `advance` 同时检查 dragging、tracking、decelerating，用户手动滚动和惯性滚动期间不抢 offset |
+| 阶段 4：自动阅读联动 | 14 | 自动阅读跨章续载 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift` | 到已加载内容底部时优先加载下一章并继续自动阅读，全书末尾再退出自动阅读 |
+| 阶段 4：自动阅读联动 | 15 | 自动阅读面板 UI（保留不变） | 保留不变 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2AutoReadPanelView.swift` | 保留当前 190pt 底部调速面板、图标、滑杆和退出按钮样式，本轮只接滚动逻辑 |
+| 阶段 4：自动阅读联动 | 16 | 自动阅读速度系统（保留不变） | 保留不变 | `Yomink/Domain/Models/ReaderSettings.swift`、`Yomink/Presentation/ReaderV2/AutoRead/ReaderAutoReadController.swift` | 保留 `20...180` points/sec 速度范围和归一化逻辑，不改成原 App 的 1...7 档 |
+| 阶段 5：验证和文档 | 17 | 单测补强和静态验证 | 完成 | `YominkTests/ReaderV2CoreTests.swift`、Windows 本地环境 | 补充 bottom widget 顺序和自动阅读速度范围保护；`git diff --check` 通过；当前环境缺少 `swift` / `xcodebuild`，XCTest 需在 Xcode/CI 补跑 |
 
 ## 14. 测试计划
 
