@@ -100,10 +100,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         settingsSaveTask?.cancel()
         bookmarkTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
-        autoReadController.stop()
-        systemAppearanceController.reset()
         NotificationCenter.default.removeObserver(self)
+        let autoReadController = autoReadController
         Task { @MainActor in
+            autoReadController.stop()
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }
