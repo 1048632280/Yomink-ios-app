@@ -621,7 +621,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | Phase 2：排版和分页核心 | 已完成 | `ReaderFontManager`、`ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 已完成本阶段目标；单章 CoreText 分页、富文本属性、纵向高度、双栏 API 单栏降级、极小页面边界和进度换算均有单测覆盖 | 进入 Phase 3 收尾和验收：补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图刷新 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 3：页面绘制 | 已完成 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController`、`ReaderPageBackgroundView` 已完成本阶段目标；CoreText 自绘、页面背景、主题背景图、正文色刷新、选中/高亮背景和尺寸变化重绘均有单测覆盖 | 进入 Phase 4：拆出左右平移、仿真翻页、纵向连续滚动三种容器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 4：三种容器 | 已完成 | `ReaderContainerProtocol`、`ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer`、`ReaderScrollPageCell` 已落地并接入 `ReaderV2ViewController`；三种翻页模式、容器切换、翻页完成保存和纵向章节/页面块加载均有单测覆盖 | 进入 Phase 5：新建 `ReaderThemeManager`、菜单、设置面板并接入设置变更重排 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
-| Phase 5：主题、菜单和设置 | 未开始 | V2 已能从现有 `ReaderSettings` 映射布局和主题 | 新建 `ReaderThemeManager`、菜单、设置面板 | 暂不复用旧菜单 |
+| Phase 5：主题、菜单和设置 | 已完成 | `ReaderThemeManager`、`ReaderV2MenuView`、`ReaderV2SettingsPanelView` 已落地并接入 `ReaderV2ViewController`；字号、主题、翻页、排版、常亮、状态栏、小横条和页面小部件设置已有面板入口；设置变更保存并按需重排 | 进入 Phase 6：拆出自动阅读和系统外观控制器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 6：自动阅读和系统外观 | 未开始 | V2 控制器已集中处理基础状态栏、Home Indicator、常亮 | 新建 `ReaderAutoReadController`、`ReaderSystemAppearanceController` | 自动阅读绑定纵向滚动容器 |
 | Phase 7：替换入口和删除旧核心 | 未开始 | 旧入口仍作为默认回滚路径 | V2 稳定后再把 `usesReaderV2` 切到默认入口 | 不在 Phase 0 替换入口 |
 
@@ -814,6 +814,23 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 - 设置变化触发重排。
 - 菜单显示隐藏不影响翻页状态。
 - 暗黑和普通主题切换稳定。
+
+收尾记录：
+
+| 项目 | 状态 | 落点 | 说明 |
+| --- | --- | --- | --- |
+| 读取 Phase 5 计划和进度 | 完成 | `docs/READER_REFACTOR_PLAN.md` | 本轮开始前已读取阶段进度总表和 Phase 5 目标、任务、验收项 |
+| Phase 5 启动 | 完成 | `docs/READER_REFACTOR_PLAN.md` | 已按阶段流程先写入进行中状态，再开始代码实现 |
+| 主题管理 | 完成 | `Yomink/Presentation/ReaderV2/Theme/ReaderThemeManager.swift` | 集中管理 `ReaderSettings` 到 `ReaderTheme`、`ReaderLayout`、`ReaderTurnPageType`、菜单配色的映射，并提供重排/Chrome 刷新判定 |
+| 顶部和底部菜单 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2MenuView.swift` | 新建 V2 专用菜单，包含顶部关闭/标题/设置入口和底部上一页/进度/翻页模式/下一页 |
+| 设置面板 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2SettingsPanelView.swift` | 接入字号、主题、翻页、排版、屏幕常亮、自动隐藏小横条、自动隐藏状态栏和页面小部件开关 |
+| 主控制器接入 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 旧常显关闭按钮改为菜单顶部栏；中央点击显示菜单；菜单和设置面板打开时不触发翻页 |
+| 设置保存和重排 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 设置变更保存到 `LibraryRepository.saveReaderSettings`；字号、主题、排版、翻页变化会按当前页记录清缓存并重新打开 |
+| 验收：设置变化触发重排 | 完成 | `Yomink/Presentation/ReaderV2/Theme/ReaderThemeManager.swift`、`YominkTests/ReaderV2CoreTests.swift` | 单测覆盖主题/翻页/排版/字号的重排判定和 Chrome-only 设置的非重排判定 |
+| 验收：菜单显示隐藏不影响翻页状态 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2MenuView.swift`、`Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 菜单显隐只改变菜单交互状态；主控制器在菜单/面板打开时拦截页面点击，按钮动作单测覆盖 |
+| 验收：暗黑和普通主题切换稳定 | 完成 | `Yomink/Presentation/ReaderV2/Theme/ReaderThemeManager.swift`、`Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 主题切换更新阅读背景、Chrome 配色和界面风格；主题变化纳入重排以刷新富文本颜色 |
+| 工程接入 | 完成 | `Yomink.xcodeproj/project.pbxproj` | Phase 5 新增 Swift 文件已加入 ReaderV2 group 和 App target Sources |
+| 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
 ### Phase 6：自动阅读和系统外观
 

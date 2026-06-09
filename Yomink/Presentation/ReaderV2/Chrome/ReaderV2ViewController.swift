@@ -24,13 +24,14 @@ private enum ReaderV2Error: LocalizedError {
 }
 
 @MainActor
-final class ReaderV2ViewController: UIViewController {
+final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegate {
     private let fileStore: AppFileStore
     private let repository: any LibraryRepository
     private let onClose: () -> Void
     private let onStatusBarHiddenChange: (Bool) -> Void
 
-    private let closeButton = UIButton(type: .system)
+    private let menuView = ReaderV2MenuView()
+    private let settingsPanelView = ReaderV2SettingsPanelView()
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
     private var activeContainer: ReaderContainerProtocol?
@@ -42,6 +43,7 @@ final class ReaderV2ViewController: UIViewController {
     private var readerSettings = ReaderSettings.default
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
+    private var chromeTheme = ReaderChromeTheme.standard
     private var paginationCache: [Int: ReaderDivisionResult] = [:]
     private var currentPageModel: ReaderPageModel?
     private var pendingInitialRecord: ReaderRecord?
@@ -57,6 +59,7 @@ final class ReaderV2ViewController: UIViewController {
     private var loadTask: Task<Void, Never>?
     private var openTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
+    private var settingsSaveTask: Task<Void, Never>?
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
 
     init(
@@ -83,6 +86,7 @@ final class ReaderV2ViewController: UIViewController {
         loadTask?.cancel()
         openTask?.cancel()
         saveTask?.cancel()
+        settingsSaveTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
         Task { @MainActor in
             UIApplication.shared.isIdleTimerDisabled = false
@@ -120,7 +124,8 @@ final class ReaderV2ViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = theme.backgroundColor
         configureContainer(for: activeTurnPageType)
-        configureCloseButton()
+        configureMenu()
+        configureSettingsPanel()
         configureLoadingIndicator()
         configureTapGesture()
         startInitialLoad()
@@ -153,6 +158,7 @@ final class ReaderV2ViewController: UIViewController {
             return
         }
         self.book = book
+        menuView.configure(bookTitle: book.title)
         resetReaderState()
         startInitialLoad()
     }
@@ -217,21 +223,142 @@ final class ReaderV2ViewController: UIViewController {
         }
     }
 
-    private func configureCloseButton() {
-        closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.setImage(UIImage(systemName: "chevron.left"), for: .normal)
-        closeButton.tintColor = theme.headerColor
-        closeButton.backgroundColor = theme.backgroundColor.withAlphaComponent(0.72)
-        closeButton.layer.cornerRadius = 20
-        closeButton.accessibilityLabel = NSLocalizedString("common.close", comment: "")
-        closeButton.addTarget(self, action: #selector(closeButtonTapped), for: .touchUpInside)
-        view.addSubview(closeButton)
+    private func configureMenu() {
+        menuView.translatesAutoresizingMaskIntoConstraints = false
+        menuView.configure(bookTitle: book.title)
+        menuView.onClose = { [weak self] in
+            self?.closeReader()
+        }
+        menuView.onSettings = { [weak self] in
+            self?.setSettingsPanelVisible(true, animated: true)
+        }
+        menuView.onPreviousPage = { [weak self] in
+            self?.setMenuVisible(false, animated: true)
+            self?.goToAdjacentPage(delta: -1)
+        }
+        menuView.onNextPage = { [weak self] in
+            self?.setMenuVisible(false, animated: true)
+            self?.goToAdjacentPage(delta: 1)
+        }
+        view.addSubview(menuView)
         NSLayoutConstraint.activate([
-            closeButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
-            closeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
-            closeButton.widthAnchor.constraint(equalToConstant: 40),
-            closeButton.heightAnchor.constraint(equalToConstant: 40)
+            menuView.topAnchor.constraint(equalTo: view.topAnchor),
+            menuView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            menuView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            menuView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+        menuView.apply(chromeTheme: chromeTheme)
+        updateMenuState()
+    }
+
+    private func configureSettingsPanel() {
+        settingsPanelView.translatesAutoresizingMaskIntoConstraints = false
+        settingsPanelView.onChange = { [weak self] settings in
+            self?.applyReaderSettings(settings)
+        }
+        view.addSubview(settingsPanelView)
+        let panelHeight = settingsPanelView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.58)
+        panelHeight.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            settingsPanelView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            settingsPanelView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            settingsPanelView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            panelHeight,
+            settingsPanelView.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.64),
+            settingsPanelView.heightAnchor.constraint(greaterThanOrEqualToConstant: 280)
+        ])
+        settingsPanelView.setSettings(readerSettings)
+        settingsPanelView.apply(chromeTheme: chromeTheme)
+    }
+
+    private func refreshSettingsProjection() {
+        layout = ReaderThemeManager.layout(from: readerSettings)
+        theme = ReaderThemeManager.theme(from: readerSettings)
+        chromeTheme = ReaderThemeManager.chromeTheme(from: readerSettings)
+        view.backgroundColor = theme.backgroundColor
+        overrideUserInterfaceStyle = theme.isDark ? .dark : .light
+        activeContainer?.apply(theme: theme)
+        menuView.apply(chromeTheme: chromeTheme)
+        settingsPanelView.setSettings(readerSettings)
+        settingsPanelView.apply(chromeTheme: chromeTheme)
+        UIApplication.shared.isIdleTimerDisabled = isViewVisible && readerSettings.normalized.keepScreenAwake
+    }
+
+    private func applyReaderSettings(_ nextSettings: ReaderSettings) {
+        let previousSettings = readerSettings
+        let normalizedSettings = nextSettings.normalized
+        guard normalizedSettings != previousSettings else {
+            return
+        }
+
+        readerSettings = normalizedSettings
+        let needsRepagination = ReaderThemeManager.needsRepagination(
+            from: previousSettings,
+            to: normalizedSettings
+        )
+        refreshSettingsProjection()
+        configureContainer(for: ReaderThemeManager.turnPageType(from: normalizedSettings))
+        updateSystemAppearance()
+        updateMenuState()
+        saveReaderSettings(normalizedSettings)
+
+        if needsRepagination {
+            reopenCurrentPageAfterSettingsChange()
+        } else if let currentPageModel {
+            try? display(
+                pageModel: currentPageModel,
+                direction: .forward,
+                animated: false,
+                savesProgress: false,
+                recordsOpenHistory: false
+            )
+        }
+    }
+
+    private func saveReaderSettings(_ settings: ReaderSettings) {
+        settingsSaveTask?.cancel()
+        let repository = repository
+        settingsSaveTask = Task {
+            do {
+                try await repository.saveReaderSettings(settings.normalized)
+            } catch is CancellationError {
+            } catch {
+                readerV2Logger.error("ReaderV2 save settings failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private func reopenCurrentPageAfterSettingsChange() {
+        guard let record = recordForCurrentPage() else {
+            paginationCache.removeAll()
+            return
+        }
+        openTask?.cancel()
+        preloadTasks.values.forEach { $0.cancel() }
+        preloadTasks.removeAll()
+        paginationCache.removeAll()
+        if currentPaginationSize() == nil {
+            pendingInitialRecord = record
+            return
+        }
+        open(record: record, animated: false)
+    }
+
+    private func recordForCurrentPage() -> ReaderRecord? {
+        guard let currentPageModel else {
+            return pendingInitialRecord
+        }
+        let progress = ReaderPageCalculator.pageProgress(
+            pageCount: currentPageModel.pageCount,
+            pageIndex: currentPageModel.pageIndex,
+            progress: currentPageModel.chapterProgress,
+            usesPageIndex: true
+        )
+        return ReaderRecord(
+            chapterIndex: currentPageModel.chapterIndex,
+            progress: progress,
+            chapterTitle: chapterTitle(at: currentPageModel.chapterIndex)
+        )
     }
 
     private func configureLoadingIndicator() {
@@ -250,6 +377,7 @@ final class ReaderV2ViewController: UIViewController {
             action: #selector(pageTapGestureRecognized(_:))
         )
         tapGesture.cancelsTouchesInView = false
+        tapGesture.delegate = self
         view.addGestureRecognizer(tapGesture)
     }
 
@@ -305,15 +433,11 @@ final class ReaderV2ViewController: UIViewController {
 
         self.chapters = chapters
         readerSettings = settings.normalized
-        layout = Self.layout(from: readerSettings)
-        theme = Self.theme(from: readerSettings)
-        view.backgroundColor = theme.backgroundColor
-        closeButton.tintColor = theme.headerColor
-        closeButton.backgroundColor = theme.backgroundColor.withAlphaComponent(0.72)
-        activeContainer?.apply(theme: theme)
+        refreshSettingsProjection()
         paginationCache.removeAll()
-        configureContainer(for: Self.turnPageType(from: readerSettings))
+        configureContainer(for: ReaderThemeManager.turnPageType(from: readerSettings))
         updateSystemAppearance()
+        updateMenuState()
 
         let adapter = ReaderBookAdapter(
             book: book,
@@ -501,6 +625,7 @@ final class ReaderV2ViewController: UIViewController {
             animated: animated
         )
         currentPageModel = pageModel
+        updateMenuState()
         preloadAround(chapterIndex: pageModel.chapterIndex)
         if savesProgress {
             saveProgress(
@@ -757,16 +882,76 @@ final class ReaderV2ViewController: UIViewController {
         return chapters[index].title
     }
 
+    private func updateMenuState() {
+        let pageModel = currentPageModel
+        menuView.configure(bookTitle: book.title)
+        menuView.update(
+            pageModel: pageModel,
+            chapterTitle: pageModel.map { chapterTitle(at: $0.chapterIndex) } ?? "",
+            turnPageType: activeTurnPageType
+        )
+    }
+
+    private func setMenuVisible(
+        _ visible: Bool,
+        animated: Bool
+    ) {
+        menuView.setMenuVisible(visible, animated: animated)
+        if !visible {
+            setSettingsPanelVisible(false, animated: animated)
+        }
+    }
+
+    private func setSettingsPanelVisible(
+        _ visible: Bool,
+        animated: Bool
+    ) {
+        if visible {
+            menuView.setMenuVisible(true, animated: animated)
+        }
+        settingsPanelView.setPanelVisible(visible, animated: animated)
+    }
+
     @objc private func pageTapGestureRecognized(_ recognizer: UITapGestureRecognizer) {
         guard recognizer.state == .ended else {
             return
         }
         let location = recognizer.location(in: view)
+        if settingsPanelView.isPanelVisible {
+            if !settingsPanelView.frame.contains(location) {
+                setSettingsPanelVisible(false, animated: true)
+            }
+            return
+        }
+
+        if menuView.isMenuVisible {
+            if !menuView.containsInteractiveContent(at: location) {
+                setMenuVisible(false, animated: true)
+            }
+            return
+        }
+
         if location.x < view.bounds.width / 3 {
             goToAdjacentPage(delta: -1)
         } else if location.x > view.bounds.width * 2 / 3 {
             goToAdjacentPage(delta: 1)
+        } else {
+            setMenuVisible(true, animated: true)
         }
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        var touchedView = touch.view
+        while let currentView = touchedView {
+            if currentView is UIControl {
+                return false
+            }
+            touchedView = currentView.superview
+        }
+        return true
     }
 
     private func goToAdjacentPage(delta: Int) {
@@ -792,109 +977,19 @@ final class ReaderV2ViewController: UIViewController {
         }
     }
 
-    @objc private func closeButtonTapped() {
+    private func closeReader() {
         saveProgressImmediately()
         onClose()
     }
 
     private func pageTurnCompleted(to pageModel: ReaderPageModel) {
         currentPageModel = pageModel
+        updateMenuState()
         preloadAround(chapterIndex: pageModel.chapterIndex)
         saveProgress(
             for: pageModel,
             immediately: false,
             recordsOpenHistory: false
         )
-    }
-
-    private static func turnPageType(from settings: ReaderSettings) -> ReaderTurnPageType {
-        switch settings.normalized.pageMode {
-        case .paged:
-            return .horizontalScroll
-        case .curl:
-            return .pageCurl
-        case .scroll:
-            return .verticalContinuous
-        }
-    }
-
-    private static func layout(from settings: ReaderSettings) -> ReaderLayout {
-        let normalized = settings.normalized
-        let values: ReaderSettings.LayoutValues
-        if normalized.layoutPreset == .custom {
-            values = normalized.customLayoutValues?.normalized ?? .standard
-        } else {
-            switch normalized.layoutPreset {
-            case .compact:
-                values = .compact
-            case .standard:
-                values = .standard
-            case .relaxed:
-                values = .relaxed
-            case .custom:
-                values = .standard
-            }
-        }
-
-        return ReaderLayout(
-            topMargin: CGFloat(values.bodyTopMargin),
-            bottomMargin: CGFloat(values.bodyBottomMargin),
-            leftMargin: CGFloat(values.bodyLeftMargin),
-            rightMargin: CGFloat(values.bodyRightMargin),
-            lineSpacing: CGFloat(values.bodyLineSpacing),
-            paragraphSpacing: CGFloat(values.bodyParagraphSpacing),
-            wordSpacing: CGFloat(values.bodyKern),
-            headIndent: CGFloat(values.firstLineIndentEms),
-            fontSize: CGFloat(normalized.fontSize),
-            fontWeight: CGFloat(values.bodyFontWeightValue),
-            titleFontWeight: CGFloat(values.titleFontWeightValue),
-            titleFontSizeOffset: CGFloat(values.titleFontSizeDelta),
-            titleLineSpacing: CGFloat(values.titleLineSpacing),
-            titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
-            titleWordSpacing: CGFloat(values.titleKern)
-        )
-    }
-
-    private static func theme(from settings: ReaderSettings) -> ReaderTheme {
-        switch settings.normalized.theme {
-        case .white:
-            return .standard
-        case .eyeCare:
-            return ReaderTheme(
-                contentColor: UIColor(red: 0.11, green: 0.18, blue: 0.12, alpha: 1),
-                headerColor: .secondaryLabel,
-                backgroundColor: UIColor(red: 0.92, green: 0.97, blue: 0.90, alpha: 1),
-                backgroundImageName: nil,
-                backgroundImageStyle: nil
-            )
-        case .paper:
-            return ReaderTheme(
-                contentColor: UIColor(red: 0.18, green: 0.13, blue: 0.08, alpha: 1),
-                headerColor: .secondaryLabel,
-                backgroundColor: UIColor(red: 0.97, green: 0.94, blue: 0.86, alpha: 1),
-                backgroundImageName: nil,
-                backgroundImageStyle: nil
-            )
-        case .dark:
-            return .dark
-        }
-    }
-}
-
-private extension ReaderTheme {
-    var isDark: Bool {
-        var white: CGFloat = 0
-        var alpha: CGFloat = 0
-        if backgroundColor.getWhite(&white, alpha: &alpha) {
-            return white < 0.5
-        }
-
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        if backgroundColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
-            return ((red * 0.299) + (green * 0.587) + (blue * 0.114)) < 0.5
-        }
-        return false
     }
 }

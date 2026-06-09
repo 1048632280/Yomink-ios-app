@@ -649,6 +649,124 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(cell.pageModel, Optional(model))
     }
 
+    func testReaderThemeManagerMapsSettingsAndInvalidatesPagination() {
+        var settings = ReaderSettings.default
+        settings.pageMode = .curl
+        settings.theme = .dark
+        settings.layoutPreset = .relaxed
+        settings.fontSize = 24
+
+        let layout = ReaderThemeManager.layout(from: settings)
+        let theme = ReaderThemeManager.theme(from: settings)
+
+        XCTAssertEqual(ReaderThemeManager.turnPageType(from: settings), .pageCurl)
+        XCTAssertEqual(layout.fontSize, 24)
+        XCTAssertEqual(layout.topMargin, CGFloat(ReaderSettings.LayoutValues.relaxed.bodyTopMargin))
+        XCTAssertTrue(theme.isDark)
+
+        var themeChanged = settings
+        themeChanged.theme = .white
+        XCTAssertTrue(ReaderThemeManager.needsRepagination(from: settings, to: themeChanged))
+        XCTAssertTrue(ReaderThemeManager.needsChromeRefresh(from: settings, to: themeChanged))
+
+        var chromeOnlyChanged = settings
+        chromeOnlyChanged.keepScreenAwake.toggle()
+        XCTAssertFalse(ReaderThemeManager.needsRepagination(from: settings, to: chromeOnlyChanged))
+        XCTAssertTrue(ReaderThemeManager.needsChromeRefresh(from: settings, to: chromeOnlyChanged))
+    }
+
+    @MainActor
+    func testReaderV2SettingsPanelEmitsSettingsChanges() {
+        let panel = ReaderV2SettingsPanelView()
+        var emittedSettings: [ReaderSettings] = []
+        panel.onChange = { settings in
+            emittedSettings.append(settings)
+        }
+
+        panel.pageModeControl.selectedSegmentIndex = ReaderSettings.PageMode.allCases.firstIndex(of: .scroll) ?? 0
+        panel.pageModeControl.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.pageMode, .scroll)
+
+        panel.themeControl.selectedSegmentIndex = ReaderSettings.Theme.allCases.firstIndex(of: .dark) ?? 0
+        panel.themeControl.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.theme, .dark)
+
+        panel.layoutControl.selectedSegmentIndex = ReaderSettings.LayoutPreset.allCases.firstIndex(of: .compact) ?? 0
+        panel.layoutControl.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.layoutPreset, .compact)
+
+        panel.fontStepper.value = 22
+        panel.fontStepper.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.fontSize, 22)
+
+        panel.keepAwakeSwitch.isOn = true
+        panel.keepAwakeSwitch.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.keepScreenAwake, true)
+
+        panel.homeIndicatorSwitch.isOn = false
+        panel.homeIndicatorSwitch.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.autoHideHomeIndicator, false)
+
+        panel.statusBarSwitch.isOn = false
+        panel.statusBarSwitch.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.autoHideStatusBar, false)
+
+        panel.chapterTitleSwitch.isOn = false
+        panel.globalProgressSwitch.isOn = true
+        panel.globalProgressSwitch.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.widgetVisibility.chapterTitle, false)
+        XCTAssertEqual(emittedSettings.last?.widgetVisibility.globalProgress, true)
+    }
+
+    @MainActor
+    func testReaderV2MenuViewShowsHidesAndDispatchesActions() {
+        let menuView = ReaderV2MenuView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+        let model = readerV2PageModel(pageIndex: 1, pageCount: 3)
+        var closeCount = 0
+        var settingsCount = 0
+        var previousCount = 0
+        var nextCount = 0
+
+        menuView.onClose = {
+            closeCount += 1
+        }
+        menuView.onSettings = {
+            settingsCount += 1
+        }
+        menuView.onPreviousPage = {
+            previousCount += 1
+        }
+        menuView.onNextPage = {
+            nextCount += 1
+        }
+        menuView.configure(bookTitle: "Book")
+        menuView.update(
+            pageModel: model,
+            chapterTitle: "Chapter",
+            turnPageType: .horizontalScroll
+        )
+
+        menuView.setMenuVisible(true, animated: false)
+        XCTAssertTrue(menuView.isMenuVisible)
+        XCTAssertFalse(menuView.isHidden)
+        XCTAssertTrue(menuView.isUserInteractionEnabled)
+
+        menuView.closeButton.sendActions(for: .touchUpInside)
+        menuView.settingsButton.sendActions(for: .touchUpInside)
+        menuView.previousPageButton.sendActions(for: .touchUpInside)
+        menuView.nextPageButton.sendActions(for: .touchUpInside)
+
+        XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(settingsCount, 1)
+        XCTAssertEqual(previousCount, 1)
+        XCTAssertEqual(nextCount, 1)
+
+        menuView.setMenuVisible(false, animated: false)
+        XCTAssertFalse(menuView.isMenuVisible)
+        XCTAssertTrue(menuView.isHidden)
+        XCTAssertFalse(menuView.isUserInteractionEnabled)
+    }
+
     func testBookAdapterExposesReaderV2BridgeComponents() throws {
         let fixture = try makeFileBackedBookFixture()
         let adapter = ReaderBookAdapter(
