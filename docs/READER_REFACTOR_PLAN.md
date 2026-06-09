@@ -610,6 +610,21 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 
 ## 13. 实施阶段
 
+### 阶段进度总表
+
+最后更新：2026-06-09
+
+| 阶段 | 状态 | 已完成进度 | 下一步计划 | 备注 |
+| --- | --- | --- | --- | --- |
+| Phase 0：准备和冻结旧阅读器 | 已收尾 | `ReaderV2` 目录已建立；旧入口默认保留；`ReaderV2HostView` 已新增；`usesReaderV2 = false` 开关已接入；固定测试 TXT 已准备 | 进入 Phase 1 验收和补强 | 30MB 压测书用确定性脚本生成，生成物不入库 |
+| Phase 1：模型和数据桥接 | 进行中 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge` 已落地；`chapterID` 缺失时已用 `globalProgress` 兜底 | 在 Xcode 环境跑编译和单测；补目录/搜索/书签目标到 `ReaderRecord` 的适配 | 当前 Windows 环境没有 `swift` / `xcodebuild` |
+| Phase 2：排版和分页核心 | 进行中 | `ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 最小 CoreText 分页已落地；空章节和进度公式已有单测 | 补字体管理、双栏接口行为、更多分页边界测试 | 目前先做单栏 |
+| Phase 3：页面绘制 | 进行中 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController` 已落地，可绘制 attributed page | 补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图 | 页面背景图尚未接入 |
+| Phase 4：三种容器 | 未开始 | 最小 `UIPageViewController` 宿主已能承载左右/仿真翻页雏形 | 拆出 `ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer` | 纵向滚动未开始 |
+| Phase 5：主题、菜单和设置 | 未开始 | V2 已能从现有 `ReaderSettings` 映射布局和主题 | 新建 `ReaderThemeManager`、菜单、设置面板 | 暂不复用旧菜单 |
+| Phase 6：自动阅读和系统外观 | 未开始 | V2 控制器已集中处理基础状态栏、Home Indicator、常亮 | 新建 `ReaderAutoReadController`、`ReaderSystemAppearanceController` | 自动阅读绑定纵向滚动容器 |
+| Phase 7：替换入口和删除旧核心 | 未开始 | 旧入口仍作为默认回滚路径 | V2 稳定后再把 `usesReaderV2` 切到默认入口 | 不在 Phase 0 替换入口 |
+
 ### Phase 0：准备和冻结旧阅读器
 
 目标：
@@ -623,6 +638,19 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 - 新增 `ReaderV2HostView`，暂时不接默认入口。
 - 新增 feature flag 或临时调试入口。
 - 准备 3 本固定测试 TXT：短篇、普通长篇、30MB 压测书。
+
+收尾记录：
+
+| 项目 | 状态 | 落点 | 说明 |
+| --- | --- | --- | --- |
+| 冻结旧阅读器 | 完成 | `Yomink/Presentation/Reader/` | 后续除回滚和阻塞修复外，不继续扩展旧 `CollectionReaderViewController` 体系 |
+| 新建 `ReaderV2` 目录 | 完成 | `Yomink/Presentation/ReaderV2/` | 已包含 `Bridge`、`Core`、`Rendering`、`Theme`、`Chrome`、`Integration` |
+| 保留旧入口作为回滚 | 完成 | `Yomink/Presentation/Library/LibraryView.swift` | 默认仍走 `ReaderHostView` |
+| 新增 `ReaderV2HostView` | 完成 | `Yomink/Presentation/ReaderV2/Integration/ReaderV2HostView.swift` | 已接入但不作为默认入口 |
+| 新增 feature flag | 完成 | `LibraryView.usesReaderV2` | 当前值为 `false` |
+| 固定短篇 TXT | 完成 | `YominkTests/Fixtures/ReaderV2/short-story.txt` | 用于短章节和小页数冒烟 |
+| 固定普通长篇 TXT | 完成 | `YominkTests/Fixtures/ReaderV2/normal-long.txt` | 用于多章节、分页和进度恢复冒烟 |
+| 30MB 压测 TXT | 完成 | `YominkTests/Fixtures/ReaderV2/generate_large_fixture.swift` | 当前工作区已生成 `large-30mb.generated.txt`，大小 30 MiB；生成物被 `.gitignore` 排除 |
 
 ### Phase 1：模型和数据桥接
 
@@ -827,4 +855,3 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 6. 实现 `TextReadView` 显示第一页。
 
 第一批完成后，目标是：**从一本现有书打开 ReaderV2 调试入口，显示当前章节第一页。**
-

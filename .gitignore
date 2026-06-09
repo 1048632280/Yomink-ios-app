@@ -10,3 +10,6 @@ build/
 
 # macOS
 .DS_Store
+
+# Generated reader stress fixtures
+YominkTests/Fixtures/ReaderV2/large-30mb.generated.txt
