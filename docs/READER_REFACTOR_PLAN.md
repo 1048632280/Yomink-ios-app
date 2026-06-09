@@ -618,7 +618,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | --- | --- | --- | --- | --- |
 | Phase 0：准备和冻结旧阅读器 | 已收尾 | `ReaderV2` 目录已建立；旧入口默认保留；`ReaderV2HostView` 已新增；`usesReaderV2 = false` 开关已接入；固定测试 TXT 已准备 | 进入 Phase 1 验收和补强 | 30MB 压测书用确定性脚本生成，生成物不入库 |
 | Phase 1：模型和数据桥接 | 已完成 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge`、`ReaderRecordBridge` 已落地；章节正文读取、进度恢复、目录/搜索/书签目标转换已有测试 | 进入 Phase 2 收尾和验收 | 当前 Windows 环境没有 `swift` / `xcodebuild`，需在 Xcode 环境补跑 |
-| Phase 2：排版和分页核心 | 进行中 | `ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 最小 CoreText 分页已落地；空章节和进度公式已有单测 | 补字体管理、双栏接口行为、更多分页边界测试 | 目前先做单栏 |
+| Phase 2：排版和分页核心 | 已完成 | `ReaderFontManager`、`ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 已完成本阶段目标；单章 CoreText 分页、富文本属性、纵向高度、双栏 API 单栏降级、极小页面边界和进度换算均有单测覆盖 | 进入 Phase 3 收尾和验收：补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图刷新 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 3：页面绘制 | 进行中 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController` 已落地，可绘制 attributed page | 补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图 | 页面背景图尚未接入 |
 | Phase 4：三种容器 | 未开始 | 最小 `UIPageViewController` 宿主已能承载左右/仿真翻页雏形 | 拆出 `ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer` | 纵向滚动未开始 |
 | Phase 5：主题、菜单和设置 | 未开始 | V2 已能从现有 `ReaderSettings` 映射布局和主题 | 新建 `ReaderThemeManager`、菜单、设置面板 | 暂不复用旧菜单 |
@@ -704,6 +704,24 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 - 单章能分页。
 - 字号、边距、行距变化后分页结果变化合理。
 - 空章节不崩溃。
+
+收尾记录：
+
+| 项目 | 状态 | 落点 | 说明 |
+| --- | --- | --- | --- |
+| 读取 Phase 2 计划和进度 | 完成 | `docs/READER_REFACTOR_PLAN.md` | 本轮开始前已读取阶段进度总表和 Phase 2 目标、任务、验收项 |
+| `ReaderFontManager` | 完成 | `Yomink/Presentation/ReaderV2/Core/ReaderFontManager.swift` | 默认使用系统字体；预留字体名接入；规整字号下限和 `-10...10` 字重范围 |
+| 排版配置 | 完成 | `Yomink/Presentation/ReaderV2/Core/ReaderLayout.swift` | 保留普通 iPhone、刘海屏、iPad 默认边距、行距、段距、字距、首行缩进、标题字号偏移 |
+| 富文本属性 | 完成 | `Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | 标题和正文分别生成 `.font`、`.paragraphStyle`、`.kern`、`.strokeWidth`、`.foregroundColor`；标题换行归入标题段落属性 |
+| 文本规范化和空章节 | 完成 | `Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | 正文 trim 后按正则规整多余换行；空章节使用本地化文案并提供中文兜底 |
+| CoreText 分页 | 完成 | `Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | 使用 `CTFramesetter`/`CTFrame` 按页面尺寸切分 attributed pages；极小页面也会逐字符兜底消费文本 |
+| 纵向模式高度返回 | 完成 | `Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | `returnsHeights` 打开时返回 CoreText 实际使用高度，关闭时返回页面高度 |
+| 双栏接口行为 | 完成 | `Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | `doubleColumn` 请求会记录在结果中；第一版明确降级为单栏，`usesDoubleColumn = false`，后续 API 不变 |
+| progress 和 pageIndex 互转 | 完成 | `Yomink/Presentation/ReaderV2/Core/ReaderPageCalculator.swift`、`Yomink/Presentation/ReaderV2/Core/PaibanManager.swift` | `PaibanManager` 暴露转换入口并复用 `ReaderPageCalculator` 公式 |
+| 验收：单章分页 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖多页切分、连续 `displayRange` 和分页后文本拼接一致 |
+| 验收：字号、边距、行距重排 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖字号/行距增大、左右边距变窄后的页数变化 |
+| 验收：空章节和分页边界 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖空章节占位、极小页面兜底、纵向高度、双栏接口、富文本属性和字体范围 |
+| 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
 ### Phase 3：页面绘制
 

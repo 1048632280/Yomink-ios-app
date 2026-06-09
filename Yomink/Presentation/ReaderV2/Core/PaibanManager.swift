@@ -9,22 +9,44 @@ struct ReaderDivisionPage {
 
 struct ReaderDivisionResult {
     let pages: [ReaderDivisionPage]
+    let requestedDoubleColumn: Bool
+    let usesDoubleColumn: Bool
+    let pageSize: CGSize
 
     var pageCount: Int {
         pages.count
+    }
+
+    var pageHeights: [CGFloat] {
+        pages.map(\.usedHeight)
+    }
+
+    init(
+        pages: [ReaderDivisionPage],
+        requestedDoubleColumn: Bool = false,
+        usesDoubleColumn: Bool = false,
+        pageSize: CGSize = .zero
+    ) {
+        self.pages = pages
+        self.requestedDoubleColumn = requestedDoubleColumn
+        self.usesDoubleColumn = usesDoubleColumn
+        self.pageSize = pageSize
     }
 }
 
 struct PaibanManager {
     var layout: ReaderLayout
     var theme: ReaderTheme
+    var fontManager: ReaderFontManager
 
     init(
         layout: ReaderLayout = .notchedPhone,
-        theme: ReaderTheme = .standard
+        theme: ReaderTheme = .standard,
+        fontManager: ReaderFontManager = ReaderFontManager()
     ) {
         self.layout = layout
         self.theme = theme
+        self.fontManager = fontManager
     }
 
     func divideText(
@@ -32,7 +54,7 @@ struct PaibanManager {
         chapterTitle: String,
         chapterIndex _: Int,
         pageSize: CGSize,
-        doubleColumn _: Bool = false,
+        doubleColumn: Bool = false,
         returnsHeights: Bool = false
     ) -> ReaderDivisionResult {
         let attributedText = attributedText(
@@ -42,7 +64,36 @@ struct PaibanManager {
         return paginate(
             attributedText,
             pageSize: pageSize,
+            requestedDoubleColumn: doubleColumn,
             returnsHeights: returnsHeights
+        )
+    }
+
+    func pageIndex(
+        pageCount: Int,
+        pageIndex: Int,
+        progress: Double,
+        usesPageIndex: Bool
+    ) -> Int {
+        ReaderPageCalculator.pageIndex(
+            pageCount: pageCount,
+            pageIndex: pageIndex,
+            progress: progress,
+            usesPageIndex: usesPageIndex
+        )
+    }
+
+    func pageProgress(
+        pageCount: Int,
+        pageIndex: Int,
+        progress: Double,
+        usesPageIndex: Bool
+    ) -> Double {
+        ReaderPageCalculator.pageProgress(
+            pageCount: pageCount,
+            pageIndex: pageIndex,
+            progress: progress,
+            usesPageIndex: usesPageIndex
         )
     }
 
@@ -66,16 +117,22 @@ struct PaibanManager {
 
         let nsText = fullText as NSString
         let fullRange = NSRange(location: 0, length: nsText.length)
-        let titleRange = title.isEmpty
+        let titleTextRange = title.isEmpty
             ? nil
             : NSRange(location: 0, length: (title as NSString).length)
-        let bodyStart = titleRange.map { NSMaxRange($0) } ?? 0
+        let titleAttributeRange = titleTextRange.map {
+            NSRange(
+                location: $0.location,
+                length: min(fullRange.length, $0.length + (body.isEmpty ? 0 : 1))
+            )
+        }
+        let bodyStart = titleAttributeRange.map { NSMaxRange($0) } ?? 0
         let bodyRange = NSRange(
             location: min(bodyStart, fullRange.length),
             length: max(fullRange.length - bodyStart, 0)
         )
 
-        if let titleRange, titleRange.length > 0 {
+        if let titleAttributeRange, titleAttributeRange.length > 0 {
             attributed.addAttributes(
                 textAttributes(
                     fontSize: layout.fontSize + layout.titleFontSizeOffset,
@@ -85,7 +142,7 @@ struct PaibanManager {
                     firstLineIndent: 0,
                     strokeWidth: layout.titleFontWeight
                 ),
-                range: titleRange
+                range: titleAttributeRange
             )
         }
         if bodyRange.length > 0 {
@@ -108,7 +165,13 @@ struct PaibanManager {
     private func normalizedBodyText(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let body = trimmed.isEmpty
-            ? NSLocalizedString("reader.emptyChapter", comment: "")
+            ? NSLocalizedString(
+                "reader.emptyChapter",
+                tableName: nil,
+                bundle: .main,
+                value: "当前章节没有可显示的内容。",
+                comment: ""
+            )
             : trimmed
         return body.replacingOccurrences(
             of: #"\s*[\r\n]+\s*"#,
@@ -131,31 +194,39 @@ struct PaibanManager {
         paragraph.lineSpacing = lineSpacing
         paragraph.paragraphSpacing = paragraphSpacing
         paragraph.firstLineHeadIndent = firstLineIndent
+        let normalizedStrokeWidth = ReaderFontManager.clampedStrokeWidth(strokeWidth)
 
         return [
-            .font: UIFont.systemFont(ofSize: fontSize),
+            .font: fontManager.font(size: fontSize),
             .foregroundColor: theme.contentColor,
             .paragraphStyle: paragraph,
             .kern: NSNumber(value: Double(wordSpacing)),
-            .strokeWidth: NSNumber(value: Double(strokeWidth))
+            .strokeWidth: NSNumber(value: Double(normalizedStrokeWidth))
         ]
     }
 
     private func paginate(
         _ attributedText: NSAttributedString,
         pageSize: CGSize,
+        requestedDoubleColumn: Bool,
         returnsHeights: Bool
     ) -> ReaderDivisionResult {
+        let pageSize = Self.normalizedPageSize(pageSize)
         guard attributedText.length > 0 else {
-            return ReaderDivisionResult(pages: [])
+            return ReaderDivisionResult(
+                pages: [],
+                requestedDoubleColumn: requestedDoubleColumn,
+                usesDoubleColumn: false,
+                pageSize: pageSize
+            )
         }
 
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
         let pageRect = CGRect(
             x: 0,
             y: 0,
-            width: max(pageSize.width, 1),
-            height: max(pageSize.height, 1)
+            width: pageSize.width,
+            height: pageSize.height
         )
         let path = CGMutablePath()
         path.addRect(pageRect)
@@ -170,17 +241,12 @@ struct PaibanManager {
                 nil
             )
             let visible = CTFrameGetVisibleStringRange(frame)
-            guard visible.length > 0 else {
-                break
-            }
-
-            let range = NSRange(
-                location: visible.location,
-                length: min(visible.length, attributedText.length - visible.location)
+            let range = Self.visibleRange(
+                visible,
+                fallbackLocation: location,
+                textLength: attributedText.length,
+                fullText: attributedText.string
             )
-            guard range.length > 0 else {
-                break
-            }
 
             let height = returnsHeights
                 ? Self.usedHeight(for: frame, fallback: pageRect.height)
@@ -195,7 +261,43 @@ struct PaibanManager {
             location = range.location + range.length
         }
 
-        return ReaderDivisionResult(pages: pages)
+        return ReaderDivisionResult(
+            pages: pages,
+            requestedDoubleColumn: requestedDoubleColumn,
+            usesDoubleColumn: false,
+            pageSize: pageSize
+        )
+    }
+
+    private static func normalizedPageSize(_ size: CGSize) -> CGSize {
+        CGSize(
+            width: max(size.width.isFinite ? size.width : 0, 1),
+            height: max(size.height.isFinite ? size.height : 0, 1)
+        )
+    }
+
+    private static func visibleRange(
+        _ visible: CFRange,
+        fallbackLocation: Int,
+        textLength: Int,
+        fullText: String
+    ) -> NSRange {
+        let location = min(max(visible.location, fallbackLocation), textLength)
+        let visibleEnd = min(max(visible.location + visible.length, location), textLength)
+        let visibleLength = max(visibleEnd - location, 0)
+        if visibleLength > 0 {
+            return NSRange(location: location, length: visibleLength)
+        }
+
+        guard fallbackLocation < textLength else {
+            return NSRange(location: textLength, length: 0)
+        }
+        let nsText = fullText as NSString
+        let composed = nsText.rangeOfComposedCharacterSequence(at: fallbackLocation)
+        return NSRange(
+            location: fallbackLocation,
+            length: min(max(composed.length, 1), textLength - fallbackLocation)
+        )
     }
 
     private static func usedHeight(
@@ -231,6 +333,6 @@ struct PaibanManager {
 
         let top = origins[0].y + firstAscent
         let bottom = origins[lineCount - 1].y - lastDescent
-        return max(1, ceil(top - bottom))
+        return min(max(1, ceil(top - bottom)), max(1, fallback))
     }
 }

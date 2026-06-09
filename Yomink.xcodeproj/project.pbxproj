@@ -46,6 +46,7 @@
 		C0DE60000000000000000E01 /* ReaderV2ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000E00 /* ReaderV2ViewController.swift */; };
 		C0DE60000000000000000F01 /* ReaderV2HostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000F00 /* ReaderV2HostView.swift */; };
 		C0DE60000000000000001001 /* ReaderRecordBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001000 /* ReaderRecordBridge.swift */; };
+		C0DE60000000000000001101 /* ReaderFontManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001100 /* ReaderFontManager.swift */; };
 		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
 		C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */; };
 		C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */; };
@@ -149,6 +150,7 @@
 		C0DE60000000000000000E00 /* ReaderV2ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome/ReaderV2ViewController.swift; sourceTree = "<group>"; };
 		C0DE60000000000000000F00 /* ReaderV2HostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Integration/ReaderV2HostView.swift; sourceTree = "<group>"; };
 		C0DE60000000000000001000 /* ReaderRecordBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge/ReaderRecordBridge.swift; sourceTree = "<group>"; };
+		C0DE60000000000000001100 /* ReaderFontManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderFontManager.swift; sourceTree = "<group>"; };
 		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailViewController.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailEditViewController.swift; sourceTree = "<group>"; };
@@ -463,6 +465,7 @@
 				C0DE60000000000000000200 /* ReaderPageModel.swift */,
 				C0DE60000000000000000300 /* ReaderRecord.swift */,
 				C0DE60000000000000000400 /* ReaderLayout.swift */,
+				C0DE60000000000000001100 /* ReaderFontManager.swift */,
 				C0DE60000000000000000900 /* ReaderPageCalculator.swift */,
 				C0DE60000000000000000A00 /* PaibanManager.swift */,
 				C0DE60000000000000000500 /* ReaderTheme.swift */,
@@ -672,6 +675,7 @@
 				C0DE60000000000000000E01 /* ReaderV2ViewController.swift in Sources */,
 				C0DE60000000000000000F01 /* ReaderV2HostView.swift in Sources */,
 				C0DE60000000000000001001 /* ReaderRecordBridge.swift in Sources */,
+				C0DE60000000000000001101 /* ReaderFontManager.swift in Sources */,
 				C0DE30000000000000000101 /* CollectionReaderViewController.swift in Sources */,
 				C0DE30000000000000000A01 /* CollectionReaderViewController+CollectionView.swift in Sources */,
 				C0DE30000000000000000B01 /* CollectionReaderViewController+Gestures.swift in Sources */,
