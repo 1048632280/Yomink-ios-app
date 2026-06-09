@@ -30,6 +30,21 @@
 		C0DE30000000000000000701 /* ReaderPagination.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000700 /* ReaderPagination.swift */; };
 		C0DE30000000000000000801 /* ReaderSettingsViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000800 /* ReaderSettingsViewController.swift */; };
 		C0DE30000000000000000901 /* ReaderSettingsPresentationHelpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE30000000000000000900 /* ReaderSettingsPresentationHelpers.swift */; };
+		C0DE60000000000000000101 /* ReaderTurnPageType.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000100 /* ReaderTurnPageType.swift */; };
+		C0DE60000000000000000201 /* ReaderPageModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000200 /* ReaderPageModel.swift */; };
+		C0DE60000000000000000301 /* ReaderRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000300 /* ReaderRecord.swift */; };
+		C0DE60000000000000000401 /* ReaderLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000400 /* ReaderLayout.swift */; };
+		C0DE60000000000000000501 /* ReaderTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000500 /* ReaderTheme.swift */; };
+		C0DE60000000000000000601 /* ReaderChapterProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000600 /* ReaderChapterProvider.swift */; };
+		C0DE60000000000000000701 /* ReaderProgressBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000700 /* ReaderProgressBridge.swift */; };
+		C0DE60000000000000000801 /* ReaderBookAdapter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000800 /* ReaderBookAdapter.swift */; };
+		C0DE60000000000000000901 /* ReaderPageCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000900 /* ReaderPageCalculator.swift */; };
+		C0DE60000000000000000A01 /* PaibanManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000A00 /* PaibanManager.swift */; };
+		C0DE60000000000000000B01 /* TextReadViewBase.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000B00 /* TextReadViewBase.swift */; };
+		C0DE60000000000000000C01 /* TextReadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000C00 /* TextReadView.swift */; };
+		C0DE60000000000000000D01 /* ReaderPageViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000D00 /* ReaderPageViewController.swift */; };
+		C0DE60000000000000000E01 /* ReaderV2ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000E00 /* ReaderV2ViewController.swift */; };
+		C0DE60000000000000000F01 /* ReaderV2HostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000000F00 /* ReaderV2HostView.swift */; };
 		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
 		C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */; };
 		C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */; };
@@ -84,6 +99,7 @@
 		8B07D4912F7D4B7F919E3E01 /* AppFileStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B07D4912F7D4B7F919E3E00 /* AppFileStore.swift */; };
 		A9C0F1D2E3B44567A8B90001 /* ChapterIndexerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9C0F1D2E3B44567A8B90002 /* ChapterIndexerTests.swift */; };
 		B51D7E7D4C98419FA0B2F001 /* AppDatabaseConstraintsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B51D7E7D4C98419FA0B2F000 /* AppDatabaseConstraintsTests.swift */; };
+		C0DE70000000000000000101 /* ReaderV2CoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE70000000000000000100 /* ReaderV2CoreTests.swift */; };
 		A1F4202A2F3446629FBC1E01 /* LibrarySidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1F4202A2F3446629FBC1E00 /* LibrarySidebarView.swift */; };
 		B606D742219548DD8E4D7D01 /* Book.swift in Sources */ = {isa = PBXBuildFile; fileRef = B606D742219548DD8E4D7D00 /* Book.swift */; };
 		C4F0DD38C39448AE8E0BA101 /* BookGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */; };
@@ -116,6 +132,21 @@
 		C0DE30000000000000000700 /* ReaderPagination.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderPagination.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000800 /* ReaderSettingsViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsViewController.swift; sourceTree = "<group>"; };
 		C0DE30000000000000000900 /* ReaderSettingsPresentationHelpers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderSettingsPresentationHelpers.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000100 /* ReaderTurnPageType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderTurnPageType.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000200 /* ReaderPageModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderPageModel.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000300 /* ReaderRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderRecord.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000400 /* ReaderLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderLayout.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000500 /* ReaderTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme/ReaderTheme.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000600 /* ReaderChapterProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge/ReaderChapterProvider.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000700 /* ReaderProgressBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge/ReaderProgressBridge.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000800 /* ReaderBookAdapter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge/ReaderBookAdapter.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000900 /* ReaderPageCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderPageCalculator.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000A00 /* PaibanManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/PaibanManager.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000B00 /* TextReadViewBase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rendering/TextReadViewBase.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000C00 /* TextReadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rendering/TextReadView.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000D00 /* ReaderPageViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rendering/ReaderPageViewController.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000E00 /* ReaderV2ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome/ReaderV2ViewController.swift; sourceTree = "<group>"; };
+		C0DE60000000000000000F00 /* ReaderV2HostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Integration/ReaderV2HostView.swift; sourceTree = "<group>"; };
 		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailViewController.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailEditViewController.swift; sourceTree = "<group>"; };
@@ -171,6 +202,7 @@
 		A9C0F1D2E3B44567A8B90002 /* ChapterIndexerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChapterIndexerTests.swift; sourceTree = "<group>"; };
 		A9C0F1D2E3B44567A8B90003 /* YominkTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = YominkTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B51D7E7D4C98419FA0B2F000 /* AppDatabaseConstraintsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDatabaseConstraintsTests.swift; sourceTree = "<group>"; };
+		C0DE70000000000000000100 /* ReaderV2CoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderV2CoreTests.swift; sourceTree = "<group>"; };
 		A1F4202A2F3446629FBC1E00 /* LibrarySidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySidebarView.swift; sourceTree = "<group>"; };
 		B606D742219548DD8E4D7D00 /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
 		C4F0DD38C39448AE8E0BA100 /* BookGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookGroup.swift; sourceTree = "<group>"; };
@@ -361,6 +393,7 @@
 				8FB2D5F9BD82487B86A5DD00 /* Library */,
 				B35D6604399146939859A500 /* Sidebars */,
 				FAEC7698DC6F4CE98147CB00 /* Reader */,
+				C0DE60000000000000000000 /* ReaderV2 */,
 			);
 			path = Presentation;
 			sourceTree = "<group>";
@@ -417,11 +450,34 @@
 			path = Reader;
 			sourceTree = "<group>";
 		};
+		C0DE60000000000000000000 /* ReaderV2 */ = {
+			isa = PBXGroup;
+			children = (
+				C0DE60000000000000000600 /* ReaderChapterProvider.swift */,
+				C0DE60000000000000000700 /* ReaderProgressBridge.swift */,
+				C0DE60000000000000000800 /* ReaderBookAdapter.swift */,
+				C0DE60000000000000000100 /* ReaderTurnPageType.swift */,
+				C0DE60000000000000000200 /* ReaderPageModel.swift */,
+				C0DE60000000000000000300 /* ReaderRecord.swift */,
+				C0DE60000000000000000400 /* ReaderLayout.swift */,
+				C0DE60000000000000000900 /* ReaderPageCalculator.swift */,
+				C0DE60000000000000000A00 /* PaibanManager.swift */,
+				C0DE60000000000000000500 /* ReaderTheme.swift */,
+				C0DE60000000000000000B00 /* TextReadViewBase.swift */,
+				C0DE60000000000000000C00 /* TextReadView.swift */,
+				C0DE60000000000000000D00 /* ReaderPageViewController.swift */,
+				C0DE60000000000000000E00 /* ReaderV2ViewController.swift */,
+				C0DE60000000000000000F00 /* ReaderV2HostView.swift */,
+			);
+			path = ReaderV2;
+			sourceTree = "<group>";
+		};
 		A9C0F1D2E3B44567A8B90004 /* YominkTests */ = {
 			isa = PBXGroup;
 			children = (
 				A9C0F1D2E3B44567A8B90002 /* ChapterIndexerTests.swift */,
 				B51D7E7D4C98419FA0B2F000 /* AppDatabaseConstraintsTests.swift */,
+				C0DE70000000000000000100 /* ReaderV2CoreTests.swift */,
 			);
 			path = YominkTests;
 			sourceTree = "<group>";
@@ -597,6 +653,21 @@
 				85F65F2A56AB45299E94D801 /* AddBookSidebarView.swift in Sources */,
 				5A6C90E4D1A9485B8F9A7601 /* SidebarStyle.swift in Sources */,
 				19DE8485AE524998BBFE7B01 /* ReaderHostView.swift in Sources */,
+				C0DE60000000000000000101 /* ReaderTurnPageType.swift in Sources */,
+				C0DE60000000000000000201 /* ReaderPageModel.swift in Sources */,
+				C0DE60000000000000000301 /* ReaderRecord.swift in Sources */,
+				C0DE60000000000000000401 /* ReaderLayout.swift in Sources */,
+				C0DE60000000000000000501 /* ReaderTheme.swift in Sources */,
+				C0DE60000000000000000601 /* ReaderChapterProvider.swift in Sources */,
+				C0DE60000000000000000701 /* ReaderProgressBridge.swift in Sources */,
+				C0DE60000000000000000801 /* ReaderBookAdapter.swift in Sources */,
+				C0DE60000000000000000901 /* ReaderPageCalculator.swift in Sources */,
+				C0DE60000000000000000A01 /* PaibanManager.swift in Sources */,
+				C0DE60000000000000000B01 /* TextReadViewBase.swift in Sources */,
+				C0DE60000000000000000C01 /* TextReadView.swift in Sources */,
+				C0DE60000000000000000D01 /* ReaderPageViewController.swift in Sources */,
+				C0DE60000000000000000E01 /* ReaderV2ViewController.swift in Sources */,
+				C0DE60000000000000000F01 /* ReaderV2HostView.swift in Sources */,
 				C0DE30000000000000000101 /* CollectionReaderViewController.swift in Sources */,
 				C0DE30000000000000000A01 /* CollectionReaderViewController+CollectionView.swift in Sources */,
 				C0DE30000000000000000B01 /* CollectionReaderViewController+Gestures.swift in Sources */,
@@ -632,6 +703,7 @@
 			files = (
 				A9C0F1D2E3B44567A8B90001 /* ChapterIndexerTests.swift in Sources */,
 				B51D7E7D4C98419FA0B2F001 /* AppDatabaseConstraintsTests.swift in Sources */,
+				C0DE70000000000000000101 /* ReaderV2CoreTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

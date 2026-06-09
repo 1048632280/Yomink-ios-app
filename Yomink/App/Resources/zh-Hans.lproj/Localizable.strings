@@ -291,7 +291,10 @@
 "reader.touchAreas.bindTitle" = "绑定动作";
 "reader.touchAreas.saveAndExit" = "保存并退出";
 "reader.error.title" = "操作失败";
+"reader.error.bookNotFound" = "没有找到可阅读的章节。";
 "reader.error.invalidUTF8Content" = "书籍正文无法按 UTF-8 解码。";
+"reader.error.layoutUnavailable" = "阅读页面尺寸还没有准备好。";
+"reader.error.pageUnavailable" = "阅读页面暂时无法显示。";
 "reader.progress.format" = "%@\n本章 %@ · 全书 %@";
 "reader.progress.tooltip.format" = "%@ 第%d页";
 "reader.preview.chapter.title" = "预览章节";
