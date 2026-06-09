@@ -4,8 +4,7 @@ import QuartzCore
 import CoreText
 import OSLog
 
-struct ReaderContentTarget {
+struct ReaderContentTarget: Sendable {
     let chapterID: UUID
     let offset: Int
 }
-

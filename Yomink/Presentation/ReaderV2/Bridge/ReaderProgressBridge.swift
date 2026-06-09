@@ -5,7 +5,8 @@ struct ReaderProgressBridge: Sendable {
     let chapters: [Chapter]
 
     func record(from progress: ReadingProgress?) -> ReaderRecord {
-        guard let progress else {
+        guard let progress,
+              progress.bookID == book.id else {
             let title = chapters.first?.title ?? ""
             return ReaderRecord(chapterIndex: 0, progress: 0, chapterTitle: title)
         }

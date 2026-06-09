@@ -109,6 +109,23 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(record.progress, 0.25, accuracy: 0.0001)
     }
 
+    func testProgressBridgeIgnoresProgressFromAnotherBook() {
+        let fixture = makeBookFixture()
+        let bridge = ReaderProgressBridge(book: fixture.book, chapters: fixture.chapters)
+        let record = bridge.record(
+            from: ReadingProgress(
+                bookID: UUID(),
+                chapterID: fixture.chapters[1].id,
+                chapterOffset: 50,
+                globalProgress: 0.5
+            )
+        )
+
+        XCTAssertEqual(record.chapterIndex, 0)
+        XCTAssertEqual(record.chapterTitle, "第一章")
+        XCTAssertEqual(record.progress, 0)
+    }
+
     func testProgressBridgeMapsReaderPageModelBackToStoredProgress() {
         let fixture = makeBookFixture()
         let bridge = ReaderProgressBridge(book: fixture.book, chapters: fixture.chapters)
@@ -170,6 +187,75 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertGreaterThan(result.pages[0].displayRange.length, 0)
     }
 
+    func testBookAdapterExposesReaderV2BridgeComponents() throws {
+        let fixture = try makeFileBackedBookFixture()
+        let adapter = ReaderBookAdapter(
+            book: fixture.book,
+            chapters: fixture.chapters,
+            fileStore: fixture.fileStore
+        )
+
+        XCTAssertEqual(adapter.chapterProvider.chapterCount, 2)
+        XCTAssertEqual(adapter.progressBridge.record(from: nil).chapterTitle, "Chapter One")
+        XCTAssertEqual(adapter.recordBridge.record(chapterIndex: 1)?.chapterTitle, "Chapter Two")
+    }
+
+    func testChapterProviderReadsUTF8ChapterText() async throws {
+        let fixture = try makeFileBackedBookFixture()
+        let provider = ReaderChapterProvider(
+            book: fixture.book,
+            chapters: fixture.chapters,
+            fileStore: fixture.fileStore
+        )
+
+        XCTAssertEqual(try provider.text(forChapterAt: 0), fixture.firstText)
+        XCTAssertEqual(try await provider.textAsync(forChapterAt: 1), fixture.secondText)
+    }
+
+    func testChapterProviderThrowsForMissingChapter() throws {
+        let fixture = try makeFileBackedBookFixture()
+        let provider = ReaderChapterProvider(
+            book: fixture.book,
+            chapters: fixture.chapters,
+            fileStore: fixture.fileStore
+        )
+
+        XCTAssertThrowsError(try provider.text(forChapterAt: 9)) { error in
+            XCTAssertEqual(error as? ReaderChapterProviderError, .missingChapter)
+        }
+    }
+
+    func testRecordBridgeMapsChaptersTargetsAndBookmarksToReaderRecords() {
+        let fixture = makeBookFixture()
+        let bridge = ReaderRecordBridge(chapters: fixture.chapters)
+        let target = ReaderContentTarget(
+            chapterID: fixture.chapters[1].id,
+            offset: 50
+        )
+        let bookmark = Bookmark(
+            id: UUID(),
+            bookID: fixture.book.id,
+            chapterID: fixture.chapters[1].id,
+            offset: 50,
+            preview: "Preview",
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+        let legacyBookmark = Bookmark(
+            id: UUID(),
+            bookID: fixture.book.id,
+            chapterID: nil,
+            offset: 50,
+            preview: "Legacy",
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(bridge.record(chapterIndex: 0)?.chapterTitle, "第一章")
+        XCTAssertEqual(bridge.record(from: target)?.chapterIndex, 1)
+        XCTAssertEqual(bridge.record(from: target)?.progress ?? 0, 0.25, accuracy: 0.0001)
+        XCTAssertEqual(bridge.record(from: bookmark)?.chapterTitle, "第二章")
+        XCTAssertNil(bridge.record(from: legacyBookmark))
+    }
+
     private func makeBookFixture() -> (book: Book, chapters: [Chapter]) {
         let bookID = UUID()
         let firstChapterID = UUID()
@@ -211,5 +297,72 @@ final class ReaderV2CoreTests: XCTestCase {
             )
         ]
         return (book, chapters)
+    }
+
+    private func makeFileBackedBookFixture() throws -> (
+        book: Book,
+        chapters: [Chapter],
+        fileStore: AppFileStore,
+        firstText: String,
+        secondText: String
+    ) {
+        let rootURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ReaderV2CoreTests-\(UUID().uuidString)", isDirectory: true)
+        let fileStore = try AppFileStore.preview(rootURL: rootURL)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: rootURL)
+        }
+
+        let bookID = UUID()
+        let firstChapterID = UUID()
+        let secondChapterID = UUID()
+        let firstText = "Chapter one line.\n第二行。\n"
+        let secondText = "Chapter two line.\n下一页。\n"
+        let content = firstText + secondText
+        let contentURL = fileStore.contentURL(for: bookID)
+        try FileManager.default.createDirectory(
+            at: contentURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try Data(content.utf8).write(to: contentURL, options: .atomic)
+
+        let firstEndOffset = firstText.utf8.count
+        let book = Book(
+            id: bookID,
+            title: "File Backed Book",
+            author: nil,
+            intro: nil,
+            fileName: "content.txt",
+            fileSize: Int64(content.utf8.count),
+            encoding: "utf-8",
+            wordCount: 0,
+            importedAt: Date(timeIntervalSince1970: 0),
+            lastReadAt: nil,
+            groupID: nil,
+            progressPercentage: 0,
+            contentHash: nil,
+            sourcePath: try fileStore.relativePath(for: contentURL)
+        )
+        let chapters = [
+            Chapter(
+                id: firstChapterID,
+                bookID: bookID,
+                title: "Chapter One",
+                startOffset: 0,
+                endOffset: firstEndOffset,
+                sortOrder: 0,
+                source: .regex
+            ),
+            Chapter(
+                id: secondChapterID,
+                bookID: bookID,
+                title: "Chapter Two",
+                startOffset: firstEndOffset,
+                endOffset: content.utf8.count,
+                sortOrder: 1,
+                source: .regex
+            )
+        ]
+        return (book, chapters, fileStore, firstText, secondText)
     }
 }

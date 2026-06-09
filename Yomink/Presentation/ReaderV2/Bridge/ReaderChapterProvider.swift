@@ -1,6 +1,6 @@
 import Foundation
 
-enum ReaderChapterProviderError: LocalizedError {
+enum ReaderChapterProviderError: LocalizedError, Equatable {
     case missingChapter
     case invalidUTF8Content
 

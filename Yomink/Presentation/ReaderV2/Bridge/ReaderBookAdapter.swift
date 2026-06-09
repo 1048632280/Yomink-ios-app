@@ -19,4 +19,8 @@ struct ReaderBookAdapter: Sendable {
             chapters: chapters
         )
     }
+
+    var recordBridge: ReaderRecordBridge {
+        ReaderRecordBridge(chapters: chapters)
+    }
 }

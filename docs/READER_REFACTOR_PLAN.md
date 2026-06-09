@@ -617,7 +617,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | 阶段 | 状态 | 已完成进度 | 下一步计划 | 备注 |
 | --- | --- | --- | --- | --- |
 | Phase 0：准备和冻结旧阅读器 | 已收尾 | `ReaderV2` 目录已建立；旧入口默认保留；`ReaderV2HostView` 已新增；`usesReaderV2 = false` 开关已接入；固定测试 TXT 已准备 | 进入 Phase 1 验收和补强 | 30MB 压测书用确定性脚本生成，生成物不入库 |
-| Phase 1：模型和数据桥接 | 进行中 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge` 已落地；`chapterID` 缺失时已用 `globalProgress` 兜底 | 在 Xcode 环境跑编译和单测；补目录/搜索/书签目标到 `ReaderRecord` 的适配 | 当前 Windows 环境没有 `swift` / `xcodebuild` |
+| Phase 1：模型和数据桥接 | 已完成 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge`、`ReaderRecordBridge` 已落地；章节正文读取、进度恢复、目录/搜索/书签目标转换已有测试 | 进入 Phase 2 收尾和验收 | 当前 Windows 环境没有 `swift` / `xcodebuild`，需在 Xcode 环境补跑 |
 | Phase 2：排版和分页核心 | 进行中 | `ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 最小 CoreText 分页已落地；空章节和进度公式已有单测 | 补字体管理、双栏接口行为、更多分页边界测试 | 目前先做单栏 |
 | Phase 3：页面绘制 | 进行中 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController` 已落地，可绘制 attributed page | 补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图 | 页面背景图尚未接入 |
 | Phase 4：三种容器 | 未开始 | 最小 `UIPageViewController` 宿主已能承载左右/仿真翻页雏形 | 拆出 `ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer` | 纵向滚动未开始 |
@@ -670,6 +670,19 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 
 - 新阅读器能拿到章节列表和章节正文。
 - 能恢复到当前保存位置附近。
+
+收尾记录：
+
+| 项目 | 状态 | 落点 | 说明 |
+| --- | --- | --- | --- |
+| `ReaderPageModel` | 完成 | `Yomink/Presentation/ReaderV2/Core/ReaderPageModel.swift` | 对齐原 App 页模型字段，负责章节数、当前章、页数、页码、章内进度和页面状态 |
+| `ReaderRecord` | 完成 | `Yomink/Presentation/ReaderV2/Core/ReaderRecord.swift` | 作为 V2 内部跳转和恢复记录，不直接暴露 `ReadingProgress` |
+| `ReaderBookAdapter` | 完成 | `Yomink/Presentation/ReaderV2/Bridge/ReaderBookAdapter.swift` | 从现有 `Book`、`Chapter`、`AppFileStore` 派生章节读取、进度桥接、记录桥接 |
+| `ReaderChapterProvider` | 完成 | `Yomink/Presentation/ReaderV2/Bridge/ReaderChapterProvider.swift` | 支持同步/异步按章节读取 UTF-8 正文；缺章和解码失败有明确错误 |
+| `ReaderProgressBridge` | 完成 | `Yomink/Presentation/ReaderV2/Bridge/ReaderProgressBridge.swift` | 支持 `ReadingProgress -> ReaderRecord` 和 `ReaderPageModel -> ReadingProgress`；`chapterID` 缺失时用 `globalProgress` 兜底 |
+| `ReaderRecordBridge` | 完成 | `Yomink/Presentation/ReaderV2/Bridge/ReaderRecordBridge.swift` | 支持目录章节、`ReaderContentTarget`、`Bookmark` 转 `ReaderRecord` |
+| 验收：章节列表和正文读取 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 `ReaderBookAdapter` 和 `ReaderChapterProvider` 的真实临时文件读取 |
+| 验收：恢复到保存位置附近 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖已保存进度、`chapterID` 缺失兜底、页模型写回 `ReadingProgress` |
 
 ### Phase 2：排版和分页核心
 
