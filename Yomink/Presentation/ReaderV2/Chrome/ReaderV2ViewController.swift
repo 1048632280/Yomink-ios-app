@@ -243,27 +243,46 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         menuView.onCatalog = { [weak self] in
             self?.showContents()
         }
-        menuView.onSearch = { [weak self] in
-            self?.showContentSearch(initialKeyword: nil)
-        }
         menuView.onBookmark = { [weak self] in
             self?.toggleBookmark()
         }
         menuView.onSettings = { [weak self] in
             self?.setSettingsPanelVisible(true, animated: true)
         }
-        menuView.onPreviousPage = { [weak self] in
-            self?.setMenuVisible(false, animated: true)
+        menuView.onPreviousChapter = { [weak self] in
             self?.stopAutoReading(animated: false)
-            self?.goToAdjacentPage(delta: -1)
+            self?.goToChapter(delta: -1)
         }
         menuView.onAutoRead = { [weak self] in
             self?.autoReadButtonTapped()
         }
-        menuView.onNextPage = { [weak self] in
-            self?.setMenuVisible(false, animated: true)
+        menuView.onNextChapter = { [weak self] in
             self?.stopAutoReading(animated: false)
-            self?.goToAdjacentPage(delta: 1)
+            self?.goToChapter(delta: 1)
+        }
+        menuView.onDarkMode = { [weak self] in
+            self?.toggleDarkMode()
+        }
+        menuView.onMoreBookDetail = { [weak self] in
+            self?.showBookDetail()
+        }
+        menuView.onMoreContentSearch = { [weak self] in
+            self?.showContentSearch(initialKeyword: nil)
+        }
+        menuView.onMoreContentFilter = { [weak self] in
+            self?.showFilterRules(initialSource: nil)
+        }
+        menuView.onMorePageTouchAreas = { [weak self] in
+            self?.showPageTouchAreas()
+        }
+        menuView.onProgressSliderBegan = { [weak self] in
+            self?.stopAutoReading(animated: false)
+        }
+        menuView.onProgressSliderChanged = { [weak self] progress in
+            self?.updateMenuProgressPreview(chapterProgress: progress)
+        }
+        menuView.onProgressSliderFinished = { [weak self] progress in
+            self?.openProgressInCurrentChapter(progress)
         }
         view.addSubview(menuView)
         NSLayoutConstraint.activate([
@@ -688,7 +707,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             throw ReaderV2Error.layoutUnavailable
         }
 
-        let text = try await chapterProvider.textAsync(forChapterAt: index)
+        let rawText = try await chapterProvider.textAsync(forChapterAt: index)
+        let text = ReaderTextFilter.readingFilteredText(
+            rules: filterRules,
+            to: rawText
+        ).displayText
         let manager = PaibanManager(layout: layout, theme: theme)
         let result = manager.divideText(
             text,
@@ -991,12 +1014,39 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private func updateMenuState() {
         let pageModel = currentPageModel
         menuView.configure(bookTitle: book.title)
-        menuView.update(
-            pageModel: pageModel,
-            chapterTitle: pageModel.map { chapterTitle(at: $0.chapterIndex) } ?? "",
-            turnPageType: activeTurnPageType
-        )
+        if let pageModel {
+            let chapterProgress = ReaderPageCalculator.pageProgress(
+                pageCount: pageModel.pageCount,
+                pageIndex: pageModel.pageIndex,
+                progress: pageModel.chapterProgress,
+                usesPageIndex: pageModel.usesPageIndex
+            )
+            menuView.updateProgress(
+                chapterTitle: chapterTitle(at: pageModel.chapterIndex),
+                chapterProgress: chapterProgress,
+                globalProgress: globalProgress(
+                    chapterIndex: pageModel.chapterIndex,
+                    chapterProgress: chapterProgress
+                ),
+                pageIndex: pageModel.pageIndex,
+                pageCount: pageModel.pageCount
+            )
+            menuView.updateChapterNavigation(
+                canGoPrevious: chapters.indices.contains(pageModel.chapterIndex - 1),
+                canGoNext: chapters.indices.contains(pageModel.chapterIndex + 1)
+            )
+        } else {
+            menuView.updateProgress(
+                chapterTitle: "",
+                chapterProgress: 0,
+                globalProgress: 0,
+                pageIndex: 0,
+                pageCount: 1
+            )
+            menuView.updateChapterNavigation(canGoPrevious: false, canGoNext: false)
+        }
         menuView.updateAutoRead(isReading: autoReadController.isReading)
+        menuView.updateDarkMode(isDark: readerSettings.theme == .dark)
         updateBookmarkState()
     }
 
@@ -1013,6 +1063,60 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return nil
         }
         return progressBridge?.readingProgress(from: currentPageModel)
+    }
+
+    private func globalProgress(
+        chapterIndex: Int,
+        chapterProgress: Double
+    ) -> Double {
+        guard chapters.indices.contains(chapterIndex) else {
+            return 0
+        }
+        let chapter = chapters[chapterIndex]
+        let chapterOffset = chapterOffset(
+            chapterIndex: chapterIndex,
+            chapterProgress: chapterProgress
+        )
+        let total = max(chapters.last?.endOffset ?? chapter.endOffset, 1)
+        let absoluteOffset = chapter.startOffset + chapterOffset
+        return min(max(Double(absoluteOffset) / Double(total), 0), 1)
+    }
+
+    private func chapterOffset(
+        chapterIndex: Int,
+        chapterProgress: Double
+    ) -> Int {
+        guard chapters.indices.contains(chapterIndex) else {
+            return 0
+        }
+        let chapter = chapters[chapterIndex]
+        guard chapter.byteLength > 0 else {
+            return 0
+        }
+        let clamped = ReaderPageModel.clampedProgress(chapterProgress)
+        return min(
+            max(Int((Double(chapter.byteLength) * clamped).rounded(.down)), 0),
+            max(chapter.byteLength - 1, 0)
+        )
+    }
+
+    private func updateMenuProgressPreview(chapterProgress: Double) {
+        guard let currentPageModel else {
+            return
+        }
+        let clamped = ReaderPageModel.clampedProgress(chapterProgress)
+        let lastPageIndex = max(currentPageModel.pageCount - 1, 0)
+        let estimatedPageIndex = lastPageIndex > 0
+            ? min(max(Int((Double(lastPageIndex) * clamped).rounded()), 0), lastPageIndex)
+            : 0
+        menuView.updateProgressPreview(
+            chapterProgress: clamped,
+            globalProgress: globalProgress(
+                chapterIndex: currentPageModel.chapterIndex,
+                chapterProgress: clamped
+            ),
+            pageIndex: estimatedPageIndex
+        )
     }
 
     private func updateBookmarkState() {
@@ -1085,6 +1189,67 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             self.popBackToReader(animated: true)
         }
         pushReaderPage(searchViewController)
+    }
+
+    private func showBookDetail() {
+        guard chapters.isEmpty == false else {
+            return
+        }
+        let detailViewController = ReaderBookDetailViewController(
+            book: book,
+            repository: repository,
+            fileStore: fileStore,
+            chapters: chapters,
+            selectedChapterIndex: selectedChapterIndex(),
+            onBookUpdated: { [weak self] updatedBook in
+                guard let self else {
+                    return
+                }
+                self.book = updatedBook
+                self.menuView.configure(bookTitle: updatedBook.title)
+            },
+            onBookmarksChanged: { [weak self] bookmarks in
+                self?.bookmarks = bookmarks
+                self?.updateBookmarkState()
+            },
+            onSelectCatalogTarget: { [weak self] target in
+                guard let self else {
+                    return
+                }
+                self.jumpTo(target)
+                self.popBackToReader(animated: true)
+            }
+        )
+        pushReaderPage(detailViewController)
+    }
+
+    private func showFilterRules(initialSource: String?) {
+        let filterViewController = ReaderFilterRulesViewController(
+            bookID: book.id,
+            repository: repository,
+            rules: filterRules,
+            initialSource: initialSource
+        ) { [weak self] rules in
+            guard let self else {
+                return
+            }
+            self.filterRules = rules
+            let record = self.recordForCurrentPage()
+            self.paginationCache.removeAll()
+            self.preloadTasks.values.forEach { $0.cancel() }
+            self.preloadTasks.removeAll()
+            if let record {
+                self.open(record: record, animated: false)
+            }
+        }
+        pushReaderPage(filterViewController)
+    }
+
+    private func showPageTouchAreas() {
+        let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
+            self?.applyReaderSettings(settings)
+        }
+        pushReaderPage(viewController, prefersNavigationBarHidden: true)
     }
 
     private func jumpTo(_ target: ReaderContentTarget) {
@@ -1460,6 +1625,41 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             touchedView = currentView.superview
         }
         return true
+    }
+
+    private func goToChapter(delta: Int) {
+        guard let currentPageModel else {
+            return
+        }
+        let targetChapterIndex = currentPageModel.chapterIndex + delta
+        guard chapters.indices.contains(targetChapterIndex) else {
+            return
+        }
+        let record = ReaderRecord(
+            chapterIndex: targetChapterIndex,
+            progress: 0,
+            chapterTitle: chapterTitle(at: targetChapterIndex)
+        )
+        open(record: record, animated: true)
+    }
+
+    private func openProgressInCurrentChapter(_ progress: Double) {
+        guard let currentPageModel else {
+            return
+        }
+        stopAutoReading(animated: false)
+        let record = ReaderRecord(
+            chapterIndex: currentPageModel.chapterIndex,
+            progress: ReaderPageModel.clampedProgress(progress),
+            chapterTitle: chapterTitle(at: currentPageModel.chapterIndex)
+        )
+        open(record: record, animated: false)
+    }
+
+    private func toggleDarkMode() {
+        var settings = readerSettings
+        settings.theme = settings.theme == .dark ? .white : .dark
+        applyReaderSettings(settings)
     }
 
     private func goToAdjacentPage(delta: Int) {

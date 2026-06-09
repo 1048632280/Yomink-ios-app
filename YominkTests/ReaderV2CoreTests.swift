@@ -724,12 +724,19 @@ final class ReaderV2CoreTests: XCTestCase {
         let model = readerV2PageModel(pageIndex: 1, pageCount: 3)
         var closeCount = 0
         var catalogCount = 0
-        var searchCount = 0
         var bookmarkCount = 0
         var settingsCount = 0
-        var previousCount = 0
+        var previousChapterCount = 0
         var autoReadCount = 0
-        var nextCount = 0
+        var nextChapterCount = 0
+        var darkModeCount = 0
+        var bookDetailCount = 0
+        var contentSearchCount = 0
+        var contentFilterCount = 0
+        var pageTouchAreasCount = 0
+        var progressBeganCount = 0
+        var changedProgress: Double?
+        var finishedProgress: Double?
 
         menuView.onClose = {
             closeCount += 1
@@ -737,30 +744,54 @@ final class ReaderV2CoreTests: XCTestCase {
         menuView.onCatalog = {
             catalogCount += 1
         }
-        menuView.onSearch = {
-            searchCount += 1
-        }
         menuView.onBookmark = {
             bookmarkCount += 1
         }
         menuView.onSettings = {
             settingsCount += 1
         }
-        menuView.onPreviousPage = {
-            previousCount += 1
+        menuView.onPreviousChapter = {
+            previousChapterCount += 1
         }
         menuView.onAutoRead = {
             autoReadCount += 1
         }
-        menuView.onNextPage = {
-            nextCount += 1
+        menuView.onNextChapter = {
+            nextChapterCount += 1
+        }
+        menuView.onDarkMode = {
+            darkModeCount += 1
+        }
+        menuView.onMoreBookDetail = {
+            bookDetailCount += 1
+        }
+        menuView.onMoreContentSearch = {
+            contentSearchCount += 1
+        }
+        menuView.onMoreContentFilter = {
+            contentFilterCount += 1
+        }
+        menuView.onMorePageTouchAreas = {
+            pageTouchAreasCount += 1
+        }
+        menuView.onProgressSliderBegan = {
+            progressBeganCount += 1
+        }
+        menuView.onProgressSliderChanged = { progress in
+            changedProgress = progress
+        }
+        menuView.onProgressSliderFinished = { progress in
+            finishedProgress = progress
         }
         menuView.configure(bookTitle: "Book")
-        menuView.update(
-            pageModel: model,
+        menuView.updateProgress(
             chapterTitle: "Chapter",
-            turnPageType: .horizontalScroll
+            chapterProgress: model.chapterProgress,
+            globalProgress: 0.42,
+            pageIndex: model.pageIndex,
+            pageCount: model.pageCount
         )
+        menuView.updateChapterNavigation(canGoPrevious: true, canGoNext: true)
 
         menuView.setMenuVisible(true, animated: false)
         XCTAssertTrue(menuView.isMenuVisible)
@@ -769,21 +800,43 @@ final class ReaderV2CoreTests: XCTestCase {
 
         menuView.closeButton.sendActions(for: .touchUpInside)
         menuView.catalogButton.sendActions(for: .touchUpInside)
-        menuView.searchButton.sendActions(for: .touchUpInside)
         menuView.bookmarkButton.sendActions(for: .touchUpInside)
         menuView.settingsButton.sendActions(for: .touchUpInside)
-        menuView.previousPageButton.sendActions(for: .touchUpInside)
+        menuView.previousChapterButton.sendActions(for: .touchUpInside)
         menuView.autoReadButton.sendActions(for: .touchUpInside)
-        menuView.nextPageButton.sendActions(for: .touchUpInside)
+        menuView.nextChapterButton.sendActions(for: .touchUpInside)
+        menuView.darkModeButton.sendActions(for: .touchUpInside)
+
+        menuView.moreButton.sendActions(for: .touchUpInside)
+        XCTAssertTrue(menuView.isMoreMenuVisible)
+        menuView.moreBookDetailButton.sendActions(for: .touchUpInside)
+        menuView.setMoreMenuVisible(true, animated: false)
+        menuView.moreContentSearchButton.sendActions(for: .touchUpInside)
+        menuView.setMoreMenuVisible(true, animated: false)
+        menuView.moreContentFilterButton.sendActions(for: .touchUpInside)
+        menuView.setMoreMenuVisible(true, animated: false)
+        menuView.morePageTouchAreasButton.sendActions(for: .touchUpInside)
+
+        menuView.progressSlider.sendActions(for: .touchDown)
+        menuView.progressSlider.value = 0.75
+        menuView.progressSlider.sendActions(for: .valueChanged)
+        menuView.progressSlider.sendActions(for: .touchUpInside)
 
         XCTAssertEqual(closeCount, 1)
         XCTAssertEqual(catalogCount, 1)
-        XCTAssertEqual(searchCount, 1)
         XCTAssertEqual(bookmarkCount, 1)
         XCTAssertEqual(settingsCount, 1)
-        XCTAssertEqual(previousCount, 1)
+        XCTAssertEqual(previousChapterCount, 1)
         XCTAssertEqual(autoReadCount, 1)
-        XCTAssertEqual(nextCount, 1)
+        XCTAssertEqual(nextChapterCount, 1)
+        XCTAssertEqual(darkModeCount, 1)
+        XCTAssertEqual(bookDetailCount, 1)
+        XCTAssertEqual(contentSearchCount, 1)
+        XCTAssertEqual(contentFilterCount, 1)
+        XCTAssertEqual(pageTouchAreasCount, 1)
+        XCTAssertEqual(progressBeganCount, 1)
+        XCTAssertEqual(changedProgress ?? 0, 0.75, accuracy: 0.0001)
+        XCTAssertEqual(finishedProgress ?? 0, 0.75, accuracy: 0.0001)
 
         menuView.updateBookmark(isBookmarked: true)
         XCTAssertEqual(
@@ -792,9 +845,13 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         menuView.setBookmarkButtonEnabled(false)
         XCTAssertFalse(menuView.bookmarkButton.isEnabled)
+        menuView.updateChapterNavigation(canGoPrevious: false, canGoNext: true)
+        XCTAssertFalse(menuView.previousChapterButton.isEnabled)
+        XCTAssertTrue(menuView.nextChapterButton.isEnabled)
 
         menuView.setMenuVisible(false, animated: false)
         XCTAssertFalse(menuView.isMenuVisible)
+        XCTAssertFalse(menuView.isMoreMenuVisible)
         XCTAssertTrue(menuView.isHidden)
         XCTAssertFalse(menuView.isUserInteractionEnabled)
     }
