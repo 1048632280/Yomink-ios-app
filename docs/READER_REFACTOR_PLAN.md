@@ -619,7 +619,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | Phase 0：准备和冻结旧阅读器 | 已收尾 | `ReaderV2` 目录已建立；旧入口默认保留；`ReaderV2HostView` 已新增；`usesReaderV2 = false` 开关已接入；固定测试 TXT 已准备 | 进入 Phase 1 验收和补强 | 30MB 压测书用确定性脚本生成，生成物不入库 |
 | Phase 1：模型和数据桥接 | 已完成 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge`、`ReaderRecordBridge` 已落地；章节正文读取、进度恢复、目录/搜索/书签目标转换已有测试 | 进入 Phase 2 收尾和验收 | 当前 Windows 环境没有 `swift` / `xcodebuild`，需在 Xcode 环境补跑 |
 | Phase 2：排版和分页核心 | 已完成 | `ReaderFontManager`、`ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 已完成本阶段目标；单章 CoreText 分页、富文本属性、纵向高度、双栏 API 单栏降级、极小页面边界和进度换算均有单测覆盖 | 进入 Phase 3 收尾和验收：补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图刷新 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
-| Phase 3：页面绘制 | 进行中 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController` 已落地，可绘制 attributed page | 补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图 | 页面背景图尚未接入 |
+| Phase 3：页面绘制 | 已完成 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController`、`ReaderPageBackgroundView` 已完成本阶段目标；CoreText 自绘、页面背景、主题背景图、正文色刷新、选中/高亮背景和尺寸变化重绘均有单测覆盖 | 进入 Phase 4：拆出左右平移、仿真翻页、纵向连续滚动三种容器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 4：三种容器 | 未开始 | 最小 `UIPageViewController` 宿主已能承载左右/仿真翻页雏形 | 拆出 `ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer` | 纵向滚动未开始 |
 | Phase 5：主题、菜单和设置 | 未开始 | V2 已能从现有 `ReaderSettings` 映射布局和主题 | 新建 `ReaderThemeManager`、菜单、设置面板 | 暂不复用旧菜单 |
 | Phase 6：自动阅读和系统外观 | 未开始 | V2 控制器已集中处理基础状态栏、Home Indicator、常亮 | 新建 `ReaderAutoReadController`、`ReaderSystemAppearanceController` | 自动阅读绑定纵向滚动容器 |
@@ -742,6 +742,21 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 - 页面显示稳定。
 - 旋转、尺寸变化后重绘正确。
 - 主题切换后正文颜色刷新。
+
+收尾记录：
+
+| 项目 | 状态 | 落点 | 说明 |
+| --- | --- | --- | --- |
+| 读取 Phase 3 计划和进度 | 完成 | `docs/READER_REFACTOR_PLAN.md` | 本轮开始前已读取阶段进度总表和 Phase 3 目标、任务、验收项 |
+| `TextReadViewBase` | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadViewBase.swift` | 保存 attributed page，按 `ReaderLayout.contentRect` 创建/重建 `CTFrame`，正文色变化时刷新富文本颜色 |
+| `TextReadView` | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadView.swift` | 绘制前先画选中/高亮背景，再翻转 Core Graphics 坐标并调用 `CTFrameDraw` |
+| 页面背景 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/ReaderPageBackgroundView.swift` | 新增背景 view，统一处理主题背景色、`theme_bg5` 纹理图、普通图片背景和无图主题清理 |
+| 页面控制器接入 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/ReaderPageViewController.swift` | 背景 view 位于底层，文本 view 透明覆盖；配置页面时同步刷新 layout、主题、正文色和 attributed page |
+| 选中/高亮绘制 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadViewBase.swift` | 新增 highlighted ranges、selected range、CoreText line rect 转 UIKit rect 的背景绘制能力；交互手柄留到后续阶段 |
+| 验收：页面显示稳定 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 page view controller 配置、背景 view 接入、文本 view 内容配置 |
+| 验收：旋转/尺寸变化后重绘 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 bounds 变化后 `CTFrame` 仍可重建，range 背景矩形仍在页面范围内 |
+| 验收：主题切换后正文颜色刷新 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 `contentColor` 改变后 attributed text 前景色刷新，以及 page controller 从普通主题切到暗色主题 |
+| 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；`ReaderPageBackgroundView.swift` 已加入工程；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
 ### Phase 4：三种容器
 

@@ -374,6 +374,142 @@ final class ReaderV2CoreTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testReaderPageBackgroundViewAppliesAndClearsThemeImage() {
+        let backgroundView = ReaderPageBackgroundView(
+            frame: CGRect(x: 0, y: 0, width: 320, height: 480)
+        )
+
+        backgroundView.apply(theme: .standard)
+
+        XCTAssertEqual(backgroundView.displayedImageName, "theme_bg5")
+        XCTAssertTrue(backgroundView.backgroundColor?.isEqual(ReaderTheme.standard.backgroundColor) ?? false)
+        if UIImage(named: "theme_bg5") != nil {
+            XCTAssertTrue(backgroundView.usesPatternImage)
+        }
+
+        backgroundView.apply(theme: .dark)
+
+        XCTAssertNil(backgroundView.displayedImageName)
+        XCTAssertFalse(backgroundView.usesPatternImage)
+        XCTAssertTrue(backgroundView.backgroundColor?.isEqual(ReaderTheme.dark.backgroundColor) ?? false)
+    }
+
+    @MainActor
+    func testTextReadViewRefreshesContentColor() {
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        view.contentColor = .red
+        view.setAttributedText(NSAttributedString(string: "正文颜色"))
+
+        let red = view.attributedText.attribute(
+            .foregroundColor,
+            at: 0,
+            effectiveRange: nil
+        ) as? UIColor
+        XCTAssertTrue(red?.isEqual(UIColor.red) ?? false)
+
+        view.contentColor = .blue
+        let blue = view.attributedText.attribute(
+            .foregroundColor,
+            at: 0,
+            effectiveRange: nil
+        ) as? UIColor
+        XCTAssertTrue(blue?.isEqual(UIColor.blue) ?? false)
+    }
+
+    @MainActor
+    func testTextReadViewBuildsDecorationRectsAndReflowsOnBoundsChange() {
+        let manager = PaibanManager(layout: .phone, theme: .standard)
+        let attributed = manager.attributedText(
+            text: readerV2LongText(repeating: 20),
+            chapterTitle: "绘制测试"
+        )
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 340, height: 520))
+        view.layout = .phone
+        view.setAttributedText(attributed)
+        view.layoutIfNeeded()
+
+        let range = NSRange(location: 0, length: min(220, view.attributedText.length))
+        let wideRects = view.textRects(for: range)
+
+        XCTAssertNotNil(view.frameRef)
+        XCTAssertFalse(wideRects.isEmpty)
+        XCTAssertTrue(wideRects.allSatisfy { view.bounds.insetBy(dx: -1, dy: -1).intersects($0) })
+
+        view.frame = CGRect(x: 0, y: 0, width: 220, height: 520)
+        view.layoutIfNeeded()
+        let narrowRects = view.textRects(for: range)
+
+        XCTAssertNotNil(view.frameRef)
+        XCTAssertFalse(narrowRects.isEmpty)
+        XCTAssertTrue(narrowRects.allSatisfy { view.bounds.insetBy(dx: -1, dy: -1).intersects($0) })
+        XCTAssertGreaterThanOrEqual(narrowRects.count, wideRects.count)
+    }
+
+    @MainActor
+    func testTextReadViewClampsSelectionAndHighlightRanges() {
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        view.setAttributedText(NSAttributedString(string: "abcdef"))
+
+        view.setHighlightedRanges([
+            NSRange(location: 2, length: 99),
+            NSRange(location: 20, length: 1)
+        ])
+        view.setSelectedRange(NSRange(location: 1, length: 99))
+
+        XCTAssertEqual(view.highlightedRanges, [NSRange(location: 2, length: 4)])
+        XCTAssertEqual(view.selectedRange, Optional(NSRange(location: 1, length: 5)))
+    }
+
+    @MainActor
+    func testReaderPageViewControllerAppliesThemeAndDecorationRanges() {
+        let manager = PaibanManager(layout: .phone, theme: .standard)
+        let result = manager.divideText(
+            readerV2LongText(repeating: 10),
+            chapterTitle: "页面",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 260, height: 360)
+        )
+        guard let page = result.pages.first else {
+            XCTFail("Expected at least one rendered page")
+            return
+        }
+        let model = ReaderPageModel(
+            chapterCount: 1,
+            chapterIndex: 0,
+            pageCount: result.pageCount,
+            pageIndex: 0,
+            chapterProgress: 0,
+            usesPageIndex: true
+        )
+        let controller = ReaderPageViewController()
+
+        controller.configure(
+            page: page,
+            pageModel: model,
+            layout: .phone,
+            theme: .standard
+        )
+        controller.loadViewIfNeeded()
+        controller.setHighlightedRanges([NSRange(location: 0, length: 8)])
+        controller.setSelectedRange(NSRange(location: 1, length: 4))
+
+        XCTAssertEqual(controller.backgroundView.displayedImageName, "theme_bg5")
+        XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.standard.contentColor))
+        XCTAssertEqual(controller.textView.highlightedRanges, [NSRange(location: 0, length: 8)])
+        XCTAssertEqual(controller.textView.selectedRange, Optional(NSRange(location: 1, length: 4)))
+
+        controller.configure(
+            page: page,
+            pageModel: model,
+            layout: .phone,
+            theme: .dark
+        )
+
+        XCTAssertNil(controller.backgroundView.displayedImageName)
+        XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.dark.contentColor))
+    }
+
     func testBookAdapterExposesReaderV2BridgeComponents() throws {
         let fixture = try makeFileBackedBookFixture()
         let adapter = ReaderBookAdapter(

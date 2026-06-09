@@ -8,6 +8,8 @@ final class TextReadView: TextReadViewBase {
             return
         }
 
+        drawTextBackgrounds(in: context)
+
         context.saveGState()
         context.textMatrix = .identity
         context.translateBy(x: 0, y: bounds.height)
@@ -16,4 +18,3 @@ final class TextReadView: TextReadViewBase {
         context.restoreGState()
     }
 }
-
