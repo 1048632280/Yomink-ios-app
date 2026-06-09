@@ -636,7 +636,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         record: ReaderRecord,
         animated: Bool,
         showsLoading: Bool = true,
-        closesMenuOnSuccess: Bool = false
+        closesMenuOnSuccess: Bool = false,
+        onSuccess: (() -> Void)? = nil
     ) {
         openGeneration += 1
         let generation = openGeneration
@@ -664,6 +665,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 if closesMenuOnSuccess {
                     self.closeReaderMenuOverlays(animated: false)
                 }
+                onSuccess?()
                 if showsLoading {
                     self.showLoading(false)
                 }
@@ -1307,8 +1309,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard let record = recordBridge?.record(from: target) else {
             return
         }
-        closeAuxiliaryReaderPage(animated: true) { [weak self] in
-            self?.open(record: record, animated: false)
+        open(
+            record: record,
+            animated: false,
+            showsLoading: false,
+            closesMenuOnSuccess: true
+        ) { [weak self] in
+            self?.closeAuxiliaryReaderPage(animated: true) {}
         }
     }
 
