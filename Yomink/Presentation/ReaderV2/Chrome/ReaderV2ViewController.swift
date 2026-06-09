@@ -24,7 +24,7 @@ private enum ReaderV2Error: LocalizedError {
 }
 
 @MainActor
-final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+final class ReaderV2ViewController: UIViewController {
     private let fileStore: AppFileStore
     private let repository: any LibraryRepository
     private let onClose: () -> Void
@@ -33,7 +33,7 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
     private let closeButton = UIButton(type: .system)
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
 
-    private var pageViewController: UIPageViewController?
+    private var activeContainer: ReaderContainerProtocol?
     private var activeTurnPageType: ReaderTurnPageType = .horizontalScroll
     private var book: Book
     private var chapters: [Chapter] = []
@@ -119,7 +119,7 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = theme.backgroundColor
-        configurePageViewController(for: activeTurnPageType)
+        configureContainer(for: activeTurnPageType)
         configureCloseButton()
         configureLoadingIndicator()
         configureTapGesture()
@@ -157,41 +157,64 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
         startInitialLoad()
     }
 
-    private func configurePageViewController(for turnPageType: ReaderTurnPageType) {
-        let effectiveType: ReaderTurnPageType = turnPageType == .pageCurl ? .pageCurl : .horizontalScroll
-        guard pageViewController == nil || activeTurnPageType != effectiveType else {
+    private func configureContainer(for turnPageType: ReaderTurnPageType) {
+        guard activeContainer == nil || activeTurnPageType != turnPageType else {
+            activeContainer?.apply(theme: theme)
             return
         }
 
-        if let pageViewController {
-            pageViewController.willMove(toParent: nil)
-            pageViewController.view.removeFromSuperview()
-            pageViewController.removeFromParent()
+        if let currentContainer = activeContainer?.viewController {
+            currentContainer.willMove(toParent: nil)
+            currentContainer.view.removeFromSuperview()
+            currentContainer.removeFromParent()
         }
 
-        let transitionStyle: UIPageViewController.TransitionStyle = effectiveType == .pageCurl ? .pageCurl : .scroll
-        let controller = UIPageViewController(
-            transitionStyle: transitionStyle,
-            navigationOrientation: .horizontal
-        )
-        controller.dataSource = self
-        controller.delegate = self
-        controller.isDoubleSided = effectiveType == .pageCurl
-        controller.view.backgroundColor = theme.backgroundColor
+        let container: ReaderContainerProtocol
+        switch turnPageType {
+        case .horizontalScroll:
+            container = ReaderPageContainer()
+        case .pageCurl:
+            container = ReaderPageCurlContainer()
+        case .verticalContinuous:
+            container = ReaderScrollContainer()
+        }
 
-        addChild(controller)
-        controller.view.translatesAutoresizingMaskIntoConstraints = false
-        view.insertSubview(controller.view, at: 0)
+        container.makePageController = { [weak self] pageModel in
+            self?.makePageViewController(for: pageModel)
+        }
+        container.adjacentPageModel = { [weak self] pageModel, delta in
+            self?.adjacentPageModel(from: pageModel, delta: delta)
+        }
+        container.onPageTurnCompleted = { [weak self] pageModel in
+            self?.pageTurnCompleted(to: pageModel)
+        }
+
+        let containerViewController = container.viewController
+        addChild(containerViewController)
+        containerViewController.view.translatesAutoresizingMaskIntoConstraints = false
+        view.insertSubview(containerViewController.view, at: 0)
         NSLayoutConstraint.activate([
-            controller.view.topAnchor.constraint(equalTo: view.topAnchor),
-            controller.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            controller.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            controller.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            containerViewController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            containerViewController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            containerViewController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            containerViewController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
-        controller.didMove(toParent: self)
+        containerViewController.didMove(toParent: self)
 
-        pageViewController = controller
-        activeTurnPageType = effectiveType
+        activeContainer = container
+        activeTurnPageType = turnPageType
+        container.apply(theme: theme)
+
+        if let currentPageModel,
+           paginationCache[currentPageModel.chapterIndex]?.pages.indices.contains(currentPageModel.pageIndex) == true {
+            try? display(
+                pageModel: currentPageModel,
+                direction: .forward,
+                animated: false,
+                savesProgress: false,
+                recordsOpenHistory: false
+            )
+        }
     }
 
     private func configureCloseButton() {
@@ -287,9 +310,9 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
         view.backgroundColor = theme.backgroundColor
         closeButton.tintColor = theme.headerColor
         closeButton.backgroundColor = theme.backgroundColor.withAlphaComponent(0.72)
-        pageViewController?.view.backgroundColor = theme.backgroundColor
+        activeContainer?.apply(theme: theme)
         paginationCache.removeAll()
-        configurePageViewController(for: Self.turnPageType(from: readerSettings))
+        configureContainer(for: Self.turnPageType(from: readerSettings))
         updateSystemAppearance()
 
         let adapter = ReaderBookAdapter(
@@ -447,7 +470,7 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
             chapterIndex: index,
             pageSize: pageSize,
             doubleColumn: false,
-            returnsHeights: false
+            returnsHeights: activeTurnPageType == .verticalContinuous
         )
         paginationCache[index] = result
         return result
@@ -455,17 +478,25 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
 
     private func display(
         pageModel: ReaderPageModel,
-        direction: UIPageViewController.NavigationDirection,
+        direction: ReaderPageTurnDirection,
         animated: Bool,
         savesProgress: Bool,
         recordsOpenHistory: Bool
     ) throws {
-        guard let pageViewController,
+        guard let activeContainer,
               let pageController = makePageViewController(for: pageModel) else {
             throw ReaderV2Error.pageUnavailable
         }
-        pageViewController.setViewControllers(
-            [pageController],
+        if let scrollContainer = activeContainer as? ReaderScrollContainer {
+            scrollContainer.reload(
+                sections: scrollSections(),
+                layout: layout,
+                theme: theme
+            )
+        }
+        activeContainer.display(
+            pageModel: pageModel,
+            pageController: pageController,
             direction: direction,
             animated: animated
         )
@@ -565,6 +596,35 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
         )
     }
 
+    private func scrollSections() -> [ReaderScrollSection] {
+        paginationCache.keys.sorted().compactMap { chapterIndex in
+            guard let result = paginationCache[chapterIndex],
+                  result.pageCount > 0 else {
+                return nil
+            }
+
+            let pageModels = result.pages.indices.map { pageIndex in
+                makePageModel(
+                    chapterIndex: chapterIndex,
+                    pageIndex: pageIndex,
+                    pageCount: result.pageCount
+                )
+            }
+            let fallbackHeight = max(lastPaginationSize.height, view.bounds.height, 1)
+            let heights = result.pageHeights.count == result.pages.count
+                ? result.pageHeights
+                : Array(repeating: fallbackHeight, count: result.pages.count)
+            return ReaderScrollSection(
+                chapterIndex: chapterIndex,
+                title: chapterTitle(at: chapterIndex),
+                timestamp: Date(timeIntervalSince1970: Double(chapterIndex)),
+                items: result.pages.map(\.attributedText),
+                heights: heights,
+                pageModels: pageModels
+            )
+        }
+    }
+
     private func preloadAround(chapterIndex: Int) {
         for index in [chapterIndex - 1, chapterIndex + 1] {
             guard chapters.indices.contains(index),
@@ -578,6 +638,13 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
                         return
                     }
                     _ = try await self.divisionResult(forChapterAt: index)
+                    if let scrollContainer = self.activeContainer as? ReaderScrollContainer {
+                        scrollContainer.reload(
+                            sections: self.scrollSections(),
+                            layout: self.layout,
+                            theme: self.theme
+                        )
+                    }
                     self.preloadTasks[index] = nil
                 } catch is CancellationError {
                     self?.preloadTasks[index] = nil
@@ -703,7 +770,7 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
     }
 
     private func goToAdjacentPage(delta: Int) {
-        let direction: UIPageViewController.NavigationDirection = delta > 0 ? .forward : .reverse
+        let direction: ReaderPageTurnDirection = delta > 0 ? .forward : .reverse
         openTask?.cancel()
         openTask = Task { [weak self] in
             do {
@@ -730,41 +797,7 @@ final class ReaderV2ViewController: UIViewController, UIPageViewControllerDataSo
         onClose()
     }
 
-    func pageViewController(
-        _ pageViewController: UIPageViewController,
-        viewControllerBefore viewController: UIViewController
-    ) -> UIViewController? {
-        guard let pageController = viewController as? ReaderPageViewController,
-              let pageModel = pageController.pageModel,
-              let previous = adjacentPageModel(from: pageModel, delta: -1) else {
-            return nil
-        }
-        return makePageViewController(for: previous)
-    }
-
-    func pageViewController(
-        _ pageViewController: UIPageViewController,
-        viewControllerAfter viewController: UIViewController
-    ) -> UIViewController? {
-        guard let pageController = viewController as? ReaderPageViewController,
-              let pageModel = pageController.pageModel,
-              let next = adjacentPageModel(from: pageModel, delta: 1) else {
-            return nil
-        }
-        return makePageViewController(for: next)
-    }
-
-    func pageViewController(
-        _ pageViewController: UIPageViewController,
-        didFinishAnimating finished: Bool,
-        previousViewControllers: [UIViewController],
-        transitionCompleted completed: Bool
-    ) {
-        guard completed,
-              let pageController = pageViewController.viewControllers?.first as? ReaderPageViewController,
-              let pageModel = pageController.pageModel else {
-            return
-        }
+    private func pageTurnCompleted(to pageModel: ReaderPageModel) {
         currentPageModel = pageModel
         preloadAround(chapterIndex: pageModel.chapterIndex)
         saveProgress(

@@ -510,6 +510,145 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.dark.contentColor))
     }
 
+    @MainActor
+    func testReaderPageContainersExposeExpectedModes() {
+        let pageContainer = ReaderPageContainer()
+        pageContainer.loadViewIfNeeded()
+
+        XCTAssertEqual(pageContainer.turnPageType, .horizontalScroll)
+        XCTAssertFalse(pageContainer.pageViewController.isDoubleSided)
+
+        let curlContainer = ReaderPageCurlContainer()
+        curlContainer.loadViewIfNeeded()
+
+        XCTAssertEqual(curlContainer.turnPageType, .pageCurl)
+        XCTAssertTrue(curlContainer.pageViewController.isDoubleSided)
+        XCTAssertEqual(
+            curlContainer.pageViewController(
+                curlContainer.pageViewController,
+                spineLocationFor: .portrait
+            ),
+            .min
+        )
+    }
+
+    @MainActor
+    func testReaderPageContainerDisplaysAdjacentPagesAndNotifiesCompletion() {
+        let container = ReaderPageContainer()
+        container.loadViewIfNeeded()
+        let firstModel = readerV2PageModel(pageIndex: 0, pageCount: 2)
+        let secondModel = readerV2PageModel(pageIndex: 1, pageCount: 2)
+        let firstController = readerV2PageController(pageModel: firstModel)
+        var completedModel: ReaderPageModel?
+
+        container.makePageController = { [weak self] model in
+            self?.readerV2PageController(pageModel: model)
+        }
+        container.adjacentPageModel = { model, delta in
+            guard model.pageIndex == 0, delta == 1 else {
+                return nil
+            }
+            return secondModel
+        }
+        container.onPageTurnCompleted = { model in
+            completedModel = model
+        }
+
+        container.display(
+            pageModel: firstModel,
+            pageController: firstController,
+            direction: .forward,
+            animated: false
+        )
+        let next = container.pageViewController(
+            container.pageViewController,
+            viewControllerAfter: firstController
+        ) as? ReaderPageViewController
+
+        XCTAssertEqual(container.currentPageModel, Optional(firstModel))
+        XCTAssertEqual(next?.pageModel, Optional(secondModel))
+
+        let secondController = readerV2PageController(pageModel: secondModel)
+        container.pageViewController.setViewControllers(
+            [secondController],
+            direction: .forward,
+            animated: false
+        )
+        container.pageViewController(
+            container.pageViewController,
+            didFinishAnimating: true,
+            previousViewControllers: [firstController],
+            transitionCompleted: true
+        )
+
+        XCTAssertEqual(completedModel, Optional(secondModel))
+        XCTAssertEqual(container.currentPageModel, Optional(secondModel))
+    }
+
+    @MainActor
+    func testReaderScrollContainerLoadsSectionsRowsAndHeights() {
+        let container = ReaderScrollContainer()
+        container.loadViewIfNeeded()
+        let firstModel = readerV2PageModel(pageIndex: 0, pageCount: 2)
+        let secondModel = readerV2PageModel(pageIndex: 1, pageCount: 2)
+        let section = ReaderScrollSection(
+            chapterIndex: 0,
+            title: "滚动章节",
+            timestamp: Date(timeIntervalSince1970: 0),
+            items: [
+                NSAttributedString(string: "第一页"),
+                NSAttributedString(string: "第二页")
+            ],
+            heights: [120, 180],
+            pageModels: [firstModel, secondModel]
+        )
+
+        container.reload(
+            sections: [section],
+            layout: .phone,
+            theme: .standard
+        )
+
+        XCTAssertEqual(container.turnPageType, .verticalContinuous)
+        XCTAssertEqual(container.tableView.numberOfSections, 1)
+        XCTAssertEqual(container.tableView.numberOfRows(inSection: 0), 2)
+        XCTAssertEqual(
+            container.tableView(
+                container.tableView,
+                heightForRowAt: IndexPath(row: 1, section: 0)
+            ),
+            180
+        )
+        XCTAssertEqual(container.indexPath(for: secondModel), Optional(IndexPath(row: 1, section: 0)))
+
+        container.display(
+            pageModel: secondModel,
+            pageController: readerV2PageController(pageModel: secondModel),
+            direction: .forward,
+            animated: false
+        )
+
+        XCTAssertEqual(container.currentPageModel, Optional(secondModel))
+    }
+
+    @MainActor
+    func testReaderScrollPageCellConfiguresPageModelAndText() {
+        let cell = ReaderScrollPageCell(
+            style: .default,
+            reuseIdentifier: ReaderScrollPageCell.reuseIdentifier
+        )
+        let model = readerV2PageModel(pageIndex: 0, pageCount: 1)
+
+        cell.configure(
+            attributedText: NSAttributedString(string: "纵向页面"),
+            pageModel: model,
+            layout: .phone,
+            theme: .dark
+        )
+
+        XCTAssertEqual(cell.pageModel, Optional(model))
+    }
+
     func testBookAdapterExposesReaderV2BridgeComponents() throws {
         let fixture = try makeFileBackedBookFixture()
         let adapter = ReaderBookAdapter(
@@ -586,6 +725,43 @@ final class ReaderV2CoreTests: XCTestCase {
             count: count
         )
         .joined(separator: "\n")
+    }
+
+    private func readerV2PageModel(
+        pageIndex: Int,
+        pageCount: Int,
+        chapterIndex: Int = 0
+    ) -> ReaderPageModel {
+        ReaderPageModel(
+            chapterCount: 1,
+            chapterIndex: chapterIndex,
+            pageCount: pageCount,
+            pageIndex: pageIndex,
+            chapterProgress: ReaderPageCalculator.pageProgress(
+                pageCount: pageCount,
+                pageIndex: pageIndex,
+                progress: 0,
+                usesPageIndex: true
+            ),
+            usesPageIndex: true
+        )
+    }
+
+    @MainActor
+    private func readerV2PageController(pageModel: ReaderPageModel) -> ReaderPageViewController {
+        let controller = ReaderPageViewController()
+        let text = "第 \(pageModel.pageIndex + 1) 页"
+        controller.configure(
+            page: ReaderDivisionPage(
+                attributedText: NSAttributedString(string: text),
+                displayRange: NSRange(location: 0, length: (text as NSString).length),
+                usedHeight: 120
+            ),
+            pageModel: pageModel,
+            layout: .phone,
+            theme: .standard
+        )
+        return controller
     }
 
     private func makeBookFixture() -> (book: Book, chapters: [Chapter]) {

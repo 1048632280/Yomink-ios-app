@@ -48,6 +48,11 @@
 		C0DE60000000000000001001 /* ReaderRecordBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001000 /* ReaderRecordBridge.swift */; };
 		C0DE60000000000000001101 /* ReaderFontManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001100 /* ReaderFontManager.swift */; };
 		C0DE60000000000000001201 /* ReaderPageBackgroundView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001200 /* ReaderPageBackgroundView.swift */; };
+		C0DE60000000000000001301 /* ReaderContainerProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001300 /* ReaderContainerProtocol.swift */; };
+		C0DE60000000000000001401 /* ReaderPageContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001400 /* ReaderPageContainer.swift */; };
+		C0DE60000000000000001501 /* ReaderPageCurlContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001500 /* ReaderPageCurlContainer.swift */; };
+		C0DE60000000000000001601 /* ReaderScrollPageCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001600 /* ReaderScrollPageCell.swift */; };
+		C0DE60000000000000001701 /* ReaderScrollContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001700 /* ReaderScrollContainer.swift */; };
 		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
 		C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */; };
 		C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */; };
@@ -153,6 +158,11 @@
 		C0DE60000000000000001000 /* ReaderRecordBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bridge/ReaderRecordBridge.swift; sourceTree = "<group>"; };
 		C0DE60000000000000001100 /* ReaderFontManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/ReaderFontManager.swift; sourceTree = "<group>"; };
 		C0DE60000000000000001200 /* ReaderPageBackgroundView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rendering/ReaderPageBackgroundView.swift; sourceTree = "<group>"; };
+		C0DE60000000000000001300 /* ReaderContainerProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Containers/ReaderContainerProtocol.swift; sourceTree = "<group>"; };
+		C0DE60000000000000001400 /* ReaderPageContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Containers/ReaderPageContainer.swift; sourceTree = "<group>"; };
+		C0DE60000000000000001500 /* ReaderPageCurlContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Containers/ReaderPageCurlContainer.swift; sourceTree = "<group>"; };
+		C0DE60000000000000001600 /* ReaderScrollPageCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Containers/ReaderScrollPageCell.swift; sourceTree = "<group>"; };
+		C0DE60000000000000001700 /* ReaderScrollContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Containers/ReaderScrollContainer.swift; sourceTree = "<group>"; };
 		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailViewController.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailEditViewController.swift; sourceTree = "<group>"; };
@@ -475,6 +485,11 @@
 				C0DE60000000000000000C00 /* TextReadView.swift */,
 				C0DE60000000000000000D00 /* ReaderPageViewController.swift */,
 				C0DE60000000000000001200 /* ReaderPageBackgroundView.swift */,
+				C0DE60000000000000001300 /* ReaderContainerProtocol.swift */,
+				C0DE60000000000000001400 /* ReaderPageContainer.swift */,
+				C0DE60000000000000001500 /* ReaderPageCurlContainer.swift */,
+				C0DE60000000000000001600 /* ReaderScrollPageCell.swift */,
+				C0DE60000000000000001700 /* ReaderScrollContainer.swift */,
 				C0DE60000000000000000E00 /* ReaderV2ViewController.swift */,
 				C0DE60000000000000000F00 /* ReaderV2HostView.swift */,
 			);
@@ -680,6 +695,11 @@
 				C0DE60000000000000001001 /* ReaderRecordBridge.swift in Sources */,
 				C0DE60000000000000001101 /* ReaderFontManager.swift in Sources */,
 				C0DE60000000000000001201 /* ReaderPageBackgroundView.swift in Sources */,
+				C0DE60000000000000001301 /* ReaderContainerProtocol.swift in Sources */,
+				C0DE60000000000000001401 /* ReaderPageContainer.swift in Sources */,
+				C0DE60000000000000001501 /* ReaderPageCurlContainer.swift in Sources */,
+				C0DE60000000000000001601 /* ReaderScrollPageCell.swift in Sources */,
+				C0DE60000000000000001701 /* ReaderScrollContainer.swift in Sources */,
 				C0DE30000000000000000101 /* CollectionReaderViewController.swift in Sources */,
 				C0DE30000000000000000A01 /* CollectionReaderViewController+CollectionView.swift in Sources */,
 				C0DE30000000000000000B01 /* CollectionReaderViewController+Gestures.swift in Sources */,

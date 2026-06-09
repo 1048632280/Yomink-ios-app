@@ -620,7 +620,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | Phase 1：模型和数据桥接 | 已完成 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge`、`ReaderRecordBridge` 已落地；章节正文读取、进度恢复、目录/搜索/书签目标转换已有测试 | 进入 Phase 2 收尾和验收 | 当前 Windows 环境没有 `swift` / `xcodebuild`，需在 Xcode 环境补跑 |
 | Phase 2：排版和分页核心 | 已完成 | `ReaderFontManager`、`ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 已完成本阶段目标；单章 CoreText 分页、富文本属性、纵向高度、双栏 API 单栏降级、极小页面边界和进度换算均有单测覆盖 | 进入 Phase 3 收尾和验收：补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图刷新 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 3：页面绘制 | 已完成 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController`、`ReaderPageBackgroundView` 已完成本阶段目标；CoreText 自绘、页面背景、主题背景图、正文色刷新、选中/高亮背景和尺寸变化重绘均有单测覆盖 | 进入 Phase 4：拆出左右平移、仿真翻页、纵向连续滚动三种容器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
-| Phase 4：三种容器 | 未开始 | 最小 `UIPageViewController` 宿主已能承载左右/仿真翻页雏形 | 拆出 `ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer` | 纵向滚动未开始 |
+| Phase 4：三种容器 | 已完成 | `ReaderContainerProtocol`、`ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer`、`ReaderScrollPageCell` 已落地并接入 `ReaderV2ViewController`；三种翻页模式、容器切换、翻页完成保存和纵向章节/页面块加载均有单测覆盖 | 进入 Phase 5：新建 `ReaderThemeManager`、菜单、设置面板并接入设置变更重排 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 5：主题、菜单和设置 | 未开始 | V2 已能从现有 `ReaderSettings` 映射布局和主题 | 新建 `ReaderThemeManager`、菜单、设置面板 | 暂不复用旧菜单 |
 | Phase 6：自动阅读和系统外观 | 未开始 | V2 控制器已集中处理基础状态栏、Home Indicator、常亮 | 新建 `ReaderAutoReadController`、`ReaderSystemAppearanceController` | 自动阅读绑定纵向滚动容器 |
 | Phase 7：替换入口和删除旧核心 | 未开始 | 旧入口仍作为默认回滚路径 | V2 稳定后再把 `usesReaderV2` 切到默认入口 | 不在 Phase 0 替换入口 |
@@ -778,6 +778,23 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 - 切换模式后位置不丢。
 - 仿真翻页背面不露白。
 - 纵向滚动按章节和页面块加载。
+
+收尾记录：
+
+| 项目 | 状态 | 落点 | 说明 |
+| --- | --- | --- | --- |
+| 读取 Phase 4 计划和进度 | 完成 | `docs/READER_REFACTOR_PLAN.md` | 本轮开始前已读取阶段进度总表和 Phase 4 目标、任务、验收项 |
+| 容器协议 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderContainerProtocol.swift` | 定义统一展示、主题刷新、相邻页生成和翻页完成回调，主控制器不再直接耦合具体容器 |
+| 左右平移容器 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderPageContainer.swift` | 包装 `UIPageViewController(.scroll)`，提供上一页/下一页数据源和完成翻页回调 |
+| 仿真翻页容器 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderPageCurlContainer.swift` | 包装 `UIPageViewController(.pageCurl)`，开启 `isDoubleSided`，spine 使用 `.min`，背景由主题应用避免露白 |
+| 纵向连续滚动容器 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift`、`Yomink/Presentation/ReaderV2/Containers/ReaderScrollPageCell.swift` | 使用 `UITableView`，一章一个 section，一页一个 row，row 高度来自 `PaibanManager` 的 `pageHeights` |
+| 主控制器接入 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | `ReaderV2ViewController` 改为持有 active container；按 `ReaderTurnPageType` 切换左右、仿真、纵向容器 |
+| 翻页完成保存记录 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 容器完成翻页或纵向滚动停下后回调当前 `ReaderPageModel`，主控制器统一更新当前页、预加载并保存进度 |
+| 验收：三种翻页模式可用 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖左右容器、仿真容器、纵向滚动容器的模式和基础展示能力 |
+| 验收：切换模式后位置不丢 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 新容器接入时用当前 `ReaderPageModel` 重新 display；单测覆盖 display 后 current page 保留 |
+| 验收：仿真翻页背面不露白 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderPageCurlContainer.swift`、`YominkTests/ReaderV2CoreTests.swift` | 仿真容器启用双面、主题背景应用到容器和页面；单测覆盖 double-sided 和 spine |
+| 验收：纵向章节和页面块加载 | 完成 | `Yomink/Presentation/ReaderV2/Containers/ReaderScrollContainer.swift`、`YominkTests/ReaderV2CoreTests.swift` | 覆盖 section/row 数、row 高度、pageModel 定位和 cell 配置 |
+| 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；Phase 4 新增容器文件已加入工程；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
 ### Phase 5：主题、菜单和设置
 
