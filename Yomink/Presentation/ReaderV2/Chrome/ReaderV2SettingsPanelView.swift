@@ -123,7 +123,8 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
         backgroundColor = MenuStyle.barBackgroundColor
         clipsToBounds = true
 
-        scrollView.alwaysBounceVertical = true
+        scrollView.bounces = false
+        scrollView.alwaysBounceVertical = false
         scrollView.canCancelContentTouches = true
         scrollView.delaysContentTouches = false
         scrollView.showsVerticalScrollIndicator = true

@@ -250,7 +250,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             self?.toggleBookmark()
         }
         menuView.onSettings = { [weak self] in
-            self?.setSettingsPanelVisible(true, animated: true)
+            self?.showSettingsPanelFromReaderMenu()
         }
         menuView.onPreviousChapter = { [weak self] in
             self?.stopAutoReading(animated: false)
@@ -1520,6 +1520,18 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         updateSystemAppearance()
     }
 
+    private func showSettingsPanelFromReaderMenu() {
+        menuView.setBarsVisible(
+            top: false,
+            bottom: false,
+            floatingActions: false,
+            animated: true
+        )
+        setAutoReadPanelVisible(false, animated: true)
+        settingsPanelView.setPanelVisible(true, animated: true)
+        updateSystemAppearance()
+    }
+
     private func setAutoReadPanelVisible(
         _ visible: Bool,
         animated: Bool
@@ -1768,11 +1780,17 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             progress: 0,
             chapterTitle: chapterTitle(at: targetChapterIndex)
         )
+        menuView.setBarsVisible(
+            top: false,
+            bottom: true,
+            floatingActions: false,
+            animated: true
+        )
         open(
             record: record,
             animated: false,
             showsLoading: false,
-            closesMenuOnSuccess: true
+            closesMenuOnSuccess: false
         )
     }
 

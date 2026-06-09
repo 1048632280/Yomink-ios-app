@@ -36,6 +36,9 @@ final class ReaderV2MenuView: UIView {
 
     private(set) var isMenuVisible = false
     private(set) var isMoreMenuVisible = false
+    private var isTopBarVisible = false
+    private var isBottomBarVisible = false
+    private var isFloatingActionStackVisible = false
 
     var onClose: (() -> Void)?
     var onCatalog: (() -> Void)?
@@ -231,9 +234,10 @@ final class ReaderV2MenuView: UIView {
         }
 
         isMenuVisible = visible
-        topBar.isUserInteractionEnabled = visible
-        bottomBar.isUserInteractionEnabled = visible
-        floatingActionStack.isUserInteractionEnabled = visible
+        isTopBarVisible = visible
+        isBottomBarVisible = visible
+        isFloatingActionStackVisible = visible
+        updateMenuInteraction()
         isUserInteractionEnabled = visible
         isHidden = false
         layoutIfNeeded()
@@ -243,6 +247,46 @@ final class ReaderV2MenuView: UIView {
         }
         let completion: (Bool) -> Void = { _ in
             self.isHidden = !visible
+        }
+
+        if animated {
+            UIView.animate(
+                withDuration: 0.24,
+                delay: 0,
+                options: [.beginFromCurrentState, .curveEaseOut],
+                animations: changes,
+                completion: completion
+            )
+        } else {
+            changes()
+            completion(true)
+        }
+    }
+
+    func setBarsVisible(
+        top: Bool,
+        bottom: Bool,
+        floatingActions: Bool,
+        animated: Bool
+    ) {
+        if !top {
+            setMoreMenuVisible(false, animated: animated)
+        }
+
+        isMenuVisible = top || bottom || floatingActions
+        isTopBarVisible = top
+        isBottomBarVisible = bottom
+        isFloatingActionStackVisible = floatingActions
+        updateMenuInteraction()
+        isUserInteractionEnabled = isMenuVisible
+        isHidden = false
+        layoutIfNeeded()
+
+        let changes = {
+            self.applyMenuPosition()
+        }
+        let completion: (Bool) -> Void = { _ in
+            self.isHidden = !self.isMenuVisible
         }
 
         if animated {
@@ -316,10 +360,16 @@ final class ReaderV2MenuView: UIView {
         guard isMenuVisible else {
             return false
         }
-        return topBar.frame.contains(point)
-            || bottomBar.frame.contains(point)
-            || floatingActionStack.frame.contains(point)
+        return (isTopBarVisible && topBar.frame.contains(point))
+            || (isBottomBarVisible && bottomBar.frame.contains(point))
+            || (isFloatingActionStackVisible && floatingActionStack.frame.contains(point))
             || (isMoreMenuVisible && moreMenuContainer.frame.contains(point))
+    }
+
+    private func updateMenuInteraction() {
+        topBar.isUserInteractionEnabled = isTopBarVisible
+        bottomBar.isUserInteractionEnabled = isBottomBarVisible
+        floatingActionStack.isUserInteractionEnabled = isFloatingActionStackVisible
     }
 
     private func configureViews() {
@@ -796,13 +846,13 @@ final class ReaderV2MenuView: UIView {
             + safeAreaInsets.right
             + 1
         topBar.transform = isMenuVisible
-            ? .identity
+            && isTopBarVisible ? .identity
             : CGAffineTransform(translationX: 0, y: topTranslation)
         bottomBar.transform = isMenuVisible
-            ? .identity
+            && isBottomBarVisible ? .identity
             : CGAffineTransform(translationX: 0, y: bottomTranslation)
         floatingActionStack.transform = isMenuVisible
-            ? .identity
+            && isFloatingActionStackVisible ? .identity
             : CGAffineTransform(translationX: floatingHiddenOffset, y: 0)
     }
 
