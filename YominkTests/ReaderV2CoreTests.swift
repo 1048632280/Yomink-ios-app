@@ -637,8 +637,8 @@ final class ReaderV2CoreTests: XCTestCase {
         widget.layoutIfNeeded()
 
         XCTAssertEqual(widget.batteryLabel.text, Optional("75%"))
-        XCTAssertTrue(widget.batteryLabel.textColor.isEqual(widget.batteryView.fillColor))
-        XCTAssertFalse(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
+        XCTAssertTrue(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
+        XCTAssertFalse(widget.batteryView.fillColor.isEqual(ReaderTheme.standard.headerColor))
     }
 
     @MainActor

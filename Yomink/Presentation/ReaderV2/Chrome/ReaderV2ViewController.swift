@@ -1336,9 +1336,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         if let navigationController,
-           navigationController.topViewController !== self,
-           navigationController.viewControllers.contains(self) {
-            navigationController.popToViewController(self, animated: animated)
+           let readerStackController = navigationStackControllerForReader(),
+           navigationController.topViewController !== readerStackController {
+            navigationController.popToViewController(readerStackController, animated: animated)
             if animated,
                let coordinator = navigationController.transitionCoordinator {
                 coordinator.animate(alongsideTransition: nil) { _ in
@@ -1355,6 +1355,22 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         } else {
             completion()
         }
+    }
+
+    private func navigationStackControllerForReader() -> UIViewController? {
+        guard let navigationController else {
+            return nil
+        }
+
+        var controller: UIViewController? = self
+        while let current = controller {
+            if navigationController.viewControllers.contains(where: { $0 === current }) {
+                return current
+            }
+            controller = current.parent
+        }
+
+        return nil
     }
 
     private func toggleBookmark() {
@@ -1656,20 +1672,40 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
 
-        if menuView.isMenuVisible {
-            if !menuView.containsInteractiveContent(at: location) {
-                setMenuVisible(false, animated: true)
-            }
+        if menuView.isMenuVisible,
+           menuView.containsInteractiveContent(at: location) {
             return
         }
 
-        if location.x < view.bounds.width / 3 {
-            goToAdjacentPage(delta: -1)
-        } else if location.x > view.bounds.width * 2 / 3 {
-            goToAdjacentPage(delta: 1)
-        } else {
-            setMenuVisible(true, animated: true)
+        handleReadingAreaTapAction(tapAction(at: location))
+    }
+
+    private func handleReadingAreaTapAction(_ action: ReaderSettings.TouchAreaAction) {
+        switch action {
+        case .previousPage:
+            menuView.setMoreMenuVisible(false, animated: true)
+            goToAdjacentPage(delta: -1, animated: false)
+        case .menu:
+            setMenuVisible(!menuView.isMenuVisible, animated: true)
+        case .nextPage:
+            menuView.setMoreMenuVisible(false, animated: true)
+            goToAdjacentPage(delta: 1, animated: false)
+        case .none:
+            break
         }
+    }
+
+    private func tapAction(at location: CGPoint) -> ReaderSettings.TouchAreaAction {
+        let width = max(view.bounds.width, 1)
+        let height = max(view.bounds.height, 1)
+        let column = min(max(Int(location.x / (width / 3)), 0), 2)
+        let row = min(max(Int(location.y / (height / 3)), 0), 2)
+        let index = row * 3 + column
+        let map = readerSettings.normalized.touchAreaMap
+        guard map.indices.contains(index) else {
+            return ReaderSettings.default.touchAreaMap[index]
+        }
+        return map[index]
     }
 
     func gestureRecognizer(
@@ -1726,7 +1762,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         applyReaderSettings(settings)
     }
 
-    private func goToAdjacentPage(delta: Int) {
+    private func goToAdjacentPage(
+        delta: Int,
+        animated: Bool
+    ) {
         let direction: ReaderPageTurnDirection = delta > 0 ? .forward : .reverse
         openTask?.cancel()
         openTask = Task { [weak self] in
@@ -1738,7 +1777,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 try self.display(
                     pageModel: target,
                     direction: direction,
-                    animated: true,
+                    animated: animated,
                     savesProgress: true,
                     recordsOpenHistory: false
                 )

@@ -416,7 +416,7 @@ final class ReaderBottomWidgetView: UIView {
         let snapshot = batterySnapshotProvider()
         batteryView.value = snapshot.level
         batteryView.fillColor = snapshot.isCharging ? Self.chargingColor : headerColor
-        batteryLabel.textColor = snapshot.isCharging ? Self.chargingColor : headerColor
+        batteryLabel.textColor = headerColor
         batteryLabel.text = String(format: "%.0f%%", Double(snapshot.level * 100))
     }
 
