@@ -2,14 +2,17 @@ import UIKit
 
 @MainActor
 final class ReaderV2AutoReadPanelView: UIView {
-    let speedSlider = UISlider()
+    let speedSlider = ReaderV2VoiceSlider()
     let exitButton = UIButton(type: .system)
 
     private let stackView = UIStackView()
+    private var isInteractingInsidePanel = false
     private(set) var isPanelVisible = false
 
     var onSpeedChange: ((Double) -> Void)?
+    var onSpeedChangeFinished: ((Double) -> Void)?
     var onExit: (() -> Void)?
+    var onIdleTimeout: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -39,9 +42,6 @@ final class ReaderV2AutoReadPanelView: UIView {
 
     func apply(chromeTheme _: ReaderChromeTheme) {
         backgroundColor = MenuStyle.barBackgroundColor
-        speedSlider.minimumTrackTintColor = MenuStyle.progressTintColor
-        speedSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
-        speedSlider.thumbTintColor = MenuStyle.progressThumbColor
         exitButton.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
         exitButton.setTitleColor(MenuStyle.secondaryTextColor, for: .highlighted)
         exitButton.backgroundColor = MenuStyle.settingsControlBackgroundColor
@@ -54,6 +54,13 @@ final class ReaderV2AutoReadPanelView: UIView {
         isPanelVisible = visible
         isHidden = false
         isUserInteractionEnabled = visible
+        if visible {
+            isInteractingInsidePanel = false
+            resetIdleTimer()
+        } else {
+            isInteractingInsidePanel = false
+            cancelIdleTimer()
+        }
         layoutIfNeeded()
 
         let changes = {
@@ -83,13 +90,14 @@ final class ReaderV2AutoReadPanelView: UIView {
 
         speedSlider.minimumValue = Float(ReaderSettings.minimumAutoReadSpeed)
         speedSlider.maximumValue = Float(ReaderSettings.maximumAutoReadSpeed)
-        speedSlider.minimumTrackTintColor = MenuStyle.progressTintColor
-        speedSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
-        speedSlider.thumbTintColor = MenuStyle.progressThumbColor
-        speedSlider.setThumbImage(makeSliderThumbImage(diameter: 24), for: .normal)
-        speedSlider.setThumbImage(makeSliderThumbImage(diameter: 28), for: .highlighted)
         speedSlider.accessibilityLabel = NSLocalizedString("reader.autoRead.speed", comment: "")
         speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
+        speedSlider.addTarget(self, action: #selector(panelInteractionBegan), for: .touchDown)
+        speedSlider.addTarget(
+            self,
+            action: #selector(speedChangeFinished),
+            for: [.touchUpInside, .touchUpOutside, .touchCancel]
+        )
         speedSlider.translatesAutoresizingMaskIntoConstraints = false
 
         exitButton.setTitle(NSLocalizedString("reader.autoRead.exit", comment: ""), for: .normal)
@@ -97,6 +105,12 @@ final class ReaderV2AutoReadPanelView: UIView {
         exitButton.titleLabel?.adjustsFontForContentSizeCategory = true
         exitButton.layer.cornerRadius = Layout.autoReadExitButtonHeight / 2
         exitButton.layer.masksToBounds = true
+        exitButton.addTarget(self, action: #selector(panelInteractionBegan), for: .touchDown)
+        exitButton.addTarget(
+            self,
+            action: #selector(panelInteractionEnded),
+            for: [.touchUpOutside, .touchCancel]
+        )
         exitButton.addTarget(self, action: #selector(exitTapped), for: .touchUpInside)
         exitButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -152,50 +166,6 @@ final class ReaderV2AutoReadPanelView: UIView {
         return imageView
     }
 
-    private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
-        let shadowPadding: CGFloat = 4
-        let size = CGSize(
-            width: diameter + shadowPadding * 2,
-            height: diameter + shadowPadding * 2
-        )
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { context in
-            let bounds = CGRect(
-                x: shadowPadding,
-                y: shadowPadding,
-                width: diameter,
-                height: diameter
-            )
-            let cgContext = context.cgContext
-            cgContext.setShadow(
-                offset: CGSize(width: 0, height: 2),
-                blur: 4,
-                color: UIColor.black.withAlphaComponent(0.36).cgColor
-            )
-
-            UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1).setFill()
-            cgContext.fillEllipse(in: bounds)
-            cgContext.setShadow(offset: .zero, blur: 0, color: nil)
-
-            MenuStyle.progressThumbColor.setFill()
-            cgContext.fillEllipse(in: bounds.insetBy(dx: 3, dy: 3))
-
-            UIColor(white: 0.64, alpha: 0.36).setFill()
-            cgContext.fillEllipse(
-                in: CGRect(
-                    x: bounds.minX + diameter * 0.31,
-                    y: bounds.minY + diameter * 0.24,
-                    width: diameter * 0.38,
-                    height: diameter * 0.18
-                )
-            )
-
-            UIColor(red: 0.42, green: 0.42, blue: 0.42, alpha: 1).setStroke()
-            cgContext.setLineWidth(1)
-            cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
-        }
-    }
-
     private func applyPanelPosition() {
         let hiddenOffset = bounds.height + 1
         transform = isPanelVisible
@@ -203,14 +173,101 @@ final class ReaderV2AutoReadPanelView: UIView {
             : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
+    private func resetIdleTimer() {
+        NSObject.cancelPreviousPerformRequests(
+            withTarget: self,
+            selector: #selector(idleTimerFired),
+            object: nil
+        )
+        guard isPanelVisible,
+              !isInteractingInsidePanel else {
+            return
+        }
+        perform(
+            #selector(idleTimerFired),
+            with: nil,
+            afterDelay: Layout.idleDismissDelay,
+            inModes: [.common]
+        )
+    }
+
+    private func cancelIdleTimer() {
+        NSObject.cancelPreviousPerformRequests(
+            withTarget: self,
+            selector: #selector(idleTimerFired),
+            object: nil
+        )
+    }
+
+    override func hitTest(
+        _ point: CGPoint,
+        with event: UIEvent?
+    ) -> UIView? {
+        let hitView = super.hitTest(point, with: event)
+        if hitView != nil,
+           isPanelVisible,
+           !isInteractingInsidePanel {
+            resetIdleTimer()
+        }
+        return hitView
+    }
+
+    override func touchesBegan(
+        _ touches: Set<UITouch>,
+        with event: UIEvent?
+    ) {
+        panelInteractionBegan()
+        super.touchesBegan(touches, with: event)
+    }
+
+    override func touchesEnded(
+        _ touches: Set<UITouch>,
+        with event: UIEvent?
+    ) {
+        panelInteractionEnded()
+        super.touchesEnded(touches, with: event)
+    }
+
+    override func touchesCancelled(
+        _ touches: Set<UITouch>,
+        with event: UIEvent?
+    ) {
+        panelInteractionEnded()
+        super.touchesCancelled(touches, with: event)
+    }
+
     @objc private func speedChanged() {
         let speed = Double(speedSlider.value)
         speedSlider.accessibilityValue = "\(Int(speed.rounded()))"
+        resetIdleTimer()
         onSpeedChange?(speed)
     }
 
     @objc private func exitTapped() {
+        panelInteractionBegan()
         onExit?()
+    }
+
+    @objc private func panelInteractionBegan() {
+        isInteractingInsidePanel = true
+        cancelIdleTimer()
+    }
+
+    @objc private func panelInteractionEnded() {
+        isInteractingInsidePanel = false
+        resetIdleTimer()
+    }
+
+    @objc private func speedChangeFinished() {
+        panelInteractionEnded()
+        onSpeedChangeFinished?(Double(speedSlider.value))
+    }
+
+    @objc private func idleTimerFired() {
+        guard isPanelVisible else {
+            return
+        }
+        onIdleTimeout?()
     }
 }
 
@@ -222,15 +279,13 @@ private extension ReaderV2AutoReadPanelView {
         static let autoReadPanelBottomInset: CGFloat = 18
         static let autoReadIconSize: CGFloat = 24
         static let autoReadExitButtonHeight: CGFloat = 42
+        static let idleDismissDelay: TimeInterval = 10
     }
 
     enum MenuStyle {
         static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
-        static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
-        static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
-        static let progressThumbColor = UIColor(red: 0.353, green: 0.353, blue: 0.365, alpha: 1)
         static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
     }
 }

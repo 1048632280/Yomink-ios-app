@@ -7,7 +7,7 @@ final class ReaderV2MenuView: UIView {
     let moreButton = UIButton(type: .system)
     let previousChapterButton = UIButton(type: .system)
     let nextChapterButton = UIButton(type: .system)
-    let progressSlider = ReaderProgressSlider()
+    let progressSlider = ReaderV2MenuSlider()
     let catalogButton = UIButton(type: .system)
     let settingsButton = UIButton(type: .system)
     let autoReadButton = UIButton(type: .system)
@@ -179,9 +179,6 @@ final class ReaderV2MenuView: UIView {
 
         titleLabel.textColor = MenuStyle.secondaryTextColor
         progressLabel.textColor = MenuStyle.secondaryTextColor
-        progressSlider.minimumTrackTintColor = MenuStyle.progressTintColor
-        progressSlider.maximumTrackTintColor = MenuStyle.progressTrackColor
-        progressSlider.thumbTintColor = MenuStyle.progressThumbColor
 
         [
             closeButton,
@@ -425,8 +422,6 @@ final class ReaderV2MenuView: UIView {
         progressSlider.minimumValue = 0
         progressSlider.maximumValue = 1
         progressSlider.value = 0
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .normal)
-        progressSlider.setThumbImage(makeSliderThumbImage(diameter: 20), for: .highlighted)
         progressSlider.accessibilityLabel = NSLocalizedString("reader.progress.slider", comment: "")
         progressSlider.addTarget(self, action: #selector(progressSliderTouchBegan), for: .touchDown)
         progressSlider.addTarget(self, action: #selector(progressSliderChanged), for: .valueChanged)
@@ -459,6 +454,7 @@ final class ReaderV2MenuView: UIView {
         let rightProgressSeparator = makeVerticalMenuSeparator()
         let actionRowTopSeparator = makeHorizontalMenuSeparator()
         let progressSliderContainer = UIView()
+        progressSliderContainer.clipsToBounds = false
         progressSliderContainer.translatesAutoresizingMaskIntoConstraints = false
         progressSliderContainer.addSubview(progressSlider)
 
@@ -792,37 +788,6 @@ final class ReaderV2MenuView: UIView {
         )
     }
 
-    private func makeSliderThumbImage(diameter: CGFloat) -> UIImage {
-        let size = CGSize(
-            width: Layout.progressThumbHitboxDiameter,
-            height: Layout.progressThumbHitboxDiameter
-        )
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { context in
-            let origin = CGPoint(
-                x: (size.width - diameter) / 2,
-                y: (size.height - diameter) / 2
-            )
-            let bounds = CGRect(
-                x: origin.x,
-                y: origin.y,
-                width: diameter,
-                height: diameter
-            )
-            let cgContext = context.cgContext
-
-            MenuStyle.progressThumbEdgeShadowColor.setStroke()
-            cgContext.setLineWidth(1)
-            cgContext.strokeEllipse(in: bounds.offsetBy(dx: 0, dy: 1).insetBy(dx: 0.5, dy: 0.5))
-            MenuStyle.progressThumbColor.setFill()
-            cgContext.fillEllipse(in: bounds)
-
-            MenuStyle.progressThumbBorderColor.setStroke()
-            cgContext.setLineWidth(1)
-            cgContext.strokeEllipse(in: bounds.insetBy(dx: 0.5, dy: 0.5))
-        }
-    }
-
     private func applyMenuPosition() {
         let topTranslation = -(topBar.bounds.height + 1)
         let bottomTranslation = bottomBar.bounds.height + 1
@@ -1001,12 +966,11 @@ private extension ReaderV2MenuView {
         static let progressRowHeight: CGFloat = 46
         static let bottomActionRowHeight: CGFloat = 48
         static let chapterButtonWidth: CGFloat = 74
-        static let progressSliderHorizontalInset: CGFloat = 18
+        static let progressSliderHorizontalInset: CGFloat = 0
         static let progressTooltipBottomSpacing: CGFloat = 20
         static let progressTooltipHorizontalPadding: CGFloat = 12
         static let progressTooltipVerticalPadding: CGFloat = 6
         static let progressTooltipWidth: CGFloat = 140
-        static let progressThumbHitboxDiameter: CGFloat = 44
         static let floatingButtonSize: CGFloat = 42
         static let floatingButtonSpacing: CGFloat = 16
         static let floatingButtonTrailingInset: CGFloat = 18
@@ -1027,11 +991,6 @@ private extension ReaderV2MenuView {
         static let separatorEdgeColor = UIColor(red: 0.18, green: 0.18, blue: 0.18, alpha: 1)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
-        static let progressTintColor = UIColor(red: 0.68, green: 0.17, blue: 0.14, alpha: 1)
-        static let progressTrackColor = UIColor(red: 0.26, green: 0.26, blue: 0.26, alpha: 1)
-        static let progressThumbColor = UIColor(red: 0.353, green: 0.353, blue: 0.365, alpha: 1)
-        static let progressThumbBorderColor = UIColor(red: 0.557, green: 0.557, blue: 0.576, alpha: 1)
-        static let progressThumbEdgeShadowColor = UIColor.black.withAlphaComponent(0.18)
         static let progressTooltipBackgroundColor = UIColor(red: 0.133, green: 0.133, blue: 0.133, alpha: 1)
         static let floatingButtonColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let floatingButtonIconColor = UIColor(white: 0.48, alpha: 1)

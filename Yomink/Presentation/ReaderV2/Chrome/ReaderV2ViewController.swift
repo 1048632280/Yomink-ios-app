@@ -322,8 +322,14 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         autoReadPanelView.onSpeedChange = { [weak self] speed in
             self?.autoReadSpeedChanged(speed)
         }
+        autoReadPanelView.onSpeedChangeFinished = { [weak self] speed in
+            self?.autoReadSpeedChangeFinished(speed)
+        }
         autoReadPanelView.onExit = { [weak self] in
             self?.stopAutoReading(animated: true)
+        }
+        autoReadPanelView.onIdleTimeout = { [weak self] in
+            self?.setAutoReadPanelVisible(false, animated: true)
         }
         view.addSubview(autoReadPanelView)
         NSLayoutConstraint.activate([
@@ -1619,6 +1625,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         autoReadController.updateSpeed(readerSettings.autoReadSpeed)
         autoReadPanelView.setSpeed(readerSettings.autoReadSpeed)
         settingsPanelView.setSettings(readerSettings)
+    }
+
+    private func autoReadSpeedChangeFinished(_ speed: Double) {
+        autoReadSpeedChanged(speed)
         saveReaderSettings(readerSettings)
     }
 
