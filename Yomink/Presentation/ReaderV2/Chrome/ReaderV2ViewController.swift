@@ -788,6 +788,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             layout: layout,
             theme: theme,
             chapterTitle: chapterTitle(at: pageModel.chapterIndex),
+            bookTitle: book.title,
             fullProgress: fullProgress,
             widgetVisibility: readerSettings.normalized.widgetVisibility
         )
@@ -894,7 +895,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                         chapterIndex: pageModel.chapterIndex,
                         chapterProgress: pageModel.chapterProgress
                     )
-                }
+                },
+                bookTitle: book.title
             )
         }
     }

@@ -567,6 +567,7 @@ final class ReaderV2CoreTests: XCTestCase {
             layout: .notchedPhone,
             theme: .standard,
             chapterTitle: "章节标题",
+            bookTitle: "Book Title",
             fullProgress: 0.1245,
             widgetVisibility: visibility
         )
@@ -574,7 +575,7 @@ final class ReaderV2CoreTests: XCTestCase {
         controller.loadViewIfNeeded()
         controller.view.layoutIfNeeded()
 
-        XCTAssertEqual(controller.chapterTitleLabel.text, Optional("章节标题"))
+        XCTAssertEqual(controller.chapterTitleLabel.text, Optional("Book Title"))
         XCTAssertFalse(controller.chapterTitleLabel.isHidden)
         XCTAssertEqual(controller.chapterTitleLabel.frame.minY, 43, accuracy: 0.1)
         XCTAssertFalse(controller.bottomWidgetView.progressLabel.isHidden)
@@ -582,6 +583,62 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertFalse(controller.bottomWidgetView.timeLabel.isHidden)
         XCTAssertFalse(controller.bottomWidgetView.batteryView.isHidden)
         XCTAssertFalse(controller.bottomWidgetView.batteryLabel.isHidden)
+        XCTAssertLessThan(
+            controller.bottomWidgetView.batteryLabel.frame.minX,
+            controller.bottomWidgetView.batteryView.frame.minX
+        )
+        XCTAssertLessThan(
+            controller.bottomWidgetView.batteryView.frame.minX,
+            controller.bottomWidgetView.timeLabel.frame.minX
+        )
+    }
+
+    @MainActor
+    func testReaderPageHeaderUsesChapterTitleAfterFirstPage() {
+        let controller = ReaderPageViewController()
+        let model = readerV2PageModel(pageIndex: 1, pageCount: 3)
+        controller.configure(
+            page: ReaderDivisionPage(
+                attributedText: NSAttributedString(string: "Second page"),
+                displayRange: NSRange(location: 0, length: 11),
+                usedHeight: 120
+            ),
+            pageModel: model,
+            layout: .phone,
+            theme: .standard,
+            chapterTitle: "Chapter Title",
+            bookTitle: "Book Title"
+        )
+        controller.loadViewIfNeeded()
+
+        XCTAssertEqual(controller.chapterTitleLabel.text, Optional("Chapter Title"))
+    }
+
+    @MainActor
+    func testBottomWidgetTurnsBatteryLevelGreenWhileCharging() {
+        let widget = ReaderBottomWidgetView(frame: CGRect(x: 0, y: 0, width: 180, height: 14))
+        widget.batterySnapshotProvider = {
+            ReaderBatterySnapshot(level: 0.75, state: .charging)
+        }
+        widget.updateSettings(
+            showTime: true,
+            showBatteryView: true,
+            showBatteryLabel: true,
+            showChapterTitle: true,
+            showPageProgress: true,
+            showFullProgress: false
+        )
+        widget.updateContent(
+            chapterTitle: "Chapter",
+            pageIndex: 0,
+            pageCount: 1,
+            fullProgress: 0
+        )
+        widget.layoutIfNeeded()
+
+        XCTAssertEqual(widget.batteryLabel.text, Optional("75%"))
+        XCTAssertTrue(widget.batteryLabel.textColor.isEqual(widget.batteryView.fillColor))
+        XCTAssertFalse(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
     }
 
     @MainActor

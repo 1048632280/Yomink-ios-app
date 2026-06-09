@@ -8,6 +8,7 @@ struct ReaderScrollSection {
     var heights: [CGFloat]
     var pageModels: [ReaderPageModel]
     var fullProgresses: [Double]
+    var bookTitle: String = ""
 }
 
 @MainActor
@@ -175,6 +176,7 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
             layout: layout,
             theme: theme,
             chapterTitle: section.title,
+            bookTitle: section.bookTitle,
             fullProgress: section.fullProgresses.indices.contains(indexPath.row)
                 ? section.fullProgresses[indexPath.row]
                 : 0,

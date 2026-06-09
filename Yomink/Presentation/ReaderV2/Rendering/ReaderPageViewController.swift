@@ -10,6 +10,7 @@ final class ReaderPageViewController: UIViewController {
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
     private var chapterTitle = ""
+    private var bookTitle = ""
     private var fullProgress: Double = 0
     private var widgetVisibility = ReaderSettings.WidgetVisibility.default
 
@@ -54,6 +55,7 @@ final class ReaderPageViewController: UIViewController {
         layout: ReaderLayout,
         theme: ReaderTheme,
         chapterTitle: String = "",
+        bookTitle: String = "",
         fullProgress: Double = 0,
         widgetVisibility: ReaderSettings.WidgetVisibility = .default
     ) {
@@ -62,6 +64,7 @@ final class ReaderPageViewController: UIViewController {
         self.layout = layout
         self.theme = theme
         self.chapterTitle = chapterTitle
+        self.bookTitle = bookTitle
         self.fullProgress = ReaderPageModel.clampedProgress(fullProgress)
         self.widgetVisibility = widgetVisibility
         applyConfiguration()
@@ -105,13 +108,21 @@ final class ReaderPageViewController: UIViewController {
 
     func updateContent(
         chapterTitle: String,
+        bookTitle: String? = nil,
         pageIndex: Int,
         pageCount: Int,
         fullProgress: Double
     ) {
         self.chapterTitle = chapterTitle
+        if let bookTitle {
+            self.bookTitle = bookTitle
+        }
         self.fullProgress = ReaderPageModel.clampedProgress(fullProgress)
-        chapterTitleLabel.text = chapterTitle
+        chapterTitleLabel.text = ReaderPageWidgetLayout.headerTitle(
+            bookTitle: self.bookTitle,
+            chapterTitle: chapterTitle,
+            pageIndex: pageIndex
+        )
         bottomWidgetView.updateContent(
             chapterTitle: chapterTitle,
             pageIndex: pageIndex,
@@ -170,6 +181,7 @@ final class ReaderPageViewController: UIViewController {
         )
         updateContent(
             chapterTitle: chapterTitle,
+            bookTitle: bookTitle,
             pageIndex: pageModel?.pageIndex ?? 0,
             pageCount: pageModel?.pageCount ?? 1,
             fullProgress: fullProgress
@@ -181,6 +193,19 @@ final class ReaderPageViewController: UIViewController {
 enum ReaderPageWidgetLayout {
     static let height: CGFloat = 14
     static let font = UIFont.systemFont(ofSize: 12)
+
+    static func headerTitle(
+        bookTitle: String,
+        chapterTitle: String,
+        pageIndex: Int
+    ) -> String {
+        let normalizedBookTitle = bookTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if pageIndex == 0,
+           normalizedBookTitle.isEmpty == false {
+            return normalizedBookTitle
+        }
+        return chapterTitle
+    }
 
     static func titleFrame(
         screenSize: CGSize,
@@ -214,6 +239,10 @@ final class ReaderBottomWidgetView: UIView {
     let batteryLabel = UILabel()
     let progressLabel = UILabel()
 
+    var batterySnapshotProvider: () -> ReaderBatterySnapshot = {
+        ReaderBatterySnapshot.current
+    }
+
     private var showTime = false
     private var showBatteryView = false
     private var showBatteryLabel = false
@@ -229,6 +258,18 @@ final class ReaderBottomWidgetView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(batteryDidChange),
+            name: UIDevice.batteryLevelDidChangeNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(batteryDidChange),
+            name: UIDevice.batteryStateDidChangeNotification,
+            object: nil
+        )
         [timeLabel, batteryLabel, progressLabel].forEach(configureLabel)
         progressLabel.textAlignment = .right
         addSubview(timeLabel)
@@ -244,6 +285,10 @@ final class ReaderBottomWidgetView: UIView {
             showPageProgress: true,
             showFullProgress: false
         )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 
     @available(*, unavailable)
@@ -269,6 +314,7 @@ final class ReaderBottomWidgetView: UIView {
             $0.textColor = headerColor
         }
         batteryView.color = headerColor
+        updateBattery()
     }
 
     func updateFont(_ font: UIFont) {
@@ -337,20 +383,6 @@ final class ReaderBottomWidgetView: UIView {
 
     private func layoutLeftWidgets() {
         var nextX: CGFloat = 0
-        if showTime {
-            timeLabel.frame = CGRect(x: nextX, y: 0, width: 38, height: ReaderPageWidgetLayout.height)
-                .integral
-            nextX = timeLabel.frame.maxX + 6
-        }
-        if showBatteryView {
-            batteryView.frame = CGRect(
-                x: nextX,
-                y: (ReaderPageWidgetLayout.height - 8) / 2,
-                width: 17,
-                height: 8
-            ).integral
-            nextX = batteryView.frame.maxX + 5
-        }
         if showBatteryLabel {
             let width = max(24, ceil((batteryLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
             batteryLabel.frame = CGRect(
@@ -359,6 +391,21 @@ final class ReaderBottomWidgetView: UIView {
                 width: width,
                 height: ReaderPageWidgetLayout.height
             ).integral
+            nextX = batteryLabel.frame.maxX + 4
+        }
+        if showBatteryView {
+            batteryView.frame = CGRect(
+                x: nextX,
+                y: (ReaderPageWidgetLayout.height - 10) / 2,
+                width: 22,
+                height: 10
+            ).integral
+            nextX = batteryView.frame.maxX + 4
+        }
+        if showTime {
+            let width = max(34, ceil((timeLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
+            timeLabel.frame = CGRect(x: nextX, y: 0, width: width, height: ReaderPageWidgetLayout.height)
+                .integral
         }
     }
 
@@ -366,10 +413,11 @@ final class ReaderBottomWidgetView: UIView {
         guard showBatteryView || showBatteryLabel else {
             return
         }
-        let rawLevel = UIDevice.current.batteryLevel
-        let level = rawLevel >= 0 ? CGFloat(min(max(rawLevel, 0), 1)) : 0
-        batteryView.value = level
-        batteryLabel.text = String(format: "%.0f%%", Double(level * 100))
+        let snapshot = batterySnapshotProvider()
+        batteryView.value = snapshot.level
+        batteryView.fillColor = snapshot.isCharging ? Self.chargingColor : headerColor
+        batteryLabel.textColor = snapshot.isCharging ? Self.chargingColor : headerColor
+        batteryLabel.text = String(format: "%.0f%%", Double(snapshot.level * 100))
     }
 
     private func updateProgressText() {
@@ -389,6 +437,31 @@ final class ReaderBottomWidgetView: UIView {
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
+
+    private static let chargingColor = UIColor(red: 0.24, green: 0.73, blue: 0.32, alpha: 1)
+
+    @objc private func batteryDidChange() {
+        updateBattery()
+        setNeedsLayout()
+    }
+}
+
+struct ReaderBatterySnapshot {
+    var level: CGFloat
+    var state: UIDevice.BatteryState
+
+    var isCharging: Bool {
+        state == .charging || state == .full
+    }
+
+    static var current: ReaderBatterySnapshot {
+        let rawLevel = UIDevice.current.batteryLevel
+        let level = rawLevel >= 0 ? CGFloat(min(max(rawLevel, 0), 1)) : 0
+        return ReaderBatterySnapshot(
+            level: level,
+            state: UIDevice.current.batteryState
+        )
+    }
 }
 
 @MainActor
@@ -405,7 +478,23 @@ final class ReaderBatteryIndicatorView: UIView {
         }
     }
 
-    var color = ReaderTheme.standard.headerColor {
+    var color: UIColor {
+        get {
+            outlineColor
+        }
+        set {
+            outlineColor = newValue
+            fillColor = newValue
+        }
+    }
+
+    var fillColor = ReaderTheme.standard.headerColor {
+        didSet {
+            setNeedsDisplay()
+        }
+    }
+
+    private var outlineColor = ReaderTheme.standard.headerColor {
         didSet {
             setNeedsDisplay()
         }
@@ -429,26 +518,28 @@ final class ReaderBatteryIndicatorView: UIView {
             return
         }
         context.saveGState()
-        color.setStroke()
-        color.setFill()
+        context.setLineWidth(1.1)
 
-        let capWidth: CGFloat = 2
+        let capWidth: CGFloat = 2.2
+        let capGap: CGFloat = 0.8
         let bodyRect = CGRect(
-            x: 0.5,
-            y: 0.5,
-            width: rect.width - capWidth - 1,
-            height: rect.height - 1
+            x: 0.7,
+            y: 0.7,
+            width: rect.width - capWidth - capGap - 1.4,
+            height: rect.height - 1.4
         )
         let capRect = CGRect(
-            x: bodyRect.maxX + 1,
-            y: rect.height * 0.32,
-            width: capWidth - 0.5,
-            height: rect.height * 0.36
+            x: bodyRect.maxX + capGap,
+            y: rect.height * 0.31,
+            width: capWidth,
+            height: rect.height * 0.38
         )
-        UIBezierPath(roundedRect: bodyRect, cornerRadius: 1.5).stroke()
-        UIBezierPath(roundedRect: capRect, cornerRadius: 0.6).fill()
+        outlineColor.setStroke()
+        UIBezierPath(roundedRect: bodyRect, cornerRadius: 1.4).stroke()
+        outlineColor.setFill()
+        UIBezierPath(roundedRect: capRect, cornerRadius: 0.5).fill()
 
-        let fillInset: CGFloat = 2
+        let fillInset: CGFloat = 2.1
         let fillWidth = max(0, (bodyRect.width - fillInset * 2) * value)
         let fillRect = CGRect(
             x: bodyRect.minX + fillInset,
@@ -457,6 +548,7 @@ final class ReaderBatteryIndicatorView: UIView {
             height: max(0, bodyRect.height - fillInset * 2)
         )
         if fillRect.width > 0 {
+            fillColor.setFill()
             UIBezierPath(roundedRect: fillRect, cornerRadius: 0.8).fill()
         }
         context.restoreGState()

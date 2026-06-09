@@ -17,6 +17,7 @@ final class ReaderScrollPageCell: UITableViewCell {
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
     private var chapterTitle = ""
+    private var bookTitle = ""
     private var fullProgress: Double = 0
     private var widgetVisibility = ReaderSettings.WidgetVisibility.default
 
@@ -55,6 +56,7 @@ final class ReaderScrollPageCell: UITableViewCell {
         super.prepareForReuse()
         pageModel = nil
         chapterTitle = ""
+        bookTitle = ""
         fullProgress = 0
         textView.setAttributedText(NSAttributedString(string: ""))
         textView.setHighlightedRanges([])
@@ -91,6 +93,7 @@ final class ReaderScrollPageCell: UITableViewCell {
         layout: ReaderLayout,
         theme: ReaderTheme,
         chapterTitle: String = "",
+        bookTitle: String = "",
         fullProgress: Double = 0,
         widgetVisibility: ReaderSettings.WidgetVisibility = .default
     ) {
@@ -98,6 +101,7 @@ final class ReaderScrollPageCell: UITableViewCell {
         self.layout = layout
         self.theme = theme
         self.chapterTitle = chapterTitle
+        self.bookTitle = bookTitle
         self.fullProgress = ReaderPageModel.clampedProgress(fullProgress)
         self.widgetVisibility = widgetVisibility
         backgroundPageView.apply(theme: theme)
@@ -121,7 +125,11 @@ final class ReaderScrollPageCell: UITableViewCell {
     private func applyWidgets() {
         chapterTitleLabel.textColor = theme.headerColor
         chapterTitleLabel.font = ReaderPageWidgetLayout.font
-        chapterTitleLabel.text = chapterTitle
+        chapterTitleLabel.text = ReaderPageWidgetLayout.headerTitle(
+            bookTitle: bookTitle,
+            chapterTitle: chapterTitle,
+            pageIndex: pageModel?.pageIndex ?? 0
+        )
         chapterTitleLabel.isHidden = !widgetVisibility.chapterTitle
         bottomWidgetView.updateTheme(headerColor: theme.headerColor)
         bottomWidgetView.updateFont(ReaderPageWidgetLayout.font)
