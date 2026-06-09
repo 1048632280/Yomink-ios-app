@@ -723,6 +723,9 @@ final class ReaderV2CoreTests: XCTestCase {
         let menuView = ReaderV2MenuView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
         let model = readerV2PageModel(pageIndex: 1, pageCount: 3)
         var closeCount = 0
+        var catalogCount = 0
+        var searchCount = 0
+        var bookmarkCount = 0
         var settingsCount = 0
         var previousCount = 0
         var autoReadCount = 0
@@ -730,6 +733,15 @@ final class ReaderV2CoreTests: XCTestCase {
 
         menuView.onClose = {
             closeCount += 1
+        }
+        menuView.onCatalog = {
+            catalogCount += 1
+        }
+        menuView.onSearch = {
+            searchCount += 1
+        }
+        menuView.onBookmark = {
+            bookmarkCount += 1
         }
         menuView.onSettings = {
             settingsCount += 1
@@ -756,16 +768,30 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertTrue(menuView.isUserInteractionEnabled)
 
         menuView.closeButton.sendActions(for: .touchUpInside)
+        menuView.catalogButton.sendActions(for: .touchUpInside)
+        menuView.searchButton.sendActions(for: .touchUpInside)
+        menuView.bookmarkButton.sendActions(for: .touchUpInside)
         menuView.settingsButton.sendActions(for: .touchUpInside)
         menuView.previousPageButton.sendActions(for: .touchUpInside)
         menuView.autoReadButton.sendActions(for: .touchUpInside)
         menuView.nextPageButton.sendActions(for: .touchUpInside)
 
         XCTAssertEqual(closeCount, 1)
+        XCTAssertEqual(catalogCount, 1)
+        XCTAssertEqual(searchCount, 1)
+        XCTAssertEqual(bookmarkCount, 1)
         XCTAssertEqual(settingsCount, 1)
         XCTAssertEqual(previousCount, 1)
         XCTAssertEqual(autoReadCount, 1)
         XCTAssertEqual(nextCount, 1)
+
+        menuView.updateBookmark(isBookmarked: true)
+        XCTAssertEqual(
+            menuView.bookmarkButton.accessibilityLabel,
+            NSLocalizedString("reader.bookmark.remove", comment: "")
+        )
+        menuView.setBookmarkButtonEnabled(false)
+        XCTAssertFalse(menuView.bookmarkButton.isEnabled)
 
         menuView.setMenuVisible(false, animated: false)
         XCTAssertFalse(menuView.isMenuVisible)
@@ -922,6 +948,14 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(adapter.chapterProvider.chapterCount, 2)
         XCTAssertEqual(adapter.progressBridge.record(from: nil).chapterTitle, "Chapter One")
         XCTAssertEqual(adapter.recordBridge.record(chapterIndex: 1)?.chapterTitle, "Chapter Two")
+    }
+
+    func testReaderCoreRoutingDefaultsToV2AndKeepsLegacyFallback() {
+        XCTAssertEqual(ReaderCoreRouting.defaultEngine, .readerV2)
+        XCTAssertTrue(ReaderCoreRouting.usesReaderV2())
+        XCTAssertEqual(ReaderCoreRouting.legacyFallbackEngine, .legacyCollection)
+        XCTAssertTrue(ReaderCoreRouting.keepsLegacyReaderForRollback)
+        XCTAssertFalse(ReaderCoreRouting.usesReaderV2(for: .legacyCollection))
     }
 
     func testChapterProviderReadsUTF8ChapterText() async throws {

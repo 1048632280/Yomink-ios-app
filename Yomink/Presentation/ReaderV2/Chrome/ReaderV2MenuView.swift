@@ -3,6 +3,9 @@ import UIKit
 @MainActor
 final class ReaderV2MenuView: UIView {
     let closeButton = UIButton(type: .system)
+    let catalogButton = UIButton(type: .system)
+    let searchButton = UIButton(type: .system)
+    let bookmarkButton = UIButton(type: .system)
     let settingsButton = UIButton(type: .system)
     let previousPageButton = UIButton(type: .system)
     let autoReadButton = UIButton(type: .system)
@@ -19,6 +22,9 @@ final class ReaderV2MenuView: UIView {
     private(set) var isMenuVisible = false
 
     var onClose: (() -> Void)?
+    var onCatalog: (() -> Void)?
+    var onSearch: (() -> Void)?
+    var onBookmark: (() -> Void)?
     var onSettings: (() -> Void)?
     var onPreviousPage: (() -> Void)?
     var onAutoRead: (() -> Void)?
@@ -58,6 +64,20 @@ final class ReaderV2MenuView: UIView {
         autoReadButton.setImage(UIImage(systemName: imageName), for: .normal)
     }
 
+    func updateBookmark(isBookmarked: Bool) {
+        let imageName = isBookmarked ? "bookmark.fill" : "bookmark"
+        bookmarkButton.setImage(UIImage(systemName: imageName), for: .normal)
+        bookmarkButton.accessibilityLabel = NSLocalizedString(
+            isBookmarked ? "reader.bookmark.remove" : "reader.bookmark.add",
+            comment: ""
+        )
+    }
+
+    func setBookmarkButtonEnabled(_ isEnabled: Bool) {
+        bookmarkButton.isEnabled = isEnabled
+        bookmarkButton.alpha = isEnabled ? 1 : 0.45
+    }
+
     func apply(chromeTheme: ReaderChromeTheme) {
         topBar.backgroundColor = chromeTheme.barBackgroundColor
         bottomBar.backgroundColor = chromeTheme.barBackgroundColor
@@ -68,6 +88,9 @@ final class ReaderV2MenuView: UIView {
         modeLabel.textColor = chromeTheme.secondaryTextColor
         [
             closeButton,
+            catalogButton,
+            searchButton,
+            bookmarkButton,
             settingsButton,
             previousPageButton,
             autoReadButton,
@@ -121,10 +144,21 @@ final class ReaderV2MenuView: UIView {
         configureLabels()
         configureButtons()
 
+        let topActionStack = UIStackView(arrangedSubviews: [
+            catalogButton,
+            searchButton,
+            bookmarkButton,
+            settingsButton
+        ])
+        topActionStack.axis = .horizontal
+        topActionStack.alignment = .center
+        topActionStack.spacing = 4
+        topActionStack.translatesAutoresizingMaskIntoConstraints = false
+
         let topStack = UIStackView(arrangedSubviews: [
             closeButton,
             titleLabel,
-            settingsButton
+            topActionStack
         ])
         topStack.axis = .horizontal
         topStack.alignment = .center
@@ -176,7 +210,13 @@ final class ReaderV2MenuView: UIView {
 
             closeButton.widthAnchor.constraint(equalToConstant: 38),
             closeButton.heightAnchor.constraint(equalToConstant: 38),
-            settingsButton.widthAnchor.constraint(equalToConstant: 38),
+            catalogButton.widthAnchor.constraint(equalToConstant: 34),
+            catalogButton.heightAnchor.constraint(equalToConstant: 38),
+            searchButton.widthAnchor.constraint(equalToConstant: 34),
+            searchButton.heightAnchor.constraint(equalToConstant: 38),
+            bookmarkButton.widthAnchor.constraint(equalToConstant: 34),
+            bookmarkButton.heightAnchor.constraint(equalToConstant: 38),
+            settingsButton.widthAnchor.constraint(equalToConstant: 34),
             settingsButton.heightAnchor.constraint(equalToConstant: 38),
             previousPageButton.widthAnchor.constraint(equalToConstant: 42),
             previousPageButton.heightAnchor.constraint(equalToConstant: 38),
@@ -211,6 +251,17 @@ final class ReaderV2MenuView: UIView {
         closeButton.accessibilityLabel = NSLocalizedString("common.close", comment: "")
         closeButton.addTarget(self, action: #selector(closeTapped), for: .touchUpInside)
 
+        catalogButton.setImage(UIImage(systemName: "list.bullet"), for: .normal)
+        catalogButton.accessibilityLabel = NSLocalizedString("reader.catalog", comment: "")
+        catalogButton.addTarget(self, action: #selector(catalogTapped), for: .touchUpInside)
+
+        searchButton.setImage(UIImage(systemName: "magnifyingglass"), for: .normal)
+        searchButton.accessibilityLabel = NSLocalizedString("reader.search.title", comment: "")
+        searchButton.addTarget(self, action: #selector(searchTapped), for: .touchUpInside)
+
+        updateBookmark(isBookmarked: false)
+        bookmarkButton.addTarget(self, action: #selector(bookmarkTapped), for: .touchUpInside)
+
         settingsButton.setImage(UIImage(systemName: "textformat.size"), for: .normal)
         settingsButton.accessibilityLabel = NSLocalizedString("reader.settings", comment: "")
         settingsButton.addTarget(self, action: #selector(settingsTapped), for: .touchUpInside)
@@ -230,6 +281,18 @@ final class ReaderV2MenuView: UIView {
 
     @objc private func closeTapped() {
         onClose?()
+    }
+
+    @objc private func catalogTapped() {
+        onCatalog?()
+    }
+
+    @objc private func searchTapped() {
+        onSearch?()
+    }
+
+    @objc private func bookmarkTapped() {
+        onBookmark?()
     }
 
     @objc private func settingsTapped() {

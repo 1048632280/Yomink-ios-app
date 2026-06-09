@@ -46,6 +46,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var chapters: [Chapter] = []
     private var chapterProvider: ReaderChapterProvider?
     private var progressBridge: ReaderProgressBridge?
+    private var recordBridge: ReaderRecordBridge?
+    private var bookmarks: [Bookmark] = []
+    private var currentBookmark: Bookmark?
+    private var filterRules: [TextFilterRule] = []
     private var readerSettings = ReaderSettings.default
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
@@ -66,6 +70,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var openTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var settingsSaveTask: Task<Void, Never>?
+    private var bookmarkTask: Task<Void, Never>?
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
 
     init(
@@ -93,6 +98,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         openTask?.cancel()
         saveTask?.cancel()
         settingsSaveTask?.cancel()
+        bookmarkTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
         autoReadController.stop()
         systemAppearanceController.reset()
@@ -233,6 +239,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         menuView.configure(bookTitle: book.title)
         menuView.onClose = { [weak self] in
             self?.closeReader()
+        }
+        menuView.onCatalog = { [weak self] in
+            self?.showContents()
+        }
+        menuView.onSearch = { [weak self] in
+            self?.showContentSearch(initialKeyword: nil)
+        }
+        menuView.onBookmark = { [weak self] in
+            self?.toggleBookmark()
         }
         menuView.onSettings = { [weak self] in
             self?.setSettingsPanelVisible(true, animated: true)
@@ -461,9 +476,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 async let chapters = repository.fetchChapters(bookID: bookID)
                 async let progress = repository.fetchReadingProgress(bookID: bookID)
                 async let settings = repository.fetchReaderSettings()
+                async let bookmarks = repository.fetchBookmarks(bookID: bookID)
+                async let filterRules = repository.fetchFilterRules(bookID: bookID)
                 let loadedChapters = try await chapters
                 let loadedProgress = try await progress
                 let loadedSettings = try await settings
+                let loadedBookmarks = try await bookmarks
+                let loadedFilterRules = try await filterRules
                 try Task.checkCancellation()
 
                 guard let self,
@@ -473,7 +492,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 self.finishInitialLoad(
                     chapters: loadedChapters,
                     progress: loadedProgress,
-                    settings: loadedSettings
+                    settings: loadedSettings,
+                    bookmarks: loadedBookmarks,
+                    filterRules: loadedFilterRules
                 )
             } catch is CancellationError {
             } catch {
@@ -490,7 +511,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private func finishInitialLoad(
         chapters: [Chapter],
         progress: ReadingProgress?,
-        settings: ReaderSettings
+        settings: ReaderSettings,
+        bookmarks: [Bookmark],
+        filterRules: [TextFilterRule]
     ) {
         guard chapters.isEmpty == false else {
             showLoading(false)
@@ -499,6 +522,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         self.chapters = chapters
+        self.bookmarks = bookmarks
+        self.filterRules = filterRules
+        currentBookmark = nil
         readerSettings = settings.normalized
         refreshSettingsProjection()
         paginationCache.removeAll()
@@ -513,6 +539,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         )
         chapterProvider = adapter.chapterProvider
         progressBridge = adapter.progressBridge
+        recordBridge = adapter.recordBridge
         pendingInitialRecord = adapter.progressBridge.record(from: progress)
         openPendingInitialRecordIfPossible()
     }
@@ -521,6 +548,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         loadTask?.cancel()
         openTask?.cancel()
         saveTask?.cancel()
+        bookmarkTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
         preloadTasks.removeAll()
         stopAutoReading(animated: false)
@@ -528,6 +556,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         chapters = []
         chapterProvider = nil
         progressBridge = nil
+        recordBridge = nil
+        bookmarks = []
+        currentBookmark = nil
+        filterRules = []
+        bookmarkTask = nil
         paginationCache.removeAll()
         currentPageModel = nil
         pendingInitialRecord = nil
@@ -964,6 +997,241 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             turnPageType: activeTurnPageType
         )
         menuView.updateAutoRead(isReading: autoReadController.isReading)
+        updateBookmarkState()
+    }
+
+    private func selectedChapterIndex() -> Int {
+        guard let currentPageModel,
+              chapters.indices.contains(currentPageModel.chapterIndex) else {
+            return 0
+        }
+        return currentPageModel.chapterIndex
+    }
+
+    private func currentReadingProgress() -> ReadingProgress? {
+        guard let currentPageModel else {
+            return nil
+        }
+        return progressBridge?.readingProgress(from: currentPageModel)
+    }
+
+    private func updateBookmarkState() {
+        guard let progress = currentReadingProgress() else {
+            currentBookmark = nil
+            menuView.updateBookmark(isBookmarked: false)
+            return
+        }
+
+        currentBookmark = bookmarks.first { bookmark in
+            bookmark.chapterID == progress.chapterID
+                && abs(bookmark.offset - Int(progress.chapterOffset)) < 12
+        }
+        menuView.updateBookmark(isBookmarked: currentBookmark != nil)
+    }
+
+    private func bookmarkPreview() -> String {
+        guard let currentPageModel,
+              let result = paginationCache[currentPageModel.chapterIndex],
+              result.pages.indices.contains(currentPageModel.pageIndex) else {
+            return NSLocalizedString("reader.bookmark.preview.empty", comment: "")
+        }
+        let preview = result.pages[currentPageModel.pageIndex]
+            .attributedText
+            .string
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return preview.isEmpty
+            ? NSLocalizedString("reader.bookmark.preview.empty", comment: "")
+            : String(preview.prefix(80))
+    }
+
+    private func showContents() {
+        guard chapters.isEmpty == false else {
+            return
+        }
+        let listViewController = ReaderContentsViewController(
+            bookID: book.id,
+            repository: repository,
+            chapters: chapters,
+            selectedChapterIndex: selectedChapterIndex(),
+            onBookmarksChanged: { [weak self] bookmarks in
+                self?.bookmarks = bookmarks
+                self?.updateBookmarkState()
+            }
+        ) { [weak self] target in
+            guard let self else {
+                return
+            }
+            self.jumpTo(target)
+            self.popBackToReader(animated: true)
+        }
+        pushReaderPage(listViewController)
+    }
+
+    private func showContentSearch(initialKeyword: String?) {
+        guard chapters.isEmpty == false else {
+            return
+        }
+        let searchViewController = ReaderContentSearchViewController(
+            book: book,
+            fileStore: fileStore,
+            chapters: chapters,
+            filterRules: filterRules,
+            initialKeyword: initialKeyword
+        ) { [weak self] target in
+            guard let self else {
+                return
+            }
+            self.jumpTo(target)
+            self.popBackToReader(animated: true)
+        }
+        pushReaderPage(searchViewController)
+    }
+
+    private func jumpTo(_ target: ReaderContentTarget) {
+        stopAutoReading(animated: false)
+        setMenuVisible(false, animated: false)
+        guard let record = recordBridge?.record(from: target) else {
+            return
+        }
+        open(record: record, animated: false)
+    }
+
+    private func pushReaderPage(
+        _ viewController: UIViewController,
+        prefersNavigationBarHidden: Bool = false
+    ) {
+        setMenuVisible(false, animated: true)
+        stopAutoReading(animated: false)
+        saveProgressImmediately()
+
+        guard let navigationController else {
+            let presentedNavigationController = UINavigationController(rootViewController: viewController)
+            presentedNavigationController.setNavigationBarHidden(
+                prefersNavigationBarHidden,
+                animated: false
+            )
+            present(presentedNavigationController, animated: true)
+            return
+        }
+
+        navigationController.setNavigationBarHidden(
+            prefersNavigationBarHidden,
+            animated: false
+        )
+        navigationController.pushViewController(viewController, animated: true)
+    }
+
+    private func popBackToReader(animated: Bool) {
+        guard let navigationController else {
+            presentedViewController?.dismiss(animated: animated)
+            return
+        }
+
+        if navigationController.viewControllers.contains(self) {
+            navigationController.popToViewController(self, animated: animated)
+        } else {
+            presentedViewController?.dismiss(animated: animated)
+        }
+    }
+
+    private func toggleBookmark() {
+        guard let progress = currentReadingProgress(),
+              let currentPageModel,
+              chapters.indices.contains(currentPageModel.chapterIndex) else {
+            return
+        }
+
+        if let currentBookmark {
+            removeBookmark(currentBookmark)
+        } else {
+            createBookmark(progress: progress, chapter: chapters[currentPageModel.chapterIndex])
+        }
+    }
+
+    private func removeBookmark(_ bookmark: Bookmark) {
+        let removedBookmarkIndex = bookmarks.firstIndex { $0.id == bookmark.id } ?? 0
+        bookmarkTask?.cancel()
+        currentBookmark = nil
+        bookmarks.removeAll { $0.id == bookmark.id }
+        menuView.setBookmarkButtonEnabled(false)
+        updateBookmarkState()
+
+        let repository = repository
+        bookmarkTask = Task { [weak self] in
+            do {
+                try await repository.deleteBookmark(id: bookmark.id)
+                await MainActor.run {
+                    self?.menuView.setBookmarkButtonEnabled(true)
+                    self?.updateBookmarkState()
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.menuView.setBookmarkButtonEnabled(true)
+                    self?.updateBookmarkState()
+                }
+            } catch {
+                readerV2Logger.error("ReaderV2 delete bookmark failed: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.bookmarks.removeAll { $0.id == bookmark.id }
+                    self.bookmarks.insert(
+                        bookmark,
+                        at: min(removedBookmarkIndex, self.bookmarks.count)
+                    )
+                    self.menuView.setBookmarkButtonEnabled(true)
+                    self.updateBookmarkState()
+                    self.showError(error)
+                }
+            }
+        }
+    }
+
+    private func createBookmark(
+        progress: ReadingProgress,
+        chapter: Chapter
+    ) {
+        bookmarkTask?.cancel()
+        menuView.setBookmarkButtonEnabled(false)
+
+        let repository = repository
+        let bookID = book.id
+        let offset = Int(progress.chapterOffset)
+        let preview = bookmarkPreview()
+        bookmarkTask = Task { [weak self] in
+            do {
+                let bookmark = try await repository.createBookmark(
+                    bookID: bookID,
+                    chapterID: chapter.id,
+                    offset: offset,
+                    preview: preview
+                )
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.menuView.setBookmarkButtonEnabled(true)
+                    self.bookmarks.removeAll { $0.id == bookmark.id }
+                    self.bookmarks.insert(bookmark, at: 0)
+                    self.updateBookmarkState()
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.menuView.setBookmarkButtonEnabled(true)
+                }
+            } catch {
+                readerV2Logger.error("ReaderV2 create bookmark failed: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.menuView.setBookmarkButtonEnabled(true)
+                    self.updateBookmarkState()
+                    self.showError(error)
+                }
+            }
+        }
     }
 
     private func setMenuVisible(

@@ -541,7 +541,7 @@ struct LibraryView: View {
                 isActive: readerNavigationBinding
             ) {
                 if let book = activeReaderBook {
-                    if Self.usesReaderV2 {
+                    if ReaderCoreRouting.usesReaderV2() {
                         ReaderV2HostView(
                             book: book,
                             fileStore: services.fileStore,
@@ -1155,7 +1155,6 @@ struct LibraryView: View {
 
     private static let drawerAnimationDuration = 0.28
     private static let routeReaderOpenDelay = 0.56
-    private static let usesReaderV2 = false
     private static let readerNavigationGuardDuration = 0.72
 
     private static let drawerAnimation = Animation.spring(
