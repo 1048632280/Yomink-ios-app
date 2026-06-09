@@ -301,15 +301,14 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             self?.applyReaderSettings(settings)
         }
         view.addSubview(settingsPanelView)
-        let panelHeight = settingsPanelView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.58)
-        panelHeight.priority = .defaultHigh
         NSLayoutConstraint.activate([
             settingsPanelView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             settingsPanelView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             settingsPanelView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            panelHeight,
-            settingsPanelView.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.64),
-            settingsPanelView.heightAnchor.constraint(greaterThanOrEqualToConstant: 280)
+            settingsPanelView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -315
+            )
         ])
         settingsPanelView.setSettings(readerSettings)
         settingsPanelView.apply(chromeTheme: chromeTheme)
@@ -324,15 +323,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             self?.stopAutoReading(animated: true)
         }
         view.addSubview(autoReadPanelView)
-        let panelHeight = autoReadPanelView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.22)
-        panelHeight.priority = .defaultHigh
         NSLayoutConstraint.activate([
             autoReadPanelView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             autoReadPanelView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             autoReadPanelView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            panelHeight,
-            autoReadPanelView.heightAnchor.constraint(greaterThanOrEqualToConstant: 156),
-            autoReadPanelView.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.34)
+            autoReadPanelView.heightAnchor.constraint(equalToConstant: 190)
         ])
         autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
         autoReadPanelView.apply(chromeTheme: chromeTheme)

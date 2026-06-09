@@ -695,9 +695,15 @@ final class ReaderV2CoreTests: XCTestCase {
         panel.layoutControl.sendActions(for: .valueChanged)
         XCTAssertEqual(emittedSettings.last?.layoutPreset, .compact)
 
-        panel.fontStepper.value = 22
-        panel.fontStepper.sendActions(for: .valueChanged)
+        var fontSettings = ReaderSettings.default
+        fontSettings.fontSize = 21
+        panel.setSettings(fontSettings)
+        panel.fontIncreaseButton.sendActions(for: .touchUpInside)
         XCTAssertEqual(emittedSettings.last?.fontSize, 22)
+
+        panel.quickControl.selectedSegmentIndex = 1
+        panel.quickControl.sendActions(for: .valueChanged)
+        XCTAssertEqual(panel.quickControl.selectedSegmentIndex, 1)
 
         panel.keepAwakeSwitch.isOn = true
         panel.keepAwakeSwitch.sendActions(for: .valueChanged)
@@ -710,6 +716,10 @@ final class ReaderV2CoreTests: XCTestCase {
         panel.statusBarSwitch.isOn = false
         panel.statusBarSwitch.sendActions(for: .valueChanged)
         XCTAssertEqual(emittedSettings.last?.autoHideStatusBar, false)
+
+        panel.edgeSwipeBackSwitch.isOn = false
+        panel.edgeSwipeBackSwitch.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.edgeSwipeBackEnabled, false)
 
         panel.chapterTitleSwitch.isOn = false
         panel.globalProgressSwitch.isOn = true
