@@ -966,7 +966,7 @@ private extension ReaderV2MenuView {
         static let progressRowHeight: CGFloat = 46
         static let bottomActionRowHeight: CGFloat = 48
         static let chapterButtonWidth: CGFloat = 74
-        static let progressSliderHorizontalInset: CGFloat = 0
+        static let progressSliderHorizontalInset: CGFloat = 18
         static let progressTooltipBottomSpacing: CGFloat = 20
         static let progressTooltipHorizontalPadding: CGFloat = 12
         static let progressTooltipVerticalPadding: CGFloat = 6

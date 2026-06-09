@@ -25,12 +25,10 @@ class ReaderV2Slider: UISlider {
     }
 
     override func trackRect(forBounds bounds: CGRect) -> CGRect {
-        CGRect(
-            x: 0,
-            y: bounds.midY - preferredTrackHeight / 2,
-            width: bounds.width,
-            height: preferredTrackHeight
-        )
+        var rect = super.trackRect(forBounds: bounds)
+        rect.origin.y = bounds.midY - preferredTrackHeight / 2
+        rect.size.height = preferredTrackHeight
+        return rect
     }
 
     override func thumbRect(
