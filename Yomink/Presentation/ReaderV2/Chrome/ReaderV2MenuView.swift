@@ -5,6 +5,7 @@ final class ReaderV2MenuView: UIView {
     let closeButton = UIButton(type: .system)
     let settingsButton = UIButton(type: .system)
     let previousPageButton = UIButton(type: .system)
+    let autoReadButton = UIButton(type: .system)
     let nextPageButton = UIButton(type: .system)
 
     private let topBar = UIView()
@@ -20,6 +21,7 @@ final class ReaderV2MenuView: UIView {
     var onClose: (() -> Void)?
     var onSettings: (() -> Void)?
     var onPreviousPage: (() -> Void)?
+    var onAutoRead: (() -> Void)?
     var onNextPage: (() -> Void)?
 
     override init(frame: CGRect) {
@@ -51,6 +53,11 @@ final class ReaderV2MenuView: UIView {
         progressLabel.text = chapterTitle.isEmpty ? pageText : "\(chapterTitle)  \(pageText)"
     }
 
+    func updateAutoRead(isReading: Bool) {
+        let imageName = isReading ? "pause.circle.fill" : "play.circle"
+        autoReadButton.setImage(UIImage(systemName: imageName), for: .normal)
+    }
+
     func apply(chromeTheme: ReaderChromeTheme) {
         topBar.backgroundColor = chromeTheme.barBackgroundColor
         bottomBar.backgroundColor = chromeTheme.barBackgroundColor
@@ -63,6 +70,7 @@ final class ReaderV2MenuView: UIView {
             closeButton,
             settingsButton,
             previousPageButton,
+            autoReadButton,
             nextPageButton
         ].forEach { button in
             button.tintColor = chromeTheme.primaryTextColor
@@ -128,6 +136,7 @@ final class ReaderV2MenuView: UIView {
             previousPageButton,
             progressLabel,
             modeLabel,
+            autoReadButton,
             nextPageButton
         ])
         bottomStack.axis = .horizontal
@@ -171,6 +180,8 @@ final class ReaderV2MenuView: UIView {
             settingsButton.heightAnchor.constraint(equalToConstant: 38),
             previousPageButton.widthAnchor.constraint(equalToConstant: 42),
             previousPageButton.heightAnchor.constraint(equalToConstant: 38),
+            autoReadButton.widthAnchor.constraint(equalToConstant: 42),
+            autoReadButton.heightAnchor.constraint(equalToConstant: 38),
             nextPageButton.widthAnchor.constraint(equalToConstant: 42),
             nextPageButton.heightAnchor.constraint(equalToConstant: 38)
         ])
@@ -208,6 +219,10 @@ final class ReaderV2MenuView: UIView {
         previousPageButton.accessibilityLabel = NSLocalizedString("reader.previousPage", comment: "")
         previousPageButton.addTarget(self, action: #selector(previousPageTapped), for: .touchUpInside)
 
+        updateAutoRead(isReading: false)
+        autoReadButton.accessibilityLabel = NSLocalizedString("reader.autoRead.placeholder", comment: "")
+        autoReadButton.addTarget(self, action: #selector(autoReadTapped), for: .touchUpInside)
+
         nextPageButton.setImage(UIImage(systemName: "chevron.right"), for: .normal)
         nextPageButton.accessibilityLabel = NSLocalizedString("reader.nextPage", comment: "")
         nextPageButton.addTarget(self, action: #selector(nextPageTapped), for: .touchUpInside)
@@ -223,6 +238,10 @@ final class ReaderV2MenuView: UIView {
 
     @objc private func previousPageTapped() {
         onPreviousPage?()
+    }
+
+    @objc private func autoReadTapped() {
+        onAutoRead?()
     }
 
     @objc private func nextPageTapped() {

@@ -32,7 +32,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
     private let menuView = ReaderV2MenuView()
     private let settingsPanelView = ReaderV2SettingsPanelView()
+    private let autoReadPanelView = ReaderV2AutoReadPanelView()
+    private let autoReadController = ReaderAutoReadController()
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
+    private lazy var systemAppearanceController = ReaderSystemAppearanceController(
+        hostViewController: self,
+        onStatusBarHiddenChange: onStatusBarHiddenChange
+    )
 
     private var activeContainer: ReaderContainerProtocol?
     private var activeTurnPageType: ReaderTurnPageType = .horizontalScroll
@@ -49,7 +55,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var pendingInitialRecord: ReaderRecord?
     private var lastPaginationSize = CGSize.zero
     private var isViewVisible = false
-    private var lastNotifiedStatusBarHidden = false
+    private var shouldStartAutoReadAfterOpen = false
     private var didRecordOpenHistory = false
     private var openedAt = Date()
 
@@ -88,24 +94,20 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         saveTask?.cancel()
         settingsSaveTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
+        autoReadController.stop()
+        systemAppearanceController.reset()
+        NotificationCenter.default.removeObserver(self)
         Task { @MainActor in
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }
 
     override var prefersStatusBarHidden: Bool {
-        guard isViewVisible,
-              readerSettings.normalized.autoHideStatusBar,
-              UIDevice.current.userInterfaceIdiom != .pad,
-              view.window?.bounds == UIScreen.main.bounds
-        else {
-            return false
-        }
-        return true
+        systemAppearanceController.prefersStatusBarHidden
     }
 
     override var preferredStatusBarStyle: UIStatusBarStyle {
-        theme.isDark ? .lightContent : .darkContent
+        systemAppearanceController.preferredStatusBarStyle
     }
 
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation {
@@ -113,11 +115,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
-        readerSettings.normalized.autoHideHomeIndicator
+        systemAppearanceController.prefersHomeIndicatorAutoHidden
     }
 
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
-        readerSettings.normalized.autoHideHomeIndicator ? .bottom : []
+        systemAppearanceController.preferredScreenEdgesDeferringSystemGestures
     }
 
     override func viewDidLoad() {
@@ -126,8 +128,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         configureContainer(for: activeTurnPageType)
         configureMenu()
         configureSettingsPanel()
+        configureAutoReadPanel()
+        configureAutoReadController()
         configureLoadingIndicator()
         configureTapGesture()
+        configureLifecycleObservers()
         startInitialLoad()
     }
 
@@ -135,7 +140,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         super.viewWillAppear(animated)
         isViewVisible = true
         navigationController?.setNavigationBarHidden(true, animated: animated)
-        UIApplication.shared.isIdleTimerDisabled = readerSettings.normalized.keepScreenAwake
+        resumeAutoReadingAfterPauseIfNeeded()
         updateSystemAppearance()
     }
 
@@ -148,7 +153,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         isViewVisible = false
-        UIApplication.shared.isIdleTimerDisabled = false
+        pauseAutoReadingForBackground()
         saveProgressImmediately()
         updateSystemAppearance()
     }
@@ -234,10 +239,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         menuView.onPreviousPage = { [weak self] in
             self?.setMenuVisible(false, animated: true)
+            self?.stopAutoReading(animated: false)
             self?.goToAdjacentPage(delta: -1)
+        }
+        menuView.onAutoRead = { [weak self] in
+            self?.autoReadButtonTapped()
         }
         menuView.onNextPage = { [weak self] in
             self?.setMenuVisible(false, animated: true)
+            self?.stopAutoReading(animated: false)
             self?.goToAdjacentPage(delta: 1)
         }
         view.addSubview(menuView)
@@ -271,6 +281,56 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         settingsPanelView.apply(chromeTheme: chromeTheme)
     }
 
+    private func configureAutoReadPanel() {
+        autoReadPanelView.translatesAutoresizingMaskIntoConstraints = false
+        autoReadPanelView.onSpeedChange = { [weak self] speed in
+            self?.autoReadSpeedChanged(speed)
+        }
+        autoReadPanelView.onExit = { [weak self] in
+            self?.stopAutoReading(animated: true)
+        }
+        view.addSubview(autoReadPanelView)
+        let panelHeight = autoReadPanelView.heightAnchor.constraint(equalTo: view.heightAnchor, multiplier: 0.22)
+        panelHeight.priority = .defaultHigh
+        NSLayoutConstraint.activate([
+            autoReadPanelView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            autoReadPanelView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            autoReadPanelView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            panelHeight,
+            autoReadPanelView.heightAnchor.constraint(greaterThanOrEqualToConstant: 156),
+            autoReadPanelView.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor, multiplier: 0.34)
+        ])
+        autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
+        autoReadPanelView.apply(chromeTheme: chromeTheme)
+    }
+
+    private func configureAutoReadController() {
+        autoReadController.onScrollTick = { [weak self] in
+            self?.autoReadDidScroll()
+        }
+        autoReadController.onProgressSaveNeeded = { [weak self] in
+            self?.saveProgressImmediately()
+        }
+        autoReadController.onReachedEnd = { [weak self] in
+            self?.autoReadReachedLoadedContentEnd()
+        }
+    }
+
+    private func configureLifecycleObservers() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(applicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification,
+            object: nil
+        )
+    }
+
     private func refreshSettingsProjection() {
         layout = ReaderThemeManager.layout(from: readerSettings)
         theme = ReaderThemeManager.theme(from: readerSettings)
@@ -281,7 +341,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         menuView.apply(chromeTheme: chromeTheme)
         settingsPanelView.setSettings(readerSettings)
         settingsPanelView.apply(chromeTheme: chromeTheme)
-        UIApplication.shared.isIdleTimerDisabled = isViewVisible && readerSettings.normalized.keepScreenAwake
+        autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
+        autoReadPanelView.apply(chromeTheme: chromeTheme)
+        autoReadController.updateSpeed(readerSettings.normalized.autoReadSpeed)
+        updateSystemAppearance()
     }
 
     private func applyReaderSettings(_ nextSettings: ReaderSettings) {
@@ -292,6 +355,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         readerSettings = normalizedSettings
+        if autoReadController.isReading,
+           normalizedSettings.pageMode != .scroll {
+            stopAutoReading(animated: false)
+        }
         let needsRepagination = ReaderThemeManager.needsRepagination(
             from: previousSettings,
             to: normalizedSettings
@@ -456,6 +523,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         saveTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
         preloadTasks.removeAll()
+        stopAutoReading(animated: false)
+        shouldStartAutoReadAfterOpen = false
         chapters = []
         chapterProvider = nil
         progressBridge = nil
@@ -627,6 +696,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         currentPageModel = pageModel
         updateMenuState()
         preloadAround(chapterIndex: pageModel.chapterIndex)
+        if shouldStartAutoReadAfterOpen {
+            shouldStartAutoReadAfterOpen = false
+            startAutoReadingIfPossible()
+        }
         if savesProgress {
             saveProgress(
                 for: pageModel,
@@ -864,15 +937,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func updateSystemAppearance() {
-        setNeedsStatusBarAppearanceUpdate()
-        setNeedsUpdateOfHomeIndicatorAutoHidden()
-        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
-        let isHidden = prefersStatusBarHidden
-        guard isHidden != lastNotifiedStatusBarHidden else {
-            return
-        }
-        lastNotifiedStatusBarHidden = isHidden
-        onStatusBarHiddenChange(isHidden)
+        systemAppearanceController.update(
+            settings: readerSettings,
+            theme: theme,
+            isViewVisible: isViewVisible,
+            isMenuVisible: menuView.isMenuVisible,
+            isSettingsPanelVisible: settingsPanelView.isPanelVisible,
+            isAutoReadPanelVisible: autoReadPanelView.isPanelVisible,
+            isAutoReading: autoReadController.isReading
+        )
     }
 
     private func chapterTitle(at index: Int) -> String {
@@ -890,6 +963,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             chapterTitle: pageModel.map { chapterTitle(at: $0.chapterIndex) } ?? "",
             turnPageType: activeTurnPageType
         )
+        menuView.updateAutoRead(isReading: autoReadController.isReading)
     }
 
     private func setMenuVisible(
@@ -900,6 +974,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         if !visible {
             setSettingsPanelVisible(false, animated: animated)
         }
+        updateSystemAppearance()
     }
 
     private func setSettingsPanelVisible(
@@ -908,8 +983,161 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     ) {
         if visible {
             menuView.setMenuVisible(true, animated: animated)
+            setAutoReadPanelVisible(false, animated: animated)
         }
         settingsPanelView.setPanelVisible(visible, animated: animated)
+        updateSystemAppearance()
+    }
+
+    private func setAutoReadPanelVisible(
+        _ visible: Bool,
+        animated: Bool
+    ) {
+        if visible {
+            menuView.setMenuVisible(false, animated: animated)
+            settingsPanelView.setPanelVisible(false, animated: animated)
+        }
+        autoReadPanelView.setPanelVisible(visible, animated: animated)
+        updateSystemAppearance()
+    }
+
+    private func autoReadButtonTapped() {
+        if autoReadController.isReading {
+            setAutoReadPanelVisible(!autoReadPanelView.isPanelVisible, animated: true)
+            return
+        }
+        requestStartAutoReading()
+    }
+
+    private func requestStartAutoReading() {
+        setMenuVisible(false, animated: true)
+        setSettingsPanelVisible(false, animated: true)
+        guard activeTurnPageType == .verticalContinuous else {
+            shouldStartAutoReadAfterOpen = true
+            var settings = readerSettings
+            settings.pageMode = .scroll
+            applyReaderSettings(settings)
+            return
+        }
+        startAutoReadingIfPossible()
+    }
+
+    private func startAutoReadingIfPossible() {
+        guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
+            shouldStartAutoReadAfterOpen = true
+            return
+        }
+        scrollContainer.reload(
+            sections: scrollSections(),
+            layout: layout,
+            theme: theme
+        )
+        autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
+        autoReadController.start(
+            scrollView: scrollContainer.tableView,
+            speed: readerSettings.normalized.autoReadSpeed
+        )
+        setAutoReadPanelVisible(false, animated: false)
+        updateMenuState()
+        updateSystemAppearance()
+    }
+
+    private func stopAutoReading(animated: Bool) {
+        guard autoReadController.isReading
+            || autoReadController.hasDisplayLink
+            || autoReadPanelView.isPanelVisible else {
+            return
+        }
+        finishAutoReading(animated: animated)
+    }
+
+    private func finishAutoReading(animated: Bool) {
+        shouldStartAutoReadAfterOpen = false
+        autoReadController.stop()
+        setAutoReadPanelVisible(false, animated: animated)
+        updateMenuState()
+        updateSystemAppearance()
+        saveProgressImmediately()
+    }
+
+    private func pauseAutoReadingForBackground() {
+        guard autoReadController.isReading else {
+            return
+        }
+        autoReadController.pauseForBackground()
+        setAutoReadPanelVisible(false, animated: false)
+        updateMenuState()
+        updateSystemAppearance()
+    }
+
+    private func resumeAutoReadingAfterPauseIfNeeded() {
+        guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
+            return
+        }
+        autoReadController.resumeAfterBackgroundIfNeeded(scrollView: scrollContainer.tableView)
+        updateMenuState()
+        updateSystemAppearance()
+    }
+
+    private func autoReadSpeedChanged(_ speed: Double) {
+        var settings = readerSettings
+        settings.autoReadSpeed = speed
+        readerSettings = settings.normalized
+        autoReadController.updateSpeed(readerSettings.autoReadSpeed)
+        autoReadPanelView.setSpeed(readerSettings.autoReadSpeed)
+        settingsPanelView.setSettings(readerSettings)
+        saveReaderSettings(readerSettings)
+    }
+
+    private func autoReadDidScroll() {
+        guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
+            return
+        }
+        scrollContainer.notifyVisiblePageFromAutoRead()
+    }
+
+    private func autoReadReachedLoadedContentEnd() {
+        guard currentPageModel != nil else {
+            finishAutoReading(animated: true)
+            return
+        }
+        openTask?.cancel()
+        openTask = Task { [weak self] in
+            do {
+                guard let self else {
+                    return
+                }
+                guard let target = try await self.loadAdjacentPageModel(delta: 1) else {
+                    self.finishAutoReading(animated: true)
+                    return
+                }
+                try self.display(
+                    pageModel: target,
+                    direction: .forward,
+                    animated: false,
+                    savesProgress: true,
+                    recordsOpenHistory: false
+                )
+                self.startAutoReadingIfPossible()
+            } catch is CancellationError {
+            } catch {
+                self?.finishAutoReading(animated: true)
+                self?.showError(error)
+            }
+        }
+    }
+
+    @objc private func applicationDidEnterBackground() {
+        pauseAutoReadingForBackground()
+        updateSystemAppearance()
+    }
+
+    @objc private func applicationDidBecomeActive() {
+        guard isViewVisible else {
+            return
+        }
+        resumeAutoReadingAfterPauseIfNeeded()
+        updateSystemAppearance()
     }
 
     @objc private func pageTapGestureRecognized(_ recognizer: UITapGestureRecognizer) {
@@ -917,10 +1145,22 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
         let location = recognizer.location(in: view)
+        if autoReadPanelView.isPanelVisible {
+            if !autoReadPanelView.frame.contains(location) {
+                setAutoReadPanelVisible(false, animated: true)
+            }
+            return
+        }
+
         if settingsPanelView.isPanelVisible {
             if !settingsPanelView.frame.contains(location) {
                 setSettingsPanelVisible(false, animated: true)
             }
+            return
+        }
+
+        if autoReadController.isReading {
+            setAutoReadPanelVisible(true, animated: true)
             return
         }
 
@@ -978,6 +1218,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func closeReader() {
+        stopAutoReading(animated: false)
         saveProgressImmediately()
         onClose()
     }

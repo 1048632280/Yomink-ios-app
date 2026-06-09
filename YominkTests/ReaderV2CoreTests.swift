@@ -725,6 +725,7 @@ final class ReaderV2CoreTests: XCTestCase {
         var closeCount = 0
         var settingsCount = 0
         var previousCount = 0
+        var autoReadCount = 0
         var nextCount = 0
 
         menuView.onClose = {
@@ -735,6 +736,9 @@ final class ReaderV2CoreTests: XCTestCase {
         }
         menuView.onPreviousPage = {
             previousCount += 1
+        }
+        menuView.onAutoRead = {
+            autoReadCount += 1
         }
         menuView.onNextPage = {
             nextCount += 1
@@ -754,17 +758,157 @@ final class ReaderV2CoreTests: XCTestCase {
         menuView.closeButton.sendActions(for: .touchUpInside)
         menuView.settingsButton.sendActions(for: .touchUpInside)
         menuView.previousPageButton.sendActions(for: .touchUpInside)
+        menuView.autoReadButton.sendActions(for: .touchUpInside)
         menuView.nextPageButton.sendActions(for: .touchUpInside)
 
         XCTAssertEqual(closeCount, 1)
         XCTAssertEqual(settingsCount, 1)
         XCTAssertEqual(previousCount, 1)
+        XCTAssertEqual(autoReadCount, 1)
         XCTAssertEqual(nextCount, 1)
 
         menuView.setMenuVisible(false, animated: false)
         XCTAssertFalse(menuView.isMenuVisible)
         XCTAssertTrue(menuView.isHidden)
         XCTAssertFalse(menuView.isUserInteractionEnabled)
+    }
+
+    @MainActor
+    func testReaderSystemAppearanceControllerFollowsReaderRules() {
+        let controller = ReaderSystemAppearanceController()
+        var settings = ReaderSettings.default
+
+        controller.update(
+            settings: settings,
+            theme: .standard,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: false,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertTrue(controller.prefersStatusBarHidden)
+        XCTAssertFalse(controller.prefersHomeIndicatorAutoHidden)
+        XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, .bottom)
+
+        controller.update(
+            settings: settings,
+            theme: .standard,
+            isViewVisible: true,
+            isMenuVisible: true,
+            isSettingsPanelVisible: false,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertFalse(controller.prefersStatusBarHidden)
+
+        controller.update(
+            settings: settings,
+            theme: .standard,
+            isViewVisible: true,
+            isMenuVisible: true,
+            isSettingsPanelVisible: true,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertTrue(controller.prefersStatusBarHidden)
+
+        settings.autoHideStatusBar = false
+        settings.autoHideHomeIndicator = false
+        controller.update(
+            settings: settings,
+            theme: .dark,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: false,
+            isAutoReadPanelVisible: false,
+            isAutoReading: true
+        )
+        XCTAssertTrue(controller.prefersStatusBarHidden)
+        XCTAssertEqual(controller.preferredStatusBarStyle, .lightContent)
+        XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, [])
+
+        controller.reset()
+        XCTAssertFalse(controller.prefersStatusBarHidden)
+    }
+
+    @MainActor
+    func testReaderAutoReadControllerLifecycleAndAdvance() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        scrollView.contentSize = CGSize(width: 100, height: 1_000)
+        let controller = ReaderAutoReadController()
+        var saveCount = 0
+        controller.onProgressSaveNeeded = {
+            saveCount += 1
+        }
+
+        controller.start(scrollView: scrollView, speed: 120)
+        XCTAssertTrue(controller.isReading)
+        XCTAssertTrue(controller.hasDisplayLink)
+
+        controller.advance(by: 0.5)
+        XCTAssertGreaterThan(scrollView.contentOffset.y, 0)
+
+        controller.pauseForBackground()
+        XCTAssertTrue(controller.isReading)
+        XCTAssertTrue(controller.isPausedForBackground)
+        XCTAssertFalse(controller.hasDisplayLink)
+        XCTAssertGreaterThanOrEqual(saveCount, 1)
+
+        controller.resumeAfterBackgroundIfNeeded(scrollView: scrollView)
+        XCTAssertTrue(controller.isReading)
+        XCTAssertFalse(controller.isPausedForBackground)
+        XCTAssertTrue(controller.hasDisplayLink)
+
+        controller.stop()
+        XCTAssertFalse(controller.isReading)
+        XCTAssertFalse(controller.hasDisplayLink)
+    }
+
+    @MainActor
+    func testReaderAutoReadControllerStopsAtContentEnd() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        scrollView.contentSize = CGSize(width: 100, height: 100)
+        let controller = ReaderAutoReadController()
+        var reachedEndCount = 0
+        controller.onReachedEnd = {
+            reachedEndCount += 1
+        }
+
+        controller.start(scrollView: scrollView, speed: 120)
+        controller.advance(by: 0.5)
+
+        XCTAssertEqual(reachedEndCount, 1)
+        XCTAssertFalse(controller.isReading)
+        XCTAssertFalse(controller.hasDisplayLink)
+    }
+
+    @MainActor
+    func testReaderV2AutoReadPanelEmitsSpeedAndExit() {
+        let panel = ReaderV2AutoReadPanelView()
+        var emittedSpeed: Double?
+        var exitCount = 0
+        panel.onSpeedChange = { speed in
+            emittedSpeed = speed
+        }
+        panel.onExit = {
+            exitCount += 1
+        }
+
+        panel.setSpeed(400)
+        XCTAssertEqual(panel.speedSlider.value, Float(ReaderSettings.maximumAutoReadSpeed))
+
+        panel.speedSlider.value = 96
+        panel.speedSlider.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSpeed ?? 0, 96, accuracy: 0.01)
+
+        panel.exitButton.sendActions(for: .touchUpInside)
+        XCTAssertEqual(exitCount, 1)
+
+        panel.setPanelVisible(true, animated: false)
+        XCTAssertTrue(panel.isPanelVisible)
+        panel.setPanelVisible(false, animated: false)
+        XCTAssertFalse(panel.isPanelVisible)
     }
 
     func testBookAdapterExposesReaderV2BridgeComponents() throws {

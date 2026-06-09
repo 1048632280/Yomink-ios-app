@@ -127,6 +127,10 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         return sections[target.section].pageModels[target.row]
     }
 
+    func notifyVisiblePageFromAutoRead() {
+        notifyVisiblePageIfNeeded()
+    }
+
     private func notifyVisiblePageIfNeeded() {
         guard !isProgrammaticScroll,
               let pageModel = visiblePageModel(),
