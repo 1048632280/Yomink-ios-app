@@ -634,11 +634,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
     private func open(
         record: ReaderRecord,
-        animated: Bool
+        animated: Bool,
+        showsLoading: Bool = true,
+        closesMenuOnSuccess: Bool = false
     ) {
         openGeneration += 1
         let generation = openGeneration
-        showLoading(true)
+        if showsLoading {
+            showLoading(true)
+        }
         openTask?.cancel()
         openTask = Task { [weak self] in
             do {
@@ -657,14 +661,21 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     savesProgress: true,
                     recordsOpenHistory: true
                 )
-                self.showLoading(false)
+                if closesMenuOnSuccess {
+                    self.closeReaderMenuOverlays(animated: false)
+                }
+                if showsLoading {
+                    self.showLoading(false)
+                }
             } catch is CancellationError {
             } catch {
                 guard let self,
                       self.openGeneration == generation else {
                     return
                 }
-                self.showLoading(false)
+                if showsLoading {
+                    self.showLoading(false)
+                }
                 self.showError(error)
             }
         }
@@ -1508,6 +1519,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         updateSystemAppearance()
     }
 
+    private func closeReaderMenuOverlays(animated: Bool) {
+        guard menuView.isMenuVisible || settingsPanelView.isPanelVisible else {
+            return
+        }
+        setMenuVisible(false, animated: animated)
+    }
+
     private func autoReadButtonTapped() {
         if autoReadController.isReading {
             setAutoReadPanelVisible(!autoReadPanelView.isPanelVisible, animated: true)
@@ -1660,20 +1678,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
 
-        if settingsPanelView.isPanelVisible {
-            if !settingsPanelView.frame.contains(location) {
-                setSettingsPanelVisible(false, animated: true)
-            }
-            return
-        }
-
         if autoReadController.isReading {
             setAutoReadPanelVisible(true, animated: true)
             return
         }
 
-        if menuView.isMenuVisible,
-           menuView.containsInteractiveContent(at: location) {
+        if menuView.isMenuVisible || settingsPanelView.isPanelVisible {
+            closeReaderMenuOverlays(animated: true)
             return
         }
 
@@ -1740,7 +1751,12 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             progress: 0,
             chapterTitle: chapterTitle(at: targetChapterIndex)
         )
-        open(record: record, animated: true)
+        open(
+            record: record,
+            animated: false,
+            showsLoading: false,
+            closesMenuOnSuccess: true
+        )
     }
 
     private func openProgressInCurrentChapter(_ progress: Double) {
@@ -1781,6 +1797,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     savesProgress: true,
                     recordsOpenHistory: false
                 )
+                self.closeReaderMenuOverlays(animated: true)
             } catch is CancellationError {
             } catch {
                 self?.showError(error)
@@ -1795,6 +1812,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func pageTurnCompleted(to pageModel: ReaderPageModel) {
+        closeReaderMenuOverlays(animated: true)
         currentPageModel = pageModel
         updateMenuState()
         preloadAround(chapterIndex: pageModel.chapterIndex)

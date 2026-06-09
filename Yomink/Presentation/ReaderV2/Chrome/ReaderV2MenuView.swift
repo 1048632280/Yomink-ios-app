@@ -70,6 +70,16 @@ final class ReaderV2MenuView: UIView {
         applyMenuPosition()
     }
 
+    override func point(
+        inside point: CGPoint,
+        with event: UIEvent?
+    ) -> Bool {
+        guard isMenuVisible else {
+            return false
+        }
+        return containsInteractiveContent(at: point)
+    }
+
     func configure(bookTitle: String) {
         titleLabel.text = bookTitle
     }
