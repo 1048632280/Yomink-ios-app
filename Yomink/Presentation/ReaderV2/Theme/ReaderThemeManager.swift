@@ -61,7 +61,12 @@ enum ReaderThemeManager {
             titleFontSizeOffset: CGFloat(values.titleFontSizeDelta),
             titleLineSpacing: CGFloat(values.titleLineSpacing),
             titleParagraphSpacing: CGFloat(values.titleParagraphSpacing),
-            titleWordSpacing: CGFloat(values.titleKern)
+            titleWordSpacing: CGFloat(values.titleKern),
+            widgetTitleTop: CGFloat(values.widgetTitleTopMargin),
+            widgetTitleLeft: CGFloat(values.widgetTitleLeftMargin),
+            widgetBottom: CGFloat(values.widgetBottomMargin),
+            widgetLeft: CGFloat(values.widgetHorizontalMargin),
+            widgetRight: CGFloat(values.widgetHorizontalMargin)
         )
     }
 
@@ -116,7 +121,7 @@ enum ReaderThemeManager {
         return previous.theme != next.theme
             || previous.keepScreenAwake != next.keepScreenAwake
             || previous.autoHideHomeIndicator != next.autoHideHomeIndicator
-            || previous.autoHideStatusBar != next.autoHideStatusBar
+            || previous.statusBarMode != next.statusBarMode
             || previous.widgetVisibility != next.widgetVisibility
     }
 

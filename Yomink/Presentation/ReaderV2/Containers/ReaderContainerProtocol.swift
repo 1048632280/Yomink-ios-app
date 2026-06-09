@@ -22,6 +22,7 @@ protocol ReaderContainerProtocol: AnyObject {
     var makePageController: (@MainActor (ReaderPageModel) -> ReaderPageViewController?)? { get set }
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)? { get set }
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)? { get set }
+    var onTextSelectionAction: (@MainActor (ReaderTextSelectionAction, String) -> Void)? { get set }
 
     func display(
         pageModel: ReaderPageModel,

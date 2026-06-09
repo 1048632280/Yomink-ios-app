@@ -205,6 +205,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         container.onPageTurnCompleted = { [weak self] pageModel in
             self?.pageTurnCompleted(to: pageModel)
         }
+        container.onTextSelectionAction = { [weak self] action, text in
+            self?.handleTextSelectionAction(action, text: text)
+        }
 
         let containerViewController = container.viewController
         addChild(containerViewController)
@@ -735,7 +738,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             scrollContainer.reload(
                 sections: scrollSections(),
                 layout: layout,
-                theme: theme
+                theme: theme,
+                widgetVisibility: readerSettings.normalized.widgetVisibility
             )
         }
         activeContainer.display(
@@ -766,11 +770,26 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return nil
         }
         let controller = ReaderPageViewController()
+        let fullProgress = globalProgress(
+            chapterIndex: pageModel.chapterIndex,
+            chapterProgress: ReaderPageCalculator.pageProgress(
+                pageCount: pageModel.pageCount,
+                pageIndex: pageModel.pageIndex,
+                progress: pageModel.chapterProgress,
+                usesPageIndex: pageModel.usesPageIndex
+            )
+        )
+        controller.onTextSelectionAction = { [weak self] action, text in
+            self?.handleTextSelectionAction(action, text: text)
+        }
         controller.configure(
             page: result.pages[pageModel.pageIndex],
             pageModel: pageModel,
             layout: layout,
-            theme: theme
+            theme: theme,
+            chapterTitle: chapterTitle(at: pageModel.chapterIndex),
+            fullProgress: fullProgress,
+            widgetVisibility: readerSettings.normalized.widgetVisibility
         )
         return controller
     }
@@ -869,7 +888,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 timestamp: Date(timeIntervalSince1970: Double(chapterIndex)),
                 items: result.pages.map(\.attributedText),
                 heights: heights,
-                pageModels: pageModels
+                pageModels: pageModels,
+                fullProgresses: pageModels.map { pageModel in
+                    globalProgress(
+                        chapterIndex: pageModel.chapterIndex,
+                        chapterProgress: pageModel.chapterProgress
+                    )
+                }
             )
         }
     }
@@ -891,7 +916,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                         scrollContainer.reload(
                             sections: self.scrollSections(),
                             layout: self.layout,
-                            theme: self.theme
+                            theme: self.theme,
+                            widgetVisibility: self.readerSettings.normalized.widgetVisibility
                         )
                     }
                     self.preloadTasks[index] = nil
@@ -1160,8 +1186,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             guard let self else {
                 return
             }
-            self.jumpTo(target)
-            self.popBackToReader(animated: true)
+            self.jumpToAndReturnToReader(target)
         }
         pushReaderPage(listViewController)
     }
@@ -1180,8 +1205,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             guard let self else {
                 return
             }
-            self.jumpTo(target)
-            self.popBackToReader(animated: true)
+            self.jumpToAndReturnToReader(target)
         }
         pushReaderPage(searchViewController)
     }
@@ -1211,8 +1235,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 guard let self else {
                     return
                 }
-                self.jumpTo(target)
-                self.popBackToReader(animated: true)
+                self.jumpToAndReturnToReader(target)
             }
         )
         pushReaderPage(detailViewController)
@@ -1247,13 +1270,33 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         pushReaderPage(viewController, prefersNavigationBarHidden: true)
     }
 
-    private func jumpTo(_ target: ReaderContentTarget) {
+    private func handleTextSelectionAction(
+        _ action: ReaderTextSelectionAction,
+        text: String
+    ) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.isEmpty == false else {
+            return
+        }
+        switch action {
+        case .copy:
+            return
+        case .search:
+            showContentSearch(initialKeyword: trimmed)
+        case .filter:
+            showFilterRules(initialSource: trimmed)
+        }
+    }
+
+    private func jumpToAndReturnToReader(_ target: ReaderContentTarget) {
         stopAutoReading(animated: false)
         setMenuVisible(false, animated: false)
         guard let record = recordBridge?.record(from: target) else {
             return
         }
-        open(record: record, animated: false)
+        closeAuxiliaryReaderPage(animated: true) { [weak self] in
+            self?.open(record: record, animated: false)
+        }
     }
 
     private func pushReaderPage(
@@ -1281,16 +1324,34 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         navigationController.pushViewController(viewController, animated: true)
     }
 
-    private func popBackToReader(animated: Bool) {
-        guard let navigationController else {
-            presentedViewController?.dismiss(animated: animated)
+    private func closeAuxiliaryReaderPage(
+        animated: Bool,
+        completion: @escaping () -> Void
+    ) {
+        if let presentedViewController {
+            presentedViewController.dismiss(animated: animated, completion: completion)
             return
         }
 
-        if navigationController.viewControllers.contains(self) {
+        if let navigationController,
+           navigationController.topViewController !== self,
+           navigationController.viewControllers.contains(self) {
             navigationController.popToViewController(self, animated: animated)
+            if animated,
+               let coordinator = navigationController.transitionCoordinator {
+                coordinator.animate(alongsideTransition: nil) { _ in
+                    completion()
+                }
+            } else {
+                completion()
+            }
+            return
+        }
+
+        if let presentedViewController = navigationController?.presentedViewController {
+            presentedViewController.dismiss(animated: animated, completion: completion)
         } else {
-            presentedViewController?.dismiss(animated: animated)
+            completion()
         }
     }
 
@@ -1458,7 +1519,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         scrollContainer.reload(
             sections: scrollSections(),
             layout: layout,
-            theme: theme
+            theme: theme,
+            widgetVisibility: readerSettings.normalized.widgetVisibility
         )
         autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
         autoReadController.start(
@@ -1615,6 +1677,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         var touchedView = touch.view
         while let currentView = touchedView {
             if currentView is UIControl {
+                return false
+            }
+            if let textReadView = currentView as? TextReadView,
+               textReadView.isSelectionActive {
+                textReadView.clearSelection()
                 return false
             }
             touchedView = currentView.superview

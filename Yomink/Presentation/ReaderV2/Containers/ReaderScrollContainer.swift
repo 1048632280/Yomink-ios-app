@@ -7,6 +7,7 @@ struct ReaderScrollSection {
     var items: [NSAttributedString]
     var heights: [CGFloat]
     var pageModels: [ReaderPageModel]
+    var fullProgresses: [Double]
 }
 
 @MainActor
@@ -16,11 +17,13 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     private(set) var currentPageModel: ReaderPageModel?
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
+    private var widgetVisibility = ReaderSettings.WidgetVisibility.default
     private var isProgrammaticScroll = false
 
     var makePageController: (@MainActor (ReaderPageModel) -> ReaderPageViewController?)?
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)?
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)?
+    var onTextSelectionAction: (@MainActor (ReaderTextSelectionAction, String) -> Void)?
 
     var turnPageType: ReaderTurnPageType {
         .verticalContinuous
@@ -53,11 +56,13 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     func reload(
         sections: [ReaderScrollSection],
         layout: ReaderLayout,
-        theme: ReaderTheme
+        theme: ReaderTheme,
+        widgetVisibility: ReaderSettings.WidgetVisibility = .default
     ) {
         self.sections = sections
         self.layout = layout
         self.theme = theme
+        self.widgetVisibility = widgetVisibility
         view.backgroundColor = theme.backgroundColor
         tableView.backgroundColor = theme.backgroundColor
         tableView.reloadData()
@@ -163,11 +168,17 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
             reuseIdentifier: ReaderScrollPageCell.reuseIdentifier
         )
         let section = sections[indexPath.section]
+        cell.onTextSelectionAction = onTextSelectionAction
         cell.configure(
             attributedText: section.items[indexPath.row],
             pageModel: section.pageModels[indexPath.row],
             layout: layout,
-            theme: theme
+            theme: theme,
+            chapterTitle: section.title,
+            fullProgress: section.fullProgresses.indices.contains(indexPath.row)
+                ? section.fullProgresses[indexPath.row]
+                : 0,
+            widgetVisibility: widgetVisibility
         )
         return cell
     }

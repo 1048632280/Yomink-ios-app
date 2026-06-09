@@ -7,6 +7,7 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
     var makePageController: (@MainActor (ReaderPageModel) -> ReaderPageViewController?)?
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)?
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)?
+    var onTextSelectionAction: (@MainActor (ReaderTextSelectionAction, String) -> Void)?
 
     var turnPageType: ReaderTurnPageType {
         .horizontalScroll

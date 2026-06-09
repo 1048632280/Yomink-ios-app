@@ -23,7 +23,11 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
     let fontIncreaseButton = UIButton(type: .system)
     let keepAwakeSwitch = UISwitch()
     let homeIndicatorSwitch = UISwitch()
-    let statusBarSwitch = UISwitch()
+    let statusBarControl = UISegmentedControl(items: [
+        "隐藏",
+        "白色",
+        "黑色"
+    ])
     let edgeSwipeBackSwitch = UISwitch()
     let chapterTitleSwitch = UISwitch()
     let batteryPercentageSwitch = UISwitch()
@@ -71,7 +75,6 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
         [
             keepAwakeSwitch,
             homeIndicatorSwitch,
-            statusBarSwitch,
             edgeSwipeBackSwitch,
             chapterTitleSwitch,
             batteryPercentageSwitch,
@@ -138,7 +141,7 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
         scrollView.addSubview(stackView)
 
         configureFontButtons()
-        [pageModeControl, themeControl, quickControl, layoutControl].forEach(styleSettingsControl)
+        [pageModeControl, themeControl, quickControl, layoutControl, statusBarControl].forEach(styleSettingsControl)
 
         stackView.addArrangedSubview(settingsSection(
             title: NSLocalizedString("reader.settings.fontSize", comment: ""),
@@ -207,7 +210,7 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
         fontValueButton.addTarget(self, action: #selector(fontResetTapped), for: .touchUpInside)
         keepAwakeSwitch.addTarget(self, action: #selector(keepAwakeChanged), for: .valueChanged)
         homeIndicatorSwitch.addTarget(self, action: #selector(homeIndicatorChanged), for: .valueChanged)
-        statusBarSwitch.addTarget(self, action: #selector(statusBarChanged), for: .valueChanged)
+        statusBarControl.addTarget(self, action: #selector(statusBarChanged), for: .valueChanged)
         edgeSwipeBackSwitch.addTarget(self, action: #selector(edgeSwipeBackChanged), for: .valueChanged)
         chapterTitleSwitch.addTarget(self, action: #selector(widgetSwitchChanged), for: .valueChanged)
         batteryPercentageSwitch.addTarget(self, action: #selector(widgetSwitchChanged), for: .valueChanged)
@@ -468,9 +471,9 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
                 title: NSLocalizedString("reader.settings.autoHideHomeIndicator", comment: ""),
                 toggle: homeIndicatorSwitch
             ),
-            switchRow(
+            settingsSection(
                 title: NSLocalizedString("reader.settings.autoHideStatusBar", comment: ""),
-                toggle: statusBarSwitch
+                control: statusBarControl
             ),
             switchRow(
                 title: NSLocalizedString("reader.settings.edgeSwipeBack", comment: ""),
@@ -529,7 +532,8 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
         fontValueButton.setTitle("\(Int(normalized.fontSize))", for: .normal)
         keepAwakeSwitch.isOn = normalized.keepScreenAwake
         homeIndicatorSwitch.isOn = normalized.autoHideHomeIndicator
-        statusBarSwitch.isOn = normalized.autoHideStatusBar
+        statusBarControl.selectedSegmentIndex = ReaderSettings.StatusBarMode.allCases
+            .firstIndex(of: normalized.statusBarMode) ?? 0
         edgeSwipeBackSwitch.isOn = normalized.edgeSwipeBackEnabled
         chapterTitleSwitch.isOn = normalized.widgetVisibility.chapterTitle
         batteryPercentageSwitch.isOn = normalized.widgetVisibility.batteryPercentage
@@ -703,7 +707,12 @@ final class ReaderV2SettingsPanelView: UIView, UIGestureRecognizerDelegate {
     }
 
     @objc private func statusBarChanged() {
-        settings.autoHideStatusBar = statusBarSwitch.isOn
+        let index = statusBarControl.selectedSegmentIndex
+        guard ReaderSettings.StatusBarMode.allCases.indices.contains(index) else {
+            return
+        }
+        settings.statusBarMode = ReaderSettings.StatusBarMode.allCases[index]
+        settings.autoHideStatusBar = settings.statusBarMode == .hidden
         emitChange()
     }
 

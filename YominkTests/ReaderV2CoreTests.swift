@@ -447,6 +447,29 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testTextReadViewMapsTouchPointToSelectionRange() {
+        let manager = PaibanManager(layout: .phone, theme: .standard)
+        let attributed = manager.attributedText(
+            text: "Alpha beta gamma",
+            chapterTitle: "Selection"
+        )
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 340, height: 520))
+        view.layout = .phone
+        view.setAttributedText(attributed)
+        view.layoutIfNeeded()
+
+        let rects = view.textRects(for: NSRange(location: 0, length: min(8, view.attributedText.length)))
+        guard let firstRect = rects.first else {
+            XCTFail("Expected text rect for selection hit testing")
+            return
+        }
+        let range = view.selectionRange(at: CGPoint(x: firstRect.midX, y: firstRect.midY))
+
+        XCTAssertNotNil(range)
+        XCTAssertTrue(range?.length ?? 0 > 0)
+    }
+
+    @MainActor
     func testTextReadViewClampsSelectionAndHighlightRanges() {
         let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         view.setAttributedText(NSAttributedString(string: "abcdef"))
@@ -508,6 +531,57 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertNil(controller.backgroundView.displayedImageName)
         XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.dark.contentColor))
+    }
+
+    @MainActor
+    func testReaderPageViewControllerUpdatesReaderWidgets() {
+        let manager = PaibanManager(layout: .notchedPhone, theme: .standard)
+        let result = manager.divideText(
+            readerV2LongText(repeating: 4),
+            chapterTitle: "章节标题",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 260, height: 360)
+        )
+        guard let page = result.pages.first else {
+            XCTFail("Expected at least one rendered page")
+            return
+        }
+        let model = ReaderPageModel(
+            chapterCount: 1,
+            chapterIndex: 0,
+            pageCount: result.pageCount,
+            pageIndex: 0,
+            chapterProgress: 0,
+            usesPageIndex: true
+        )
+        var visibility = ReaderSettings.WidgetVisibility.default
+        visibility.time = true
+        visibility.batteryIcon = true
+        visibility.batteryPercentage = true
+        visibility.globalProgress = true
+
+        let controller = ReaderPageViewController()
+        controller.configure(
+            page: page,
+            pageModel: model,
+            layout: .notchedPhone,
+            theme: .standard,
+            chapterTitle: "章节标题",
+            fullProgress: 0.1245,
+            widgetVisibility: visibility
+        )
+        controller.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        controller.loadViewIfNeeded()
+        controller.view.layoutIfNeeded()
+
+        XCTAssertEqual(controller.chapterTitleLabel.text, Optional("章节标题"))
+        XCTAssertFalse(controller.chapterTitleLabel.isHidden)
+        XCTAssertEqual(controller.chapterTitleLabel.frame.minY, 43, accuracy: 0.1)
+        XCTAssertFalse(controller.bottomWidgetView.progressLabel.isHidden)
+        XCTAssertEqual(controller.bottomWidgetView.progressLabel.text, Optional("1/\(result.pageCount)  12.45%"))
+        XCTAssertFalse(controller.bottomWidgetView.timeLabel.isHidden)
+        XCTAssertFalse(controller.bottomWidgetView.batteryView.isHidden)
+        XCTAssertFalse(controller.bottomWidgetView.batteryLabel.isHidden)
     }
 
     @MainActor
@@ -600,7 +674,8 @@ final class ReaderV2CoreTests: XCTestCase {
                 NSAttributedString(string: "第二页")
             ],
             heights: [120, 180],
-            pageModels: [firstModel, secondModel]
+            pageModels: [firstModel, secondModel],
+            fullProgresses: [0.1, 0.2]
         )
 
         container.reload(
@@ -713,8 +788,10 @@ final class ReaderV2CoreTests: XCTestCase {
         panel.homeIndicatorSwitch.sendActions(for: .valueChanged)
         XCTAssertEqual(emittedSettings.last?.autoHideHomeIndicator, false)
 
-        panel.statusBarSwitch.isOn = false
-        panel.statusBarSwitch.sendActions(for: .valueChanged)
+        panel.statusBarControl.selectedSegmentIndex = ReaderSettings.StatusBarMode.allCases
+            .firstIndex(of: .dark) ?? 0
+        panel.statusBarControl.sendActions(for: .valueChanged)
+        XCTAssertEqual(emittedSettings.last?.statusBarMode, .dark)
         XCTAssertEqual(emittedSettings.last?.autoHideStatusBar, false)
 
         panel.edgeSwipeBackSwitch.isOn = false
@@ -881,7 +958,7 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReading: false
         )
         XCTAssertTrue(controller.prefersStatusBarHidden)
-        XCTAssertFalse(controller.prefersHomeIndicatorAutoHidden)
+        XCTAssertTrue(controller.prefersHomeIndicatorAutoHidden)
         XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, .bottom)
 
         controller.update(
@@ -893,7 +970,7 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReadPanelVisible: false,
             isAutoReading: false
         )
-        XCTAssertFalse(controller.prefersStatusBarHidden)
+        XCTAssertTrue(controller.prefersStatusBarHidden)
 
         controller.update(
             settings: settings,
@@ -906,8 +983,22 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertTrue(controller.prefersStatusBarHidden)
 
+        settings.statusBarMode = .light
         settings.autoHideStatusBar = false
         settings.autoHideHomeIndicator = false
+        controller.update(
+            settings: settings,
+            theme: .dark,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: false,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertFalse(controller.prefersStatusBarHidden)
+        XCTAssertEqual(controller.preferredStatusBarStyle, .lightContent)
+        XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, [])
+
         controller.update(
             settings: settings,
             theme: .dark,
@@ -918,8 +1009,6 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReading: true
         )
         XCTAssertTrue(controller.prefersStatusBarHidden)
-        XCTAssertEqual(controller.preferredStatusBarStyle, .lightContent)
-        XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, [])
 
         controller.reset()
         XCTAssertFalse(controller.prefersStatusBarHidden)

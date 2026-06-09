@@ -619,11 +619,11 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | Phase 0：准备和冻结旧阅读器 | 已收尾 | `ReaderV2` 目录已建立；旧入口默认保留；`ReaderV2HostView` 已新增；`usesReaderV2 = false` 开关已接入；固定测试 TXT 已准备 | 进入 Phase 1 验收和补强 | 30MB 压测书用确定性脚本生成，生成物不入库 |
 | Phase 1：模型和数据桥接 | 已完成 | `ReaderPageModel`、`ReaderRecord`、`ReaderBookAdapter`、`ReaderChapterProvider`、`ReaderProgressBridge`、`ReaderRecordBridge` 已落地；章节正文读取、进度恢复、目录/搜索/书签目标转换已有测试 | 进入 Phase 2 收尾和验收 | 当前 Windows 环境没有 `swift` / `xcodebuild`，需在 Xcode 环境补跑 |
 | Phase 2：排版和分页核心 | 已完成 | `ReaderFontManager`、`ReaderLayout`、`ReaderPageCalculator`、`PaibanManager` 已完成本阶段目标；单章 CoreText 分页、富文本属性、纵向高度、双栏 API 单栏降级、极小页面边界和进度换算均有单测覆盖 | 进入 Phase 3 收尾和验收：补 `ReaderPageBackgroundView`、选中/高亮绘制、主题背景图刷新 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
-| Phase 3：页面绘制 | 已完成 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController`、`ReaderPageBackgroundView` 已完成本阶段目标；CoreText 自绘、页面背景、主题背景图、正文色刷新、选中/高亮背景和尺寸变化重绘均有单测覆盖 | 进入 Phase 4：拆出左右平移、仿真翻页、纵向连续滚动三种容器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
+| Phase 3：页面绘制 | 已完成 | `TextReadViewBase`、`TextReadView`、`ReaderPageViewController`、`ReaderPageBackgroundView` 已完成本阶段目标；本轮补齐 CoreText 长按选中、拖动手柄、拷贝/搜索/过滤菜单，以及顶部章节标题和底部常驻小组件 | 进入 Phase 4：拆出左右平移、仿真翻页、纵向连续滚动三种容器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check`，XCTest 需在 Xcode 环境补跑 |
 | Phase 4：三种容器 | 已完成 | `ReaderContainerProtocol`、`ReaderPageContainer`、`ReaderPageCurlContainer`、`ReaderScrollContainer`、`ReaderScrollPageCell` 已落地并接入 `ReaderV2ViewController`；三种翻页模式、容器切换、翻页完成保存和纵向章节/页面块加载均有单测覆盖 | 进入 Phase 5：新建 `ReaderThemeManager`、菜单、设置面板并接入设置变更重排 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
 | Phase 5：主题、菜单和设置 | 已完成 | `ReaderThemeManager`、`ReaderV2MenuView`、`ReaderV2SettingsPanelView` 已落地并接入 `ReaderV2ViewController`；字号、主题、翻页、排版、常亮、状态栏、小横条和页面小部件设置已有面板入口；设置变更保存并按需重排 | 进入 Phase 6：拆出自动阅读和系统外观控制器 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
-| Phase 6：自动阅读和系统外观 | 已完成 | `ReaderAutoReadController`、`ReaderSystemAppearanceController`、`ReaderV2AutoReadPanelView` 已落地并接入 `ReaderV2ViewController`；自动阅读绑定纵向滚动容器，支持速度面板、退出、后台暂停恢复、进度保存；状态栏、小横条和屏幕常亮改由系统外观控制器统一管理 | 进入 Phase 7：替换入口和删除旧核心 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check` 和 pbxproj 重复对象检查 |
-| Phase 7：替换入口和删除旧核心 | 已完成 | 书架默认入口已切到 `ReaderCoreV2`；目录、搜索、书签跳转已通过 V2 `ReaderRecordBridge` 回到新分页核心；本轮已把 V2 阅读菜单体系对齐旧 reader：主菜单、设置面板、排版加减项和自动阅读速度面板均已按旧样式收口 | 进入真机/CI 验收，稳定一个版本周期后再物理删除旧核心 | 当前 Windows 环境没有 `swift` / `xcodebuild`，1MB、10MB、30MB TXT 真机验证需在 Xcode 环境补跑 |
+| Phase 6：自动阅读和系统外观 | 已完成 | `ReaderAutoReadController`、`ReaderSystemAppearanceController`、`ReaderV2AutoReadPanelView` 已落地并接入 `ReaderV2ViewController`；本轮补齐状态栏隐藏/白色/黑色三态语义，并让 Home Indicator 自动隐藏直接跟随设置 | 进入 Phase 7：替换入口和删除旧核心 | 当前 Windows 环境没有 `swift` / `xcodebuild`；已完成 `git diff --check`，XCTest 需在 Xcode 环境补跑 |
+| Phase 7：替换入口和删除旧核心 | 已完成 | 书架默认入口已切到 `ReaderCoreV2`；目录、搜索、书签跳转已通过 V2 `ReaderRecordBridge` 回到新分页核心；本轮将辅助页选择目标后的流程改为先返回 reader 再打开目标页，避免正文已跳转但列表页仍覆盖 | 进入真机/CI 验收，稳定一个版本周期后再物理删除旧核心 | 当前 Windows 环境没有 `swift` / `xcodebuild`，1MB、10MB、30MB TXT 真机验证需在 Xcode 环境补跑 |
 
 ### Phase 0：准备和冻结旧阅读器
 
@@ -752,10 +752,13 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | `TextReadView` | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadView.swift` | 绘制前先画选中/高亮背景，再翻转 Core Graphics 坐标并调用 `CTFrameDraw` |
 | 页面背景 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/ReaderPageBackgroundView.swift` | 新增背景 view，统一处理主题背景色、`theme_bg5` 纹理图、普通图片背景和无图主题清理 |
 | 页面控制器接入 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/ReaderPageViewController.swift` | 背景 view 位于底层，文本 view 透明覆盖；配置页面时同步刷新 layout、主题、正文色和 attributed page |
-| 选中/高亮绘制 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadViewBase.swift` | 新增 highlighted ranges、selected range、CoreText line rect 转 UIKit rect 的背景绘制能力；交互手柄留到后续阶段 |
+| 选中/高亮绘制 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadViewBase.swift` | 新增 highlighted ranges、selected range、CoreText line rect 转 UIKit rect 的背景绘制能力 |
+| CoreText 选中交互 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/TextReadViewBase.swift`、`Yomink/Presentation/ReaderV2/Rendering/TextReadView.swift` | 本轮补齐触点到 CoreText 字符 index 的命中、长按选中、起止手柄拖动、选区菜单和拷贝/搜索/过滤三项动作 |
+| 阅读页常驻小组件 | 完成 | `Yomink/Presentation/ReaderV2/Rendering/ReaderPageViewController.swift`、`Yomink/Presentation/ReaderV2/Containers/ReaderScrollPageCell.swift`、`Yomink/Presentation/ReaderV2/Core/ReaderLayout.swift` | 按香色闺阁提示词新增顶部 `chapterTitleLabel` 和底部 `ReaderBottomWidgetView`，支持时间、电池图标、电量百分比、章节页码和全书进度；横向页和纵向 cell 共用同一套布局 |
 | 验收：页面显示稳定 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 page view controller 配置、背景 view 接入、文本 view 内容配置 |
 | 验收：旋转/尺寸变化后重绘 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 bounds 变化后 `CTFrame` 仍可重建，range 背景矩形仍在页面范围内 |
 | 验收：主题切换后正文颜色刷新 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 `contentColor` 改变后 attributed text 前景色刷新，以及 page controller 从普通主题切到暗色主题 |
+| 验收：选中命中和小组件 | 完成 | `YominkTests/ReaderV2CoreTests.swift` | 覆盖 CoreText 触点到选区 range 的映射，以及章节标题、底部进度、电池/时间开关和刘海屏 widget 坐标 |
 | 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；`ReaderPageBackgroundView.swift` 已加入工程；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
 ### Phase 4：三种容器
@@ -867,8 +870,9 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | 后台暂停恢复 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`Yomink/Presentation/ReaderV2/AutoRead/ReaderAutoReadController.swift` | 监听 `UIApplication` 后台/前台通知；后台释放 display link，前台仅在暂停状态恢复，避免重复启动 |
 | 验收：自动阅读退出后没有残留 display link | 完成 | `Yomink/Presentation/ReaderV2/AutoRead/ReaderAutoReadController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 单测覆盖 start、pause、resume、stop、到达内容末尾后的 display link 清理 |
 | 验收：后台回来不会重复启动 | 完成 | `Yomink/Presentation/ReaderV2/AutoRead/ReaderAutoReadController.swift`、`YominkTests/ReaderV2CoreTests.swift` | `resumeAfterBackgroundIfNeeded` 只在 `isPausedForBackground` 时恢复；display link 已存在时不重复创建 |
-| 验收：状态栏规则符合设置 | 完成 | `Yomink/Presentation/ReaderV2/System/ReaderSystemAppearanceController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 单测覆盖普通阅读、菜单显示、设置面板显示、关闭状态栏自动隐藏和自动阅读强制隐藏 |
-| 验收：小横条自动隐藏和底部手势延迟符合设置 | 完成 | `Yomink/Presentation/ReaderV2/System/ReaderSystemAppearanceController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 小横条不直接强制隐藏，按旧阅读器使用 `.bottom` deferring 让底部手势进入延迟/弱化状态 |
+| 状态栏三态语义 | 完成 | `Yomink/Domain/Models/ReaderSettings.swift`、`Yomink/Presentation/ReaderV2/System/ReaderSystemAppearanceController.swift`、`Yomink/Presentation/ReaderV2/Chrome/ReaderV2SettingsPanelView.swift` | 新增隐藏/白色/黑色三态设置，旧 `autoHideStatusBar` 字段保留为兼容字段；设置面板改为三段控制 |
+| 验收：状态栏规则符合设置 | 完成 | `Yomink/Presentation/ReaderV2/System/ReaderSystemAppearanceController.swift`、`YominkTests/ReaderV2CoreTests.swift` | 单测覆盖隐藏、白色状态栏、自动阅读强制隐藏和设置变化 |
+| 验收：小横条自动隐藏和底部手势延迟符合设置 | 完成 | `Yomink/Presentation/ReaderV2/System/ReaderSystemAppearanceController.swift`、`YominkTests/ReaderV2CoreTests.swift` | `prefersHomeIndicatorAutoHidden` 直接跟随设置，并继续使用 `.bottom` deferring 弱化底部手势 |
 | 工程接入 | 完成 | `Yomink.xcodeproj/project.pbxproj` | Phase 6 新增 Swift 文件已加入 ReaderV2 group 和 App target Sources |
 | 静态验证 | 完成 | Windows 本地环境 | `git diff --check` 通过；pbxproj 无重复对象；当前环境缺少 `swift` / `xcodebuild`，需要在 Xcode 环境补跑 XCTest |
 
@@ -901,6 +905,7 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | V2 菜单跳转入口 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2MenuView.swift` | 菜单入口按旧 reader 重排：顶部仅返回、书名、书签、更多；更多菜单承载书籍详情、内容搜索、内容过滤、翻页区域；底部仅目录和设置 |
 | 目录和书签列表跳转 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`Yomink/Presentation/Reader/ReaderContentsViewController.swift` | V2 复用现有目录/书签列表页，选择章节或书签后转换为 `ReaderRecord`，由新分页核心打开目标页 |
 | 内容搜索跳转 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift`、`Yomink/Presentation/Reader/ReaderContentSearchViewController.swift` | V2 初始加载同步读取 `TextFilterRule`，搜索结果选择后通过 `ReaderContentTarget -> ReaderRecord` 跳转 |
+| 辅助页跳转后自动返回 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | 目录、搜索、书籍详情内书签/目录目标选择后，先关闭 push/present 的辅助页面，再由新分页核心打开目标记录，避免列表页覆盖已跳转正文 |
 | 书签增删和状态刷新 | 完成 | `Yomink/Presentation/ReaderV2/Chrome/ReaderV2ViewController.swift` | V2 根据当前页进度匹配当前书签，支持创建/删除书签、失败回滚、本地列表刷新和菜单图标状态刷新 |
 | 旧核心冻结和兼容桥 | 完成 | `Yomink/Presentation/Reader/`、`Yomink/Presentation/ReaderV2/Integration/ReaderCoreRouting.swift` | 旧 `CollectionReaderViewController` 已从默认入口移除；目录、搜索等非核心页面仍作为兼容组件复用；按计划保留一个版本周期后再物理删除 |
 | 工程接入和单测补强 | 完成 | `Yomink.xcodeproj/project.pbxproj`、`YominkTests/ReaderV2CoreTests.swift` | 新增路由文件已加入 App target；补充默认 V2 路由和 V2 菜单旧版按钮、更多菜单、章节按钮、暗黑按钮、进度滑杆事件测试 |

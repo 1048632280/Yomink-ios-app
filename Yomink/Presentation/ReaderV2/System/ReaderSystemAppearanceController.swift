@@ -40,11 +40,18 @@ final class ReaderSystemAppearanceController {
     }
 
     var preferredStatusBarStyle: UIStatusBarStyle {
-        state.theme.isDark ? .lightContent : .darkContent
+        switch state.settings.normalized.statusBarMode {
+        case .hidden:
+            return state.theme.isDark ? .lightContent : .darkContent
+        case .light:
+            return .lightContent
+        case .dark:
+            return .darkContent
+        }
     }
 
     var prefersHomeIndicatorAutoHidden: Bool {
-        false
+        state.settings.normalized.autoHideHomeIndicator
     }
 
     var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
@@ -93,15 +100,7 @@ final class ReaderSystemAppearanceController {
         if state.isAutoReading {
             return true
         }
-        guard state.settings.normalized.autoHideStatusBar else {
-            return false
-        }
-        if state.isMenuVisible,
-           !state.isSettingsPanelVisible,
-           !state.isAutoReadPanelVisible {
-            return false
-        }
-        return true
+        return state.settings.normalized.statusBarMode == .hidden
     }
 
     private func notifyStatusBarHiddenIfNeeded(forceValue: Bool?) {
