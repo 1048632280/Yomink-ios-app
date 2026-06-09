@@ -121,7 +121,7 @@ enum ReaderThemeManager {
         return previous.theme != next.theme
             || previous.keepScreenAwake != next.keepScreenAwake
             || previous.autoHideHomeIndicator != next.autoHideHomeIndicator
-            || previous.statusBarMode != next.statusBarMode
+            || previous.autoHideStatusBar != next.autoHideStatusBar
             || previous.widgetVisibility != next.widgetVisibility
     }
 

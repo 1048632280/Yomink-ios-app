@@ -788,10 +788,8 @@ final class ReaderV2CoreTests: XCTestCase {
         panel.homeIndicatorSwitch.sendActions(for: .valueChanged)
         XCTAssertEqual(emittedSettings.last?.autoHideHomeIndicator, false)
 
-        panel.statusBarControl.selectedSegmentIndex = ReaderSettings.StatusBarMode.allCases
-            .firstIndex(of: .dark) ?? 0
-        panel.statusBarControl.sendActions(for: .valueChanged)
-        XCTAssertEqual(emittedSettings.last?.statusBarMode, .dark)
+        panel.statusBarSwitch.isOn = false
+        panel.statusBarSwitch.sendActions(for: .valueChanged)
         XCTAssertEqual(emittedSettings.last?.autoHideStatusBar, false)
 
         panel.edgeSwipeBackSwitch.isOn = false
@@ -958,6 +956,7 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReading: false
         )
         XCTAssertTrue(controller.prefersStatusBarHidden)
+        XCTAssertEqual(controller.preferredStatusBarStyle, .darkContent)
         XCTAssertTrue(controller.prefersHomeIndicatorAutoHidden)
         XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, .bottom)
 
@@ -970,7 +969,7 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReadPanelVisible: false,
             isAutoReading: false
         )
-        XCTAssertTrue(controller.prefersStatusBarHidden)
+        XCTAssertFalse(controller.prefersStatusBarHidden)
 
         controller.update(
             settings: settings,
@@ -981,9 +980,31 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReadPanelVisible: false,
             isAutoReading: false
         )
+        XCTAssertFalse(controller.prefersStatusBarHidden)
+
+        controller.update(
+            settings: settings,
+            theme: .dark,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: false,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertTrue(controller.prefersStatusBarHidden)
+        XCTAssertEqual(controller.preferredStatusBarStyle, .lightContent)
+
+        controller.update(
+            settings: settings,
+            theme: .dark,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: false,
+            isAutoReadPanelVisible: true,
+            isAutoReading: false
+        )
         XCTAssertTrue(controller.prefersStatusBarHidden)
 
-        settings.statusBarMode = .light
         settings.autoHideStatusBar = false
         settings.autoHideHomeIndicator = false
         controller.update(
@@ -1008,7 +1029,7 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReadPanelVisible: false,
             isAutoReading: true
         )
-        XCTAssertTrue(controller.prefersStatusBarHidden)
+        XCTAssertFalse(controller.prefersStatusBarHidden)
 
         controller.reset()
         XCTAssertFalse(controller.prefersStatusBarHidden)

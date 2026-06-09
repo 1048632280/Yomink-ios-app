@@ -21,12 +21,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case custom
     }
 
-    enum StatusBarMode: Int, Codable, CaseIterable, Sendable {
-        case hidden = 0
-        case light = 1
-        case dark = 3
-    }
-
     struct LayoutValues: Codable, Equatable, Sendable {
         var bodyKern: Double
         var bodyLineSpacing: Double
@@ -266,7 +260,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     var keepScreenAwake: Bool
     var autoHideHomeIndicator: Bool
     var autoHideStatusBar: Bool
-    var statusBarMode: StatusBarMode
     var edgeSwipeBackEnabled: Bool
     var widgetVisibility: WidgetVisibility
 
@@ -293,7 +286,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         case keepScreenAwake
         case autoHideHomeIndicator
         case autoHideStatusBar
-        case statusBarMode
         case edgeSwipeBackEnabled
         case widgetVisibility
     }
@@ -310,7 +302,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             keepScreenAwake: false,
             autoHideHomeIndicator: true,
             autoHideStatusBar: true,
-            statusBarMode: .hidden,
             edgeSwipeBackEnabled: true,
             widgetVisibility: .default
         )
@@ -327,7 +318,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         keepScreenAwake: Bool = false,
         autoHideHomeIndicator: Bool = true,
         autoHideStatusBar: Bool = true,
-        statusBarMode: StatusBarMode = .hidden,
         edgeSwipeBackEnabled: Bool = true,
         widgetVisibility: WidgetVisibility = .default
     ) {
@@ -341,7 +331,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         self.keepScreenAwake = keepScreenAwake
         self.autoHideHomeIndicator = autoHideHomeIndicator
         self.autoHideStatusBar = autoHideStatusBar
-        self.statusBarMode = statusBarMode
         self.edgeSwipeBackEnabled = edgeSwipeBackEnabled
         self.widgetVisibility = widgetVisibility
     }
@@ -360,8 +349,6 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         keepScreenAwake = (try? container.decodeIfPresent(Bool.self, forKey: .keepScreenAwake)) ?? false
         autoHideHomeIndicator = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideHomeIndicator)) ?? true
         autoHideStatusBar = (try? container.decodeIfPresent(Bool.self, forKey: .autoHideStatusBar)) ?? true
-        statusBarMode = (try? container.decodeIfPresent(StatusBarMode.self, forKey: .statusBarMode))
-            ?? (autoHideStatusBar ? .hidden : .dark)
         edgeSwipeBackEnabled = (try? container.decodeIfPresent(Bool.self, forKey: .edgeSwipeBackEnabled)) ?? true
         widgetVisibility = (try? container.decodeIfPresent(WidgetVisibility.self, forKey: .widgetVisibility)) ?? .default
     }
