@@ -8,8 +8,8 @@ enum ReaderTextSelectionAction {
 }
 
 final class TextReadView: TextReadViewBase {
-    private let startHandle = ReaderTextSelectionHandleView(handleRole: .start)
-    private let endHandle = ReaderTextSelectionHandleView(handleRole: .end)
+    private let startHandle = ReaderV2TextSelectionHandleView(handleRole: .start)
+    private let endHandle = ReaderV2TextSelectionHandleView(handleRole: .end)
     private var longPressGesture: UILongPressGestureRecognizer?
 
     var onSelectionAction: ((ReaderTextSelectionAction, String) -> Void)?
@@ -109,7 +109,7 @@ final class TextReadView: TextReadViewBase {
     }
 
     @objc private func handleDragged(
-        _ sender: ReaderTextSelectionHandleView,
+        _ sender: ReaderV2TextSelectionHandleView,
         for event: UIEvent
     ) {
         guard let touch = event.touches(for: sender)?.first else {
@@ -123,7 +123,7 @@ final class TextReadView: TextReadViewBase {
     }
 
     @objc private func handleDragEnded(
-        _ sender: ReaderTextSelectionHandleView,
+        _ sender: ReaderV2TextSelectionHandleView,
         for event: UIEvent
     ) {
         guard let touch = event.touches(for: sender)?.first else {
@@ -138,7 +138,7 @@ final class TextReadView: TextReadViewBase {
     }
 
     private func updateSelection(
-        for role: ReaderTextSelectionHandleRole,
+        for role: ReaderV2TextSelectionHandleRole,
         at point: CGPoint,
         showsMenu: Bool
     ) {
@@ -179,10 +179,10 @@ final class TextReadView: TextReadViewBase {
     }
 
     private func position(
-        _ handle: ReaderTextSelectionHandleView,
+        _ handle: ReaderV2TextSelectionHandleView,
         at point: CGPoint
     ) {
-        let size = ReaderTextSelectionHandleView.preferredSize
+        let size = ReaderV2TextSelectionHandleView.preferredSize
         handle.frame = CGRect(
             x: point.x - size.width / 2,
             y: point.y - 2,
@@ -255,17 +255,17 @@ final class TextReadView: TextReadViewBase {
     }
 }
 
-enum ReaderTextSelectionHandleRole {
+private enum ReaderV2TextSelectionHandleRole {
     case start
     case end
 }
 
-final class ReaderTextSelectionHandleView: UIControl {
+private final class ReaderV2TextSelectionHandleView: UIControl {
     static let preferredSize = CGSize(width: 24, height: 28)
 
-    let handleRole: ReaderTextSelectionHandleRole
+    let handleRole: ReaderV2TextSelectionHandleRole
 
-    init(handleRole: ReaderTextSelectionHandleRole) {
+    init(handleRole: ReaderV2TextSelectionHandleRole) {
         self.handleRole = handleRole
         super.init(frame: CGRect(origin: .zero, size: Self.preferredSize))
         backgroundColor = .clear
