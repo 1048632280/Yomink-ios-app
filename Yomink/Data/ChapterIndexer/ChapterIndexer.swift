@@ -10,46 +10,160 @@ struct ChapterIndexer: Sendable {
         }
 
         let totalByteLength = text.utf8.count
-        var chapters: [ImportedChapterDraft] = []
+        let bodyCandidateIndices = candidates.indices.filter {
+            candidates[$0].kind != .special
+        }
+        if bodyCandidateIndices.isEmpty {
+            return Self.pseudoChapters(for: text)
+        }
+        if let onlyBodyCandidateIndex = bodyCandidateIndices.first,
+           bodyCandidateIndices.count == 1 {
+            return Self.pseudoChaptersForSingleBodyCandidate(
+                candidates,
+                bodyCandidateIndex: onlyBodyCandidateIndex,
+                totalByteLength: totalByteLength,
+                in: text
+            )
+        }
 
-        if let firstCandidate = candidates.first,
-           firstCandidate.startOffset > 0,
-           Self.containsMeaningfulText(text[..<firstCandidate.lineStartIndex]) {
+        var chapters = Self.prefaceChapterIfNeeded(
+            before: candidates.first,
+            in: text
+        )
+        Self.appendRegexChapters(
+            from: candidates.indices,
+            candidates: candidates,
+            totalByteLength: totalByteLength,
+            to: &chapters
+        )
+
+        return chapters.isEmpty
+            ? Self.pseudoChapters(for: text)
+            : chapters
+    }
+
+    private static func pseudoChaptersForSingleBodyCandidate(
+        _ candidates: [ChapterCandidate],
+        bodyCandidateIndex: Int,
+        totalByteLength: Int,
+        in text: String
+    ) -> [ImportedChapterDraft] {
+        var chapters = Self.prefaceChapterIfNeeded(
+            before: candidates.first,
+            in: text
+        )
+
+        let prefixIndices = candidates.indices.filter { $0 < bodyCandidateIndex }
+        Self.appendRegexChapters(
+            from: prefixIndices,
+            candidates: candidates,
+            totalByteLength: totalByteLength,
+            to: &chapters
+        )
+
+        let bodyCandidate = candidates[bodyCandidateIndex]
+        let bodyEndOffset = candidates.indices.contains(bodyCandidateIndex + 1)
+            ? candidates[bodyCandidateIndex + 1].startOffset
+            : totalByteLength
+        if bodyEndOffset > bodyCandidate.startOffset {
             chapters.append(
-                Self.chapter(
-                    title: Self.prefaceTitle,
-                    startOffset: 0,
-                    endOffset: firstCandidate.startOffset,
-                    sortOrder: chapters.count,
-                    source: .regex
+                contentsOf: Self.pseudoChapters(
+                    for: text,
+                    from: bodyCandidate.lineStartIndex,
+                    startOffset: bodyCandidate.startOffset,
+                    endOffset: bodyEndOffset,
+                    startingSortOrder: chapters.count
                 )
             )
         }
 
-        for (index, candidate) in candidates.enumerated() {
+        let suffixIndices = candidates.indices.filter { $0 > bodyCandidateIndex }
+        Self.appendRegexChapters(
+            from: suffixIndices,
+            candidates: candidates,
+            totalByteLength: totalByteLength,
+            to: &chapters
+        )
+
+        return chapters
+    }
+
+    private static func prefaceChapterIfNeeded(
+        before firstCandidate: ChapterCandidate?,
+        in text: String
+    ) -> [ImportedChapterDraft] {
+        guard let firstCandidate = firstCandidate,
+              firstCandidate.startOffset > 0,
+              Self.containsMeaningfulText(text[..<firstCandidate.lineStartIndex])
+        else {
+            return []
+        }
+
+        return [
+            Self.chapter(
+                title: Self.prefaceTitle,
+                startOffset: 0,
+                endOffset: firstCandidate.startOffset,
+                sortOrder: 0,
+                source: .regex
+            )
+        ]
+    }
+
+    private static func appendRegexChapters(
+        from indices: Range<Array<ChapterCandidate>.Index>,
+        candidates: [ChapterCandidate],
+        totalByteLength: Int,
+        to chapters: inout [ImportedChapterDraft]
+    ) {
+        for index in indices {
             let endOffset = candidates.indices.contains(index + 1)
                 ? candidates[index + 1].startOffset
                 : totalByteLength
-
-            guard endOffset > candidate.startOffset else {
-                continue
-            }
-
-            chapters.append(
-                Self.chapter(
-                    title: candidate.title,
-                    startOffset: candidate.startOffset,
-                    endOffset: endOffset,
-                    sortOrder: chapters.count,
-                    source: .regex
-                )
+            Self.appendRegexChapter(
+                candidate: candidates[index],
+                endOffset: endOffset,
+                to: &chapters
             )
         }
+    }
 
-        let indexedChapters = chapters.isEmpty
-            ? Self.pseudoChapters(for: text)
-            : chapters
-        return Self.splitOversizedChapters(indexedChapters, in: text)
+    private static func appendRegexChapters(
+        from indices: [Array<ChapterCandidate>.Index],
+        candidates: [ChapterCandidate],
+        totalByteLength: Int,
+        to chapters: inout [ImportedChapterDraft]
+    ) {
+        for index in indices {
+            let endOffset = candidates.indices.contains(index + 1)
+                ? candidates[index + 1].startOffset
+                : totalByteLength
+            Self.appendRegexChapter(
+                candidate: candidates[index],
+                endOffset: endOffset,
+                to: &chapters
+            )
+        }
+    }
+
+    private static func appendRegexChapter(
+        candidate: ChapterCandidate,
+        endOffset: Int,
+        to chapters: inout [ImportedChapterDraft]
+    ) {
+        guard endOffset > candidate.startOffset else {
+            return
+        }
+
+        chapters.append(
+            Self.chapter(
+                title: candidate.title,
+                startOffset: candidate.startOffset,
+                endOffset: endOffset,
+                sortOrder: chapters.count,
+                source: .regex
+            )
+        )
     }
 
     private static func chapterCandidates(in text: String) -> [ChapterCandidate] {
@@ -245,170 +359,359 @@ struct ChapterIndexer: Sendable {
     }
 
     private static func pseudoChapters(for text: String) -> [ImportedChapterDraft] {
-        var chapters: [ImportedChapterDraft] = []
-        var chapterStartOffset = 0
-        var currentOffset = 0
+        Self.pseudoChapters(
+            for: text,
+            from: text.startIndex,
+            startOffset: 0,
+            endOffset: text.utf8.count,
+            startingSortOrder: 0
+        )
+    }
 
-        for character in text {
-            let characterByteCount = String(character).utf8.count
-            if currentOffset > chapterStartOffset,
-               currentOffset + characterByteCount - chapterStartOffset > oversizedChapterByteLength {
-                let sortOrder = chapters.count
+    private static func pseudoChapters(
+        for text: String,
+        from rangeStartIndex: String.Index,
+        startOffset rangeStartOffset: Int,
+        endOffset rangeEndOffset: Int,
+        startingSortOrder: Int
+    ) -> [ImportedChapterDraft] {
+        var chapters: [ImportedChapterDraft] = []
+        var chapterStartIndex = rangeStartIndex
+        var chapterStartOffset = rangeStartOffset
+
+        while chapterStartOffset < rangeEndOffset {
+            let remainingByteLength = rangeEndOffset - chapterStartOffset
+            let sortOrder = startingSortOrder + chapters.count
+            let titleNumber = chapters.count
+            guard remainingByteLength > fallbackHardMaximumChapterByteLength else {
                 chapters.append(
                     chapter(
-                        title: pseudoChapterTitle(sortOrder: sortOrder),
+                        title: pseudoChapterTitle(number: titleNumber),
                         startOffset: chapterStartOffset,
-                        endOffset: currentOffset,
+                        endOffset: rangeEndOffset,
                         sortOrder: sortOrder,
                         source: .pseudo
                     )
                 )
-                chapterStartOffset = currentOffset
+                break
             }
-            currentOffset += characterByteCount
-        }
 
-        let sortOrder = chapters.count
-        chapters.append(
-            chapter(
-                title: pseudoChapterTitle(sortOrder: sortOrder),
+            let chunkEnd = Self.fallbackChunkEnd(
+                from: chapterStartIndex,
                 startOffset: chapterStartOffset,
-                endOffset: currentOffset,
-                sortOrder: sortOrder,
-                source: .pseudo
-            )
-        )
-
-        return chapters
-    }
-
-    static func splitOversizedChapters(
-        _ chapters: [ImportedChapterDraft],
-        in text: String
-    ) -> [ImportedChapterDraft] {
-        guard chapters.contains(where: { $0.endOffset - $0.startOffset > oversizedChapterByteLength }) else {
-            return chapters
-        }
-
-        var splitChapters: [ImportedChapterDraft] = []
-        var textIndex = text.startIndex
-        var currentOffset = 0
-
-        for chapter in chapters {
-            Self.advance(
-                index: &textIndex,
-                offset: &currentOffset,
-                to: chapter.startOffset,
+                rangeEndOffset: rangeEndOffset,
                 in: text
             )
-
-            var startOffset = chapter.startOffset
-            var startIndex = textIndex
-            var partIndex = 0
-
-            while chapter.endOffset - startOffset > oversizedChapterByteLength {
-                let (endIndex, endOffset) = Self.chunkEnd(
-                    from: startIndex,
-                    startOffset: startOffset,
-                    chapterEndOffset: chapter.endOffset,
-                    in: text
-                )
-                splitChapters.append(
-                    Self.chapter(
-                        title: splitTitle(for: chapter.title, partIndex: partIndex),
-                        startOffset: startOffset,
-                        endOffset: endOffset,
-                        sortOrder: splitChapters.count,
-                        source: chapter.source
+            guard chunkEnd.offset > chapterStartOffset else {
+                chapters.append(
+                    chapter(
+                        title: pseudoChapterTitle(number: titleNumber),
+                        startOffset: chapterStartOffset,
+                        endOffset: rangeEndOffset,
+                        sortOrder: sortOrder,
+                        source: .pseudo
                     )
                 )
-                currentOffset = endOffset
-                textIndex = endIndex
-                startOffset = endOffset
-                startIndex = endIndex
-                partIndex += 1
+                break
             }
 
-            guard startOffset < chapter.endOffset else {
-                continue
-            }
-
-            splitChapters.append(
-                Self.chapter(
-                    title: splitTitle(for: chapter.title, partIndex: partIndex),
-                    startOffset: startOffset,
-                    endOffset: chapter.endOffset,
-                    sortOrder: splitChapters.count,
-                    source: chapter.source
+            chapters.append(
+                chapter(
+                    title: pseudoChapterTitle(number: titleNumber),
+                    startOffset: chapterStartOffset,
+                    endOffset: chunkEnd.offset,
+                    sortOrder: sortOrder,
+                    source: .pseudo
                 )
             )
+            chapterStartIndex = chunkEnd.index
+            chapterStartOffset = chunkEnd.offset
+        }
 
-            Self.advance(
-                index: &textIndex,
-                offset: &currentOffset,
-                to: chapter.endOffset,
-                in: text
+        if chapters.isEmpty {
+            chapters.append(
+                chapter(
+                    title: pseudoChapterTitle(number: 0),
+                    startOffset: rangeStartOffset,
+                    endOffset: rangeEndOffset,
+                    sortOrder: startingSortOrder,
+                    source: .pseudo
+                )
             )
         }
 
-        return splitChapters
+        return Self.mergingShortTrailingPseudoChapter(chapters)
     }
 
-    private static func chunkEnd(
+    private static func fallbackChunkEnd(
         from startIndex: String.Index,
         startOffset: Int,
-        chapterEndOffset: Int,
+        rangeEndOffset: Int,
         in text: String
-    ) -> (String.Index, Int) {
+    ) -> (index: String.Index, offset: Int) {
+        let targetOffset = min(
+            startOffset + fallbackTargetChapterByteLength,
+            rangeEndOffset
+        )
+        let scanEndOffset = min(
+            startOffset + fallbackHardMaximumChapterByteLength,
+            rangeEndOffset
+        )
+
+        var boundaries: [FallbackBoundary] = []
+        var hardFallbackIndex = startIndex
+        var hardFallbackOffset = startOffset
         var index = startIndex
         var offset = startOffset
 
-        while index < text.endIndex {
-            let characterByteCount = String(text[index]).utf8.count
-            let nextOffset = offset + characterByteCount
-            guard nextOffset <= chapterEndOffset else {
-                break
-            }
-            if offset > startOffset,
-               nextOffset - startOffset > oversizedChapterByteLength {
+        while index < text.endIndex, offset < scanEndOffset {
+            let character = text[index]
+            let nextIndex = text.index(after: index)
+            let nextOffset = offset + String(character).utf8.count
+            guard nextOffset <= scanEndOffset, nextOffset <= rangeEndOffset else {
                 break
             }
 
+            if nextOffset <= targetOffset {
+                hardFallbackIndex = nextIndex
+                hardFallbackOffset = nextOffset
+            }
+
+            if let priority = fallbackBoundaryPriority(for: character) {
+                let boundary = Self.fallbackBoundary(
+                    after: character,
+                    nextIndex: nextIndex,
+                    nextOffset: nextOffset,
+                    priority: priority,
+                    scanEndOffset: scanEndOffset,
+                    rangeEndOffset: rangeEndOffset,
+                    in: text
+                )
+                boundaries.append(
+                    FallbackBoundary(
+                        index: boundary.index,
+                        offset: boundary.offset,
+                        priority: priority
+                    )
+                )
+            }
+
+            index = nextIndex
             offset = nextOffset
-            index = text.index(after: index)
+        }
 
-            if offset - startOffset >= oversizedChapterByteLength {
-                break
-            }
+        if let boundary = Self.bestFallbackBoundary(
+            in: boundaries,
+            lowerOffset: max(
+                startOffset + fallbackMinimumChapterByteLength,
+                targetOffset - fallbackBoundarySearchWindowByteLength
+            ),
+            upperOffset: min(
+                scanEndOffset,
+                targetOffset + fallbackBoundarySearchWindowByteLength
+            ),
+            targetOffset: targetOffset,
+            rangeEndOffset: rangeEndOffset
+        ) {
+            return (boundary.index, boundary.offset)
+        }
+
+        if let boundary = Self.bestFallbackBoundary(
+            in: boundaries,
+            lowerOffset: startOffset + fallbackMinimumChapterByteLength,
+            upperOffset: scanEndOffset,
+            targetOffset: targetOffset,
+            rangeEndOffset: rangeEndOffset
+        ) {
+            return (boundary.index, boundary.offset)
+        }
+
+        if hardFallbackOffset > startOffset {
+            return (hardFallbackIndex, hardFallbackOffset)
         }
 
         return (index, offset)
     }
 
-    private static func advance(
-        index: inout String.Index,
-        offset: inout Int,
-        to targetOffset: Int,
+    private static func fallbackBoundary(
+        after _: Character,
+        nextIndex: String.Index,
+        nextOffset: Int,
+        priority: Int,
+        scanEndOffset: Int,
+        rangeEndOffset: Int,
         in text: String
-    ) {
-        while index < text.endIndex, offset < targetOffset {
-            offset += String(text[index]).utf8.count
-            index = text.index(after: index)
+    ) -> (index: String.Index, offset: Int) {
+        if priority == fallbackLineBreakPriority {
+            return Self.boundaryAfterFollowingLineBreaks(
+                from: nextIndex,
+                offset: nextOffset,
+                scanEndOffset: scanEndOffset,
+                rangeEndOffset: rangeEndOffset,
+                in: text
+            )
+        }
+
+        return Self.boundaryAfterTrailingClosers(
+            from: nextIndex,
+            offset: nextOffset,
+            scanEndOffset: scanEndOffset,
+            rangeEndOffset: rangeEndOffset,
+            in: text
+        )
+    }
+
+    private static func boundaryAfterFollowingLineBreaks(
+        from startIndex: String.Index,
+        offset startOffset: Int,
+        scanEndOffset: Int,
+        rangeEndOffset: Int,
+        in text: String
+    ) -> (index: String.Index, offset: Int) {
+        var index = startIndex
+        var offset = startOffset
+
+        while index < text.endIndex {
+            let character = text[index]
+            guard lineBreakByteLength(in: character) != nil else {
+                break
+            }
+
+            let nextIndex = text.index(after: index)
+            let nextOffset = offset + String(character).utf8.count
+            guard nextOffset <= scanEndOffset, nextOffset <= rangeEndOffset else {
+                break
+            }
+
+            index = nextIndex
+            offset = nextOffset
+        }
+
+        return (index, offset)
+    }
+
+    private static func boundaryAfterTrailingClosers(
+        from startIndex: String.Index,
+        offset startOffset: Int,
+        scanEndOffset: Int,
+        rangeEndOffset: Int,
+        in text: String
+    ) -> (index: String.Index, offset: Int) {
+        var index = startIndex
+        var offset = startOffset
+
+        while index < text.endIndex {
+            let character = text[index]
+            guard Self.isTrailingQuoteOrBracket(character) else {
+                break
+            }
+
+            let nextIndex = text.index(after: index)
+            let nextOffset = offset + String(character).utf8.count
+            guard nextOffset <= scanEndOffset, nextOffset <= rangeEndOffset else {
+                break
+            }
+
+            index = nextIndex
+            offset = nextOffset
+        }
+
+        return (index, offset)
+    }
+
+    private static func bestFallbackBoundary(
+        in boundaries: [FallbackBoundary],
+        lowerOffset: Int,
+        upperOffset: Int,
+        targetOffset: Int,
+        rangeEndOffset: Int
+    ) -> FallbackBoundary? {
+        for priority in fallbackBoundaryPriorities {
+            let candidates = boundaries.filter {
+                $0.priority == priority
+                    && $0.offset >= lowerOffset
+                    && $0.offset <= upperOffset
+                    && Self.hasAcceptableTrailingLength(
+                        after: $0.offset,
+                        rangeEndOffset: rangeEndOffset
+                    )
+            }
+            if let candidate = candidates.min(by: { lhs, rhs in
+                let lhsDistance = abs(lhs.offset - targetOffset)
+                let rhsDistance = abs(rhs.offset - targetOffset)
+                if lhsDistance == rhsDistance {
+                    return lhs.offset > rhs.offset
+                }
+                return lhsDistance < rhsDistance
+            }) {
+                return candidate
+            }
+        }
+
+        return nil
+    }
+
+    private static func fallbackBoundaryPriority(for character: Character) -> Int? {
+        if lineBreakByteLength(in: character) != nil {
+            return fallbackLineBreakPriority
+        }
+
+        let scalars = String(character).unicodeScalars
+        guard scalars.count == 1, let scalar = scalars.first else {
+            return nil
+        }
+
+        switch scalar.value {
+        case _ where fallbackSentenceEndingScalarValues.contains(scalar.value):
+            return fallbackSentenceEndingPriority
+        case _ where fallbackSemicolonScalarValues.contains(scalar.value):
+            return fallbackSemicolonPriority
+        case _ where fallbackCommaScalarValues.contains(scalar.value):
+            return fallbackCommaPriority
+        default:
+            return nil
         }
     }
 
-    private static func splitTitle(for title: String, partIndex: Int) -> String {
-        guard partIndex > 0 else {
-            return title
+    private static func isTrailingQuoteOrBracket(_ character: Character) -> Bool {
+        let scalars = String(character).unicodeScalars
+        guard scalars.count == 1, let scalar = scalars.first else {
+            return false
         }
-
-        return "\(title) (\(partIndex + 1))"
+        return fallbackTrailingQuoteAndBracketScalarValues.contains(scalar.value)
     }
 
-    private static func pseudoChapterTitle(sortOrder: Int) -> String {
+    private static func hasAcceptableTrailingLength(
+        after offset: Int,
+        rangeEndOffset: Int
+    ) -> Bool {
+        let trailingLength = rangeEndOffset - offset
+        return trailingLength == 0
+            || trailingLength >= fallbackMinimumTrailingChapterByteLength
+    }
+
+    private static func mergingShortTrailingPseudoChapter(
+        _ chapters: [ImportedChapterDraft]
+    ) -> [ImportedChapterDraft] {
+        guard chapters.count > 1,
+              let trailingChapter = chapters.last,
+              trailingChapter.endOffset - trailingChapter.startOffset < fallbackMinimumTrailingChapterByteLength
+        else {
+            return chapters
+        }
+
+        var mergedChapters = chapters
+        let trailingEndOffset = trailingChapter.endOffset
+        let previousIndex = mergedChapters.index(before: mergedChapters.index(before: mergedChapters.endIndex))
+        mergedChapters[previousIndex].endOffset = trailingEndOffset
+        mergedChapters.removeLast()
+        return mergedChapters
+    }
+
+    private static func pseudoChapterTitle(number: Int) -> String {
         String(
             format: NSLocalizedString("chapter.pseudo.numbered", comment: ""),
-            sortOrder + 1
+            number + 1
         )
     }
 
@@ -483,7 +786,52 @@ struct ChapterIndexer: Sendable {
     private static let prefaceTitle = NSLocalizedString("chapter.preface", comment: "")
     private static let maximumTitleCharacterCount = 50
     private static let minimumNumberedTitleCandidates = 3
-    static let oversizedChapterByteLength = 128 * 1_024
+    private static let fallbackTargetChapterByteLength = 9_000
+    private static let fallbackBoundarySearchWindowByteLength = 1_500
+    private static let fallbackMinimumChapterByteLength = 7_200
+    private static let fallbackHardMaximumChapterByteLength = 13_500
+    private static let fallbackMinimumTrailingChapterByteLength = 3_600
+    private static let fallbackLineBreakPriority = 0
+    private static let fallbackSentenceEndingPriority = 1
+    private static let fallbackSemicolonPriority = 2
+    private static let fallbackCommaPriority = 3
+    private static let fallbackBoundaryPriorities = [
+        fallbackLineBreakPriority,
+        fallbackSentenceEndingPriority,
+        fallbackSemicolonPriority,
+        fallbackCommaPriority
+    ]
+    private static let fallbackSentenceEndingScalarValues: Set<UInt32> = [
+        0x0021,
+        0x002E,
+        0x003F,
+        0x3002,
+        0xFF01,
+        0xFF1F
+    ]
+    private static let fallbackSemicolonScalarValues: Set<UInt32> = [
+        0x003B,
+        0xFF1B
+    ]
+    private static let fallbackCommaScalarValues: Set<UInt32> = [
+        0x002C,
+        0xFF0C
+    ]
+    private static let fallbackTrailingQuoteAndBracketScalarValues: Set<UInt32> = [
+        0x0022,
+        0x0027,
+        0x0029,
+        0x005D,
+        0x007D,
+        0x2019,
+        0x201D,
+        0x3009,
+        0x300B,
+        0x300D,
+        0x300F,
+        0x3011,
+        0xFF09
+    ]
     private static let normalizedWhitespaceScalar = UnicodeScalar(" ")
     private static let lineFeedScalarValue: UInt32 = 0x000A
     private static let carriageReturnScalarValue: UInt32 = 0x000D
@@ -514,4 +862,10 @@ private struct ChapterCandidate {
     let startOffset: Int
     let lineStartIndex: String.Index
     let kind: Kind
+}
+
+private struct FallbackBoundary {
+    let index: String.Index
+    let offset: Int
+    let priority: Int
 }
