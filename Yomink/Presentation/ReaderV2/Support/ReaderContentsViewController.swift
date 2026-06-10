@@ -4,6 +4,11 @@ import QuartzCore
 import CoreText
 import OSLog
 
+private let readerContentsLogger = Logger(
+    subsystem: Bundle.main.bundleIdentifier ?? "Yomink",
+    category: "ReaderContents"
+)
+
 final class ReaderContentsViewController: UIViewController, UITableViewDataSource, UITableViewDelegate, UISearchBarDelegate {
     private enum Mode: Int, CaseIterable {
         case chapters
@@ -305,7 +310,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
                 try await repository.deleteBookmark(id: bookmark.id)
             } catch is CancellationError {
             } catch {
-                readerLogger.error("Failed to delete bookmark from contents: \(error.localizedDescription, privacy: .public)")
+                readerContentsLogger.error("Failed to delete bookmark from contents: \(error.localizedDescription, privacy: .public)")
                 await MainActor.run {
                     guard let self else {
                         return
@@ -719,7 +724,7 @@ final class ReaderContentsViewController: UIViewController, UITableViewDataSourc
 
     private func showError(_ error: Error) {
         guard presentedViewController == nil else {
-            readerLogger.error("Reader contents error while another controller is presented: \(error.localizedDescription, privacy: .public)")
+            readerContentsLogger.error("Reader contents error while another controller is presented: \(error.localizedDescription, privacy: .public)")
             return
         }
         let alert = UIAlertController(
@@ -829,4 +834,3 @@ private final class ReaderBookmarkCell: UITableViewCell {
         ])
     }
 }
-
