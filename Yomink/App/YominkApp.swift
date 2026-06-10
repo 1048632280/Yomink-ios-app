@@ -2,37 +2,34 @@ import SwiftUI
 import UIKit
 
 @main
-struct YominkApp: App {
-    @UIApplicationDelegateAdaptor(YominkAppDelegate.self) private var appDelegate
-    @StateObject private var environment: AppEnvironment
+final class AppDelegate: UIResponder, UIApplicationDelegate {
+    var window: UIWindow?
+    let environment: AppEnvironment
 
-    init() {
-        // 触发一次性 swizzle,让 UIHostingController 把
-        // childForHomeIndicatorAutoHidden / childForScreenEdgesDeferringSystemGestures
-        // 转发给内嵌的 UIKit 子控制器(详见 HostingControllerHomeIndicatorBridge)
+    override init() {
         _ = HostingControllerHomeIndicatorBridge.install
-        _environment = StateObject(wrappedValue: AppEnvironment.live())
+        environment = AppEnvironment.live()
+        super.init()
     }
 
-    var body: some Scene {
-        WindowGroup {
-            LibraryView()
-                .environmentObject(environment)
-                .onOpenURL { url in
-                    ExternalOpenURLRelay.shared.receive(url)
-                }
-        }
-    }
-}
-
-final class YominkAppDelegate: NSObject, UIApplicationDelegate {
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+        let rootView = LibraryView()
+            .environmentObject(environment)
+
+        let window = UIWindow(frame: UIScreen.main.bounds)
+        window.rootViewController = UIHostingController(rootView: rootView)
+        self.window = window
+        window.makeKeyAndVisible()
+
         if let url = launchOptions?[.url] as? URL {
-            ExternalOpenURLRelay.shared.receive(url)
+            DispatchQueue.main.async { [weak self] in
+                self?.applicationOpenURL(url)
+            }
         }
+
         return true
     }
 
@@ -41,8 +38,14 @@ final class YominkAppDelegate: NSObject, UIApplicationDelegate {
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        ExternalOpenURLRelay.shared.receive(url)
+        DispatchQueue.main.async { [weak self] in
+            self?.applicationOpenURL(url)
+        }
         return true
+    }
+
+    func applicationOpenURL(_ url: URL) {
+        ExternalOpenURLRelay.shared.receive(url)
     }
 }
 
