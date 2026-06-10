@@ -17,8 +17,7 @@
 			<string>Owner</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>public.text</string>
-				<string>com.yomink.reader.ymk</string>
+				<string>public.data</string>
 			</array>
 		</dict>
 	</array>

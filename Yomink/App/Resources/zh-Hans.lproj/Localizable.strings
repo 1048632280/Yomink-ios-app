@@ -309,8 +309,8 @@
 "import.edit.title" = "导入:%@";
 "import.shared.confirm.title" = "提示";
 "import.shared.confirm.message" = "是否导入文件: %@";
-"import.shared.unsupportedYMK" = "暂不支持导入 YMK 文件。";
-"import.shared.unsupportedFile" = "暂不支持导入此文件。";
+"import.shared.unsupportedYMK" = "暂不支持导入 YMK 文件: %@。";
+"import.shared.unsupportedFile" = "暂不支持导入文件: %@。";
 "import.shared.importInProgress" = "当前正在导入，请稍后再试。";
 "import.field.title" = "书名";
 "import.field.author" = "作者";

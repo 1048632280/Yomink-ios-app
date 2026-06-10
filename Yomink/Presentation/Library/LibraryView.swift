@@ -978,8 +978,13 @@ struct LibraryView: View {
     }
 
     private func handleReadySharedOpenURL(_ url: URL) {
+        let fileName = url.lastPathComponent
+
         guard url.isFileURL else {
-            viewModel.showError(SharedImportOpenError.unsupportedFile, title: "import.error.title")
+            viewModel.showError(
+                SharedImportOpenError.unsupportedFile(fileName: fileName),
+                title: "import.error.title"
+            )
             return
         }
 
@@ -1002,10 +1007,16 @@ struct LibraryView: View {
         case "txt":
             pendingSharedImportConfirmation = SharedImportConfirmation(url: url)
         case "ymk":
-            viewModel.showError(SharedImportOpenError.unsupportedYMK, title: "import.error.title")
+            viewModel.showError(
+                SharedImportOpenError.unsupportedYMK(fileName: fileName),
+                title: "import.error.title"
+            )
             cleanupTemporaryImportFile(at: url)
         default:
-            viewModel.showError(SharedImportOpenError.unsupportedFile, title: "import.error.title")
+            viewModel.showError(
+                SharedImportOpenError.unsupportedFile(fileName: fileName),
+                title: "import.error.title"
+            )
             cleanupTemporaryImportFile(at: url)
         }
     }
@@ -1350,16 +1361,22 @@ private struct SharedImportConfirmation: Identifiable, Equatable {
 }
 
 private enum SharedImportOpenError: LocalizedError {
-    case unsupportedYMK
-    case unsupportedFile
+    case unsupportedYMK(fileName: String)
+    case unsupportedFile(fileName: String)
     case importInProgress
 
     var errorDescription: String? {
         switch self {
-        case .unsupportedYMK:
-            return NSLocalizedString("import.shared.unsupportedYMK", comment: "")
-        case .unsupportedFile:
-            return NSLocalizedString("import.shared.unsupportedFile", comment: "")
+        case let .unsupportedYMK(fileName):
+            return String(
+                format: NSLocalizedString("import.shared.unsupportedYMK", comment: ""),
+                fileName
+            )
+        case let .unsupportedFile(fileName):
+            return String(
+                format: NSLocalizedString("import.shared.unsupportedFile", comment: ""),
+                fileName
+            )
         case .importInProgress:
             return NSLocalizedString("import.shared.importInProgress", comment: "")
         }
