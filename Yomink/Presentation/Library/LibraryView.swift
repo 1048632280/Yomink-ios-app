@@ -541,29 +541,16 @@ struct LibraryView: View {
                 isActive: readerNavigationBinding
             ) {
                 if let book = activeReaderBook {
-                    if ReaderCoreRouting.usesReaderV2() {
-                        ReaderV2HostView(
-                            book: book,
-                            fileStore: services.fileStore,
-                            repository: services.libraryRepository,
-                            onStatusBarHiddenChange: { isHidden in
-                                isReaderStatusBarHidden = isHidden
-                            }
-                        )
-                        .ignoresSafeArea()
-                        .navigationBarHidden(true)
-                    } else {
-                        ReaderHostView(
-                            book: book,
-                            fileStore: services.fileStore,
-                            repository: services.libraryRepository,
-                            onStatusBarHiddenChange: { isHidden in
-                                isReaderStatusBarHidden = isHidden
-                            }
-                        )
-                        .ignoresSafeArea()
-                        .navigationBarHidden(true)
-                    }
+                    ReaderV2HostView(
+                        book: book,
+                        fileStore: services.fileStore,
+                        repository: services.libraryRepository,
+                        onStatusBarHiddenChange: { isHidden in
+                            isReaderStatusBarHidden = isHidden
+                        }
+                    )
+                    .ignoresSafeArea()
+                    .navigationBarHidden(true)
                 } else {
                     EmptyView()
                 }

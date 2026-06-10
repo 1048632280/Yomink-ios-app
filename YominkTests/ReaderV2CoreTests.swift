@@ -1423,14 +1423,6 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(adapter.recordBridge.record(chapterIndex: 1)?.chapterTitle, "Chapter Two")
     }
 
-    func testReaderCoreRoutingDefaultsToV2AndKeepsLegacyFallback() {
-        XCTAssertEqual(ReaderCoreRouting.defaultEngine, .readerV2)
-        XCTAssertTrue(ReaderCoreRouting.usesReaderV2())
-        XCTAssertEqual(ReaderCoreRouting.legacyFallbackEngine, .legacyCollection)
-        XCTAssertTrue(ReaderCoreRouting.keepsLegacyReaderForRollback)
-        XCTAssertFalse(ReaderCoreRouting.usesReaderV2(for: .legacyCollection))
-    }
-
     func testChapterProviderReadsUTF8ChapterText() async throws {
         let fixture = try makeFileBackedBookFixture()
         let provider = ReaderChapterProvider(
