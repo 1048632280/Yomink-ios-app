@@ -255,6 +255,8 @@ final class ReaderBottomWidgetView: UIView {
     private var fullProgress: Double = 0
     private var widgetFont = ReaderPageWidgetLayout.font
     private var headerColor = ReaderTheme.standard.headerColor
+    private static let leftWidgetSpacing: CGFloat = 4
+    private static let batteryIconSize = CGSize(width: 24, height: 12)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -385,33 +387,44 @@ final class ReaderBottomWidgetView: UIView {
 
     private func layoutLeftWidgets() {
         var nextX: CGFloat = 0
-        if showTime {
-            let width = max(38, ceil((timeLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
-            timeLabel.frame = CGRect(
+        var hasPlacedWidget = false
+
+        func place(_ view: UIView, width: CGFloat, height: CGFloat) {
+            if hasPlacedWidget {
+                nextX += Self.leftWidgetSpacing
+            }
+            view.frame = CGRect(
                 x: nextX,
-                y: 0,
+                y: (bounds.height - height) / 2,
+                width: width,
+                height: height
+            ).integral
+            nextX = view.frame.maxX
+            hasPlacedWidget = true
+        }
+
+        if showBatteryLabel {
+            let width = ceil((batteryLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width)
+            place(
+                batteryLabel,
                 width: width,
                 height: ReaderPageWidgetLayout.height
-            ).integral
-            nextX = timeLabel.frame.maxX + 5
+            )
         }
         if showBatteryView {
-            batteryView.frame = CGRect(
-                x: nextX,
-                y: (ReaderPageWidgetLayout.height - 8) / 2,
-                width: 17,
-                height: 8
-            ).integral
-            nextX = batteryView.frame.maxX + 5
+            place(
+                batteryView,
+                width: Self.batteryIconSize.width,
+                height: Self.batteryIconSize.height
+            )
         }
-        if showBatteryLabel {
-            let width = max(38, ceil((batteryLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width))
-            batteryLabel.frame = CGRect(
-                x: nextX,
-                y: 0,
+        if showTime {
+            let width = ceil((timeLabel.text ?? "").size(withAttributes: [.font: widgetFont]).width)
+            place(
+                timeLabel,
                 width: width,
                 height: ReaderPageWidgetLayout.height
-            ).integral
+            )
         }
     }
 
@@ -420,9 +433,11 @@ final class ReaderBottomWidgetView: UIView {
             return
         }
         let snapshot = batterySnapshotProvider()
+        let isLowBattery = snapshot.level < 0.2
+        let batteryColor = isLowBattery ? Self.lowBatteryColor : headerColor
         batteryView.value = snapshot.level
-        batteryView.fillColor = snapshot.isCharging ? Self.chargingColor : headerColor
-        batteryLabel.textColor = headerColor
+        batteryView.fillColor = batteryColor
+        batteryLabel.textColor = batteryColor
         batteryLabel.text = String(format: "%.0f%%", Double(snapshot.level * 100))
     }
 
@@ -444,7 +459,7 @@ final class ReaderBottomWidgetView: UIView {
         return formatter
     }()
 
-    private static let chargingColor = UIColor(red: 0.24, green: 0.73, blue: 0.32, alpha: 1)
+    private static let lowBatteryColor = UIColor(red: 0.82, green: 0.20, blue: 0.18, alpha: 1)
 
     @objc private func batteryDidChange() {
         updateBattery()
@@ -524,39 +539,79 @@ final class ReaderBatteryIndicatorView: UIView {
             return
         }
         context.saveGState()
-        context.setLineWidth(1.1)
 
-        let capWidth: CGFloat = 2.2
-        let capGap: CGFloat = 0.8
+        let scale = rect.height / 12
+        let capWidth = max(1.5, 1.55 * scale)
+        let capGap = max(0.55, 0.75 * scale)
         let bodyRect = CGRect(
-            x: 0.7,
-            y: 0.7,
-            width: rect.width - capWidth - capGap - 1.4,
-            height: rect.height - 1.4
+            x: max(0.8, 0.9 * scale),
+            y: max(0.9, 1.1 * scale),
+            width: rect.width - capWidth - capGap - max(1.8, 2.0 * scale),
+            height: rect.height - max(1.8, 2.2 * scale)
         )
+        let capHeight = min(rect.height - 4, max(4, 4.8 * scale))
         let capRect = CGRect(
             x: bodyRect.maxX + capGap,
-            y: rect.height * 0.31,
+            y: (rect.height - capHeight) / 2,
             width: capWidth,
-            height: rect.height * 0.38
+            height: capHeight
         )
-        outlineColor.setStroke()
-        UIBezierPath(roundedRect: bodyRect, cornerRadius: 1.4).stroke()
-        outlineColor.setFill()
-        UIBezierPath(roundedRect: capRect, cornerRadius: 0.5).fill()
+        let bodyCornerRadius = min(2.3 * scale, bodyRect.height / 2)
+        let capCornerRadius = min(0.8 * scale, capRect.height / 2)
 
-        let fillInset: CGFloat = 2.1
-        let fillWidth = max(0, (bodyRect.width - fillInset * 2) * value)
-        let fillRect = CGRect(
-            x: bodyRect.minX + fillInset,
-            y: bodyRect.minY + fillInset,
-            width: fillWidth,
-            height: max(0, bodyRect.height - fillInset * 2)
+        context.setShadow(
+            offset: CGSize(width: 0.6 * scale, height: 0.8 * scale),
+            blur: 1.2 * scale,
+            color: outlineColor.withAlphaComponent(0.28).cgColor
         )
-        if fillRect.width > 0 {
-            fillColor.setFill()
-            UIBezierPath(roundedRect: fillRect, cornerRadius: 0.8).fill()
+        outlineColor.setFill()
+        UIBezierPath(roundedRect: bodyRect, cornerRadius: bodyCornerRadius).fill()
+        UIBezierPath(roundedRect: capRect, cornerRadius: capCornerRadius).fill()
+
+        context.setShadow(offset: .zero, blur: 0, color: nil)
+        UIColor(white: isDarkColor(outlineColor) ? 0.10 : 0.96, alpha: 1).setFill()
+        let innerInsetX = max(2.0, 2.0 * scale)
+        let innerInsetY = max(1.7, 1.8 * scale)
+        let innerRect = bodyRect.insetBy(dx: innerInsetX, dy: innerInsetY)
+        if innerRect.width > 0, innerRect.height > 0 {
+            UIBezierPath(
+                roundedRect: innerRect,
+                cornerRadius: min(1.5 * scale, innerRect.height / 2)
+            ).fill()
+
+            let fillPadding = max(0.5, 0.45 * scale)
+            let fillBounds = innerRect.insetBy(dx: fillPadding, dy: fillPadding)
+            let fillWidth = max(0, fillBounds.width * value)
+            let fillRect = CGRect(
+                x: fillBounds.minX,
+                y: fillBounds.minY,
+                width: fillWidth,
+                height: fillBounds.height
+            )
+            if fillRect.width > 0 {
+                fillColor.setFill()
+                UIBezierPath(
+                    roundedRect: fillRect,
+                    cornerRadius: min(1.0 * scale, fillRect.height / 2)
+                ).fill()
+            }
         }
         context.restoreGState()
+    }
+
+    private func isDarkColor(_ color: UIColor) -> Bool {
+        var white: CGFloat = 0
+        var alpha: CGFloat = 0
+        if color.getWhite(&white, alpha: &alpha) {
+            return white < 0.45
+        }
+
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        if color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return red * 0.299 + green * 0.587 + blue * 0.114 < 0.45
+        }
+        return false
     }
 }
