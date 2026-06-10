@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct LibraryView: View {
     @EnvironmentObject private var environment: AppEnvironment
+    @ObservedObject private var externalOpenURLRelay = ExternalOpenURLRelay.shared
     @StateObject private var viewModel = LibraryViewModel()
     @State private var activeDrawer: LibraryDrawerSide?
     @State private var activeReaderBook: Book?
@@ -46,8 +47,11 @@ struct LibraryView: View {
         }
         .ignoresSafeArea(.all)
         .statusBar(hidden: activeReaderBook != nil && isReaderStatusBarHidden)
-        .onOpenURL { url in
-            handleSharedOpenURL(url)
+        .onAppear {
+            consumeExternalOpenURLEventIfNeeded()
+        }
+        .onChange(of: externalOpenURLRelay.event?.id) { _ in
+            consumeExternalOpenURLEventIfNeeded()
         }
     }
 
@@ -954,6 +958,15 @@ struct LibraryView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.red.opacity(0.08))
             .cornerRadius(8)
+    }
+
+    private func consumeExternalOpenURLEventIfNeeded() {
+        guard let event = externalOpenURLRelay.event else {
+            return
+        }
+
+        externalOpenURLRelay.clear(event)
+        handleSharedOpenURL(event.url)
     }
 
     private func handleSharedOpenURL(_ url: URL) {
