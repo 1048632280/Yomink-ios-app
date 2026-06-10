@@ -1555,14 +1555,12 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
     private func deferNavigationBarHidingForInteractiveAuxiliaryReturn() -> Bool {
         guard let transitionCoordinator,
-              transitionCoordinator.isInteractive,
-              let source = transitionCoordinator.viewController(forKey: .from),
-              source !== self
+              transitionCoordinator.isInteractive
         else {
             return false
         }
 
-        return auxiliaryPageKeepsNavigationBarVisible(source)
+        return true
     }
 
     private func scheduleNavigationBarHidingAfterInteractiveAuxiliaryReturn() {
@@ -1571,29 +1569,17 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+            let shouldHideNavigationBar = !context.isCancelled
             Task { @MainActor in
                 guard let self else {
                     return
                 }
 
                 self.navigationController?.setNavigationBarHidden(
-                    !context.isCancelled,
+                    shouldHideNavigationBar,
                     animated: true
                 )
             }
-        }
-    }
-
-    private func auxiliaryPageKeepsNavigationBarVisible(_ viewController: UIViewController) -> Bool {
-        switch viewController {
-        case is ReaderContentsViewController,
-             is ReaderBookDetailViewController,
-             is ReaderBookDetailEditViewController,
-             is ReaderContentSearchViewController,
-             is ReaderFilterRulesViewController:
-            return true
-        default:
-            return false
         }
     }
 

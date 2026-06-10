@@ -64,7 +64,7 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
             animated: animated
         )
         if let prioritizedReturnGesture {
-            requireGestures(in: pageViewController.view, toFailBefore: prioritizedReturnGesture)
+            requirePageTurnGestures(toFailBefore: prioritizedReturnGesture)
         }
     }
 
@@ -87,20 +87,25 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         }
 
         prioritizedReturnGesture = returnGesture
-        requireGestures(in: pageViewController.view, toFailBefore: returnGesture)
+        requirePageTurnGestures(toFailBefore: returnGesture)
     }
 
-    private func requireGestures(
-        in view: UIView,
-        toFailBefore returnGesture: UIGestureRecognizer
-    ) {
-        view.gestureRecognizers?
+    private func requirePageTurnGestures(toFailBefore returnGesture: UIGestureRecognizer) {
+        pageViewController.gestureRecognizers
             .filter { $0 !== returnGesture }
             .forEach { $0.require(toFail: returnGesture) }
 
-        for subview in view.subviews {
-            requireGestures(in: subview, toFailBefore: returnGesture)
+        scrollViews(in: pageViewController.view).forEach { scrollView in
+            scrollView.panGestureRecognizer.require(toFail: returnGesture)
         }
+    }
+
+    private func scrollViews(in view: UIView) -> [UIScrollView] {
+        var scrollViews = (view as? UIScrollView).map { [$0] } ?? []
+        for subview in view.subviews {
+            scrollViews.append(contentsOf: self.scrollViews(in: subview))
+        }
+        return scrollViews
     }
 }
 
