@@ -166,6 +166,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         if navigationController?.topViewController === navigationStackControllerForReader() {
             navigationController?.setNavigationBarHidden(true, animated: false)
         }
+        updateHomeIndicatorPreferences()
     }
 
     override func viewDidLayoutSubviews() {
@@ -251,6 +252,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         activeTurnPageType = turnPageType
         container.apply(theme: theme)
         bindReaderGesturesToInteractivePopIfNeeded()
+        updateHomeIndicatorPreferences()
 
         if let currentPageModel,
            paginationCache[currentPageModel.chapterIndex]?.pages.indices.contains(currentPageModel.pageIndex) == true {
@@ -420,6 +422,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         readerSettings = normalizedSettings
+        updateHomeIndicatorPreferences()
         if autoReadController.isReading,
            normalizedSettings.pageMode != .scroll {
             stopAutoReading(animated: false, restoresEntryPageMode: false)

@@ -68,14 +68,14 @@ final class ReaderSystemAppearanceController {
         state = .initial
         UIApplication.shared.isIdleTimerDisabled = false
         notifyStatusBarHiddenIfNeeded(forceValue: false)
-        refreshControllerPreferences()
+        refreshStatusBarPreferences()
     }
 
     func refresh() {
         UIApplication.shared.isIdleTimerDisabled = state.isViewVisible
             && (state.settings.normalized.keepScreenAwake || state.isAutoReading)
         notifyStatusBarHiddenIfNeeded(forceValue: nil)
-        refreshControllerPreferences()
+        refreshStatusBarPreferences()
     }
 
     static func shouldHideStatusBar(for state: ReaderSystemAppearanceState) -> Bool {
@@ -100,7 +100,7 @@ final class ReaderSystemAppearanceController {
         onStatusBarHiddenChange(isHidden)
     }
 
-    private func refreshControllerPreferences() {
+    private func refreshStatusBarPreferences() {
         var controllers: [UIViewController] = []
         if let hostViewController {
             controllers.append(hostViewController)
@@ -125,8 +125,6 @@ final class ReaderSystemAppearanceController {
                 continue
             }
             controller.setNeedsStatusBarAppearanceUpdate()
-            controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
-            controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
         }
     }
 }
