@@ -90,7 +90,6 @@ jobs:
 
     env:
       CONFIGURATION: Debug
-      SIMULATOR_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest,arch=arm64
 
     steps:
       - name: Checkout
@@ -116,6 +115,31 @@ jobs:
             -resolvePackageDependencies \
             -project "$PROJECT" \
             -scheme "$SCHEME"
+
+      - name: Prepare iOS simulator
+        run: |
+          set -euo pipefail
+
+          DEVICE_ID="$(xcrun simctl list devices available --json | python3 -c 'import json,sys; data=json.load(sys.stdin); devices=[device for runtime_devices in data.get("devices", {}).values() for device in runtime_devices if device.get("isAvailable") and device.get("name", "").startswith("iPhone")]; devices.sort(key=lambda device: device.get("name", "")); print(devices[0]["udid"] if devices else "")')"
+
+          if [ -z "$DEVICE_ID" ]; then
+            RUNTIME_ID="$(xcrun simctl list runtimes --json | python3 -c 'import json,sys; data=json.load(sys.stdin); runtimes=[runtime for runtime in data.get("runtimes", []) if runtime.get("isAvailable") and runtime.get("platform") == "iOS"]; runtimes.sort(key=lambda runtime: tuple(int(part) for part in runtime.get("version", "0").split(".") if part.isdigit()), reverse=True); print(runtimes[0]["identifier"] if runtimes else "")')"
+
+            DEVICE_TYPE="$(xcrun simctl list devicetypes --json | python3 -c 'import json,sys; data=json.load(sys.stdin); types=[device_type for device_type in data.get("devicetypes", []) if device_type.get("name", "").startswith("iPhone")]; preferred=("iPhone 16 Pro", "iPhone 16", "iPhone 15 Pro", "iPhone 15"); by_name={device_type.get("name"): device_type for device_type in types}; selected=next((by_name[name] for name in preferred if name in by_name), types[-1] if types else None); print(selected["identifier"] if selected else "")')"
+
+            if [ -z "$RUNTIME_ID" ] || [ -z "$DEVICE_TYPE" ]; then
+              echo "No available iOS simulator runtime/device type found." >&2
+              xcrun simctl list runtimes
+              xcrun simctl list devicetypes
+              exit 1
+            fi
+
+            DEVICE_ID="$(xcrun simctl create "Yomink Test iPhone" "$DEVICE_TYPE" "$RUNTIME_ID")"
+          fi
+
+          echo "SIMULATOR_TEST_DESTINATION=platform=iOS Simulator,id=$DEVICE_ID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$DEVICE_ID" || true
+          xcrun simctl bootstatus "$DEVICE_ID" -b
 
       - name: Build for testing
         run: |
