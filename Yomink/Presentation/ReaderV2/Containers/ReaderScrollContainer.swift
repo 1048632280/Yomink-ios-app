@@ -27,6 +27,7 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     private var widgetVisibility = ReaderSettings.WidgetVisibility.default
     private var isProgrammaticScroll = false
     private var lastTableInsets = UIEdgeInsets.zero
+    private weak var prioritizedReturnGesture: UIGestureRecognizer?
 
     var makePageController: (@MainActor (ReaderPageModel) -> ReaderPageViewController?)?
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)?
@@ -240,6 +241,15 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         if tableView.contentOffset.y >= threshold {
             onLoadNextChapter?()
         }
+    }
+
+    func prioritizeReturnGesture(_ returnGesture: UIGestureRecognizer) {
+        guard prioritizedReturnGesture !== returnGesture else {
+            return
+        }
+
+        prioritizedReturnGesture = returnGesture
+        tableView.panGestureRecognizer.require(toFail: returnGesture)
     }
 
     private func configureTableView() {

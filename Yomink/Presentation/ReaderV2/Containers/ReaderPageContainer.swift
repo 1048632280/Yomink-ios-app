@@ -4,6 +4,7 @@ import UIKit
 class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
     let pageViewController: UIPageViewController
     private(set) var currentPageModel: ReaderPageModel?
+    private weak var prioritizedReturnGesture: UIGestureRecognizer?
     var makePageController: (@MainActor (ReaderPageModel) -> ReaderPageViewController?)?
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)?
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)?
@@ -62,6 +63,9 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
             direction: direction.pageViewControllerDirection,
             animated: animated
         )
+        if let prioritizedReturnGesture {
+            requireGestures(in: pageViewController.view, toFailBefore: prioritizedReturnGesture)
+        }
     }
 
     func apply(theme: ReaderTheme) {
@@ -75,6 +79,28 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
             return nil
         }
         return makePageController?(model)
+    }
+
+    func prioritizeReturnGesture(_ returnGesture: UIGestureRecognizer) {
+        guard prioritizedReturnGesture !== returnGesture else {
+            return
+        }
+
+        prioritizedReturnGesture = returnGesture
+        requireGestures(in: pageViewController.view, toFailBefore: returnGesture)
+    }
+
+    private func requireGestures(
+        in view: UIView,
+        toFailBefore returnGesture: UIGestureRecognizer
+    ) {
+        view.gestureRecognizers?
+            .filter { $0 !== returnGesture }
+            .forEach { $0.require(toFail: returnGesture) }
+
+        for subview in view.subviews {
+            requireGestures(in: subview, toFailBefore: returnGesture)
+        }
     }
 }
 

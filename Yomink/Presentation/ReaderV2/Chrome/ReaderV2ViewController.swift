@@ -64,6 +64,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var autoReadEntryPageMode: ReaderSettings.PageMode?
     private var didRecordOpenHistory = false
     private var openedAt = Date()
+    private weak var configuredInteractivePopGesture: UIGestureRecognizer?
 
     private var loadGeneration = 0
     private var openGeneration = 0
@@ -147,9 +148,24 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         isViewVisible = true
-        navigationController?.setNavigationBarHidden(true, animated: animated)
+        restoreReaderInteractivePopGesture()
+        bindReaderGesturesToInteractivePopIfNeeded()
+        if deferNavigationBarHidingForInteractiveAuxiliaryReturn() {
+            scheduleNavigationBarHidingAfterInteractiveAuxiliaryReturn()
+        } else {
+            navigationController?.setNavigationBarHidden(true, animated: animated)
+        }
         resumeAutoReadingAfterPauseIfNeeded()
         updateSystemAppearance()
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        restoreReaderInteractivePopGesture()
+        bindReaderGesturesToInteractivePopIfNeeded()
+        if navigationController?.topViewController === navigationStackControllerForReader() {
+            navigationController?.setNavigationBarHidden(true, animated: false)
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -234,6 +250,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         activeContainer = container
         activeTurnPageType = turnPageType
         container.apply(theme: theme)
+        bindReaderGesturesToInteractivePopIfNeeded()
 
         if let currentPageModel,
            paginationCache[currentPageModel.chapterIndex]?.pages.indices.contains(currentPageModel.pageIndex) == true {
@@ -1512,6 +1529,74 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
     }
 
+    private func restoreReaderInteractivePopGesture() {
+        guard let navigationController,
+              let gesture = navigationController.interactivePopGestureRecognizer
+        else {
+            return
+        }
+
+        configuredInteractivePopGesture = gesture
+        gesture.delegate = self
+        gesture.isEnabled = true
+    }
+
+    private func bindReaderGesturesToInteractivePopIfNeeded() {
+        guard let gesture = navigationController?.interactivePopGestureRecognizer else {
+            return
+        }
+
+        if let pageContainer = activeContainer as? ReaderPageContainer {
+            pageContainer.prioritizeReturnGesture(gesture)
+        } else if let scrollContainer = activeContainer as? ReaderScrollContainer {
+            scrollContainer.prioritizeReturnGesture(gesture)
+        }
+    }
+
+    private func deferNavigationBarHidingForInteractiveAuxiliaryReturn() -> Bool {
+        guard let transitionCoordinator,
+              transitionCoordinator.isInteractive,
+              let source = transitionCoordinator.viewController(forKey: .from),
+              source !== self
+        else {
+            return false
+        }
+
+        return auxiliaryPageKeepsNavigationBarVisible(source)
+    }
+
+    private func scheduleNavigationBarHidingAfterInteractiveAuxiliaryReturn() {
+        guard let transitionCoordinator else {
+            return
+        }
+
+        transitionCoordinator.animate(alongsideTransition: nil) { [weak self] context in
+            Task { @MainActor in
+                guard let self else {
+                    return
+                }
+
+                self.navigationController?.setNavigationBarHidden(
+                    !context.isCancelled,
+                    animated: true
+                )
+            }
+        }
+    }
+
+    private func auxiliaryPageKeepsNavigationBarVisible(_ viewController: UIViewController) -> Bool {
+        switch viewController {
+        case is ReaderContentsViewController,
+             is ReaderBookDetailViewController,
+             is ReaderBookDetailEditViewController,
+             is ReaderContentSearchViewController,
+             is ReaderFilterRulesViewController:
+            return true
+        default:
+            return false
+        }
+    }
+
     private func pushReaderPage(
         _ viewController: UIViewController,
         prefersNavigationBarHidden: Bool = false
@@ -1519,6 +1604,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         setMenuVisible(false, animated: true)
         stopAutoReading(animated: false)
         saveProgressImmediately()
+        restoreReaderInteractivePopGesture()
+        bindReaderGesturesToInteractivePopIfNeeded()
 
         guard let navigationController else {
             let presentedNavigationController = UINavigationController(rootViewController: viewController)
@@ -1944,10 +2031,34 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         return map[index]
     }
 
+    func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if let interactivePopGesture = configuredInteractivePopGesture,
+           gestureRecognizer === interactivePopGesture {
+            guard let navigationController,
+                  navigationController.viewControllers.count > 1 else {
+                return false
+            }
+
+            if let readerStackController = navigationStackControllerForReader(),
+               navigationController.topViewController !== readerStackController {
+                return true
+            }
+
+            return readerSettings.normalized.edgeSwipeBackEnabled
+        }
+
+        return true
+    }
+
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldReceive touch: UITouch
     ) -> Bool {
+        if let interactivePopGesture = configuredInteractivePopGesture,
+           gestureRecognizer === interactivePopGesture {
+            return true
+        }
+
         var touchedView = touch.view
         while let currentView = touchedView {
             if currentView is UIControl {
