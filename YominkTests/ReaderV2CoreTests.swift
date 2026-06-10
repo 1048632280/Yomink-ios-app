@@ -470,6 +470,32 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testTextReadViewUsesOriginalDisplayRangeForVerticalPages() {
+        let manager = PaibanManager(layout: .phone, theme: .standard)
+        let result = manager.divideText(
+            readerV2LongText(repeating: 80),
+            chapterTitle: "Display Range",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 220, height: 260)
+        )
+        guard result.pages.count > 1 else {
+            XCTFail("Expected multiple pages")
+            return
+        }
+        let page = result.pages[1]
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 220, height: 260))
+        view.contentRectOverride = view.bounds
+        view.setAttributedText(page.sourceAttributedText, displayRange: page.displayRange)
+        view.layoutIfNeeded()
+
+        let rects = view.textRects(for: NSRange(location: page.displayRange.location, length: 1))
+
+        XCTAssertNotNil(view.frameRef)
+        XCTAssertEqual(view.displayRange, Optional(page.displayRange))
+        XCTAssertFalse(rects.isEmpty)
+    }
+
+    @MainActor
     func testTextReadViewClampsSelectionAndHighlightRanges() {
         let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         view.setAttributedText(NSAttributedString(string: "abcdef"))
@@ -767,6 +793,29 @@ final class ReaderV2CoreTests: XCTestCase {
         )
 
         XCTAssertEqual(container.currentPageModel, Optional(secondModel))
+    }
+
+    @MainActor
+    func testReaderScrollContainerAppendsAndPrependsSections() {
+        let container = ReaderScrollContainer()
+        container.loadViewIfNeeded()
+        container.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let firstModel = readerV2PageModel(chapterIndex: 1, pageIndex: 0, pageCount: 1)
+        let nextModel = readerV2PageModel(chapterIndex: 2, pageIndex: 0, pageCount: 1)
+        let previousModel = readerV2PageModel(chapterIndex: 0, pageIndex: 0, pageCount: 1)
+        let first = readerV2ScrollSection(chapterIndex: 1, model: firstModel)
+        let next = readerV2ScrollSection(chapterIndex: 2, model: nextModel)
+        let previous = readerV2ScrollSection(chapterIndex: 0, model: previousModel)
+
+        container.reload(sections: [first], layout: .phone, theme: .standard)
+        container.appendSections([next])
+        container.prependSections([previous])
+        container.view.layoutIfNeeded()
+
+        XCTAssertEqual(container.tableView.numberOfSections, 3)
+        XCTAssertEqual(container.indexPath(for: previousModel), Optional(IndexPath(row: 0, section: 0)))
+        XCTAssertEqual(container.indexPath(for: firstModel), Optional(IndexPath(row: 0, section: 1)))
+        XCTAssertEqual(container.indexPath(for: nextModel), Optional(IndexPath(row: 0, section: 2)))
     }
 
     @MainActor
@@ -1149,6 +1198,7 @@ final class ReaderV2CoreTests: XCTestCase {
         var reachedEndCount = 0
         controller.onReachedEnd = {
             reachedEndCount += 1
+            return false
         }
 
         controller.start(scrollView: scrollView, speed: 120)
@@ -1157,6 +1207,31 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(reachedEndCount, 1)
         XCTAssertFalse(controller.isReading)
         XCTAssertFalse(controller.hasDisplayLink)
+    }
+
+    @MainActor
+    func testReaderAutoReadControllerPausesAtLoadedEndWhenContinuationStarts() {
+        let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        scrollView.contentSize = CGSize(width: 100, height: 100)
+        let controller = ReaderAutoReadController()
+        var reachedEndCount = 0
+        controller.onReachedEnd = {
+            reachedEndCount += 1
+            return true
+        }
+
+        controller.start(scrollView: scrollView, speed: 120)
+        controller.advance(by: 0.5)
+
+        XCTAssertEqual(reachedEndCount, 1)
+        XCTAssertTrue(controller.isReading)
+        XCTAssertTrue(controller.isPausedForContentLoad)
+        XCTAssertFalse(controller.hasDisplayLink)
+
+        controller.resumeAfterContentLoadIfNeeded(scrollView: scrollView)
+        XCTAssertTrue(controller.isReading)
+        XCTAssertFalse(controller.isPausedForContentLoad)
+        XCTAssertTrue(controller.hasDisplayLink)
     }
 
     @MainActor
@@ -1308,6 +1383,25 @@ final class ReaderV2CoreTests: XCTestCase {
             theme: .standard
         )
         return controller
+    }
+
+    private func readerV2ScrollSection(
+        chapterIndex: Int,
+        model: ReaderPageModel
+    ) -> ReaderScrollSection {
+        let text = "Chapter \(chapterIndex)"
+        let attributed = NSAttributedString(string: text)
+        return ReaderScrollSection(
+            chapterIndex: chapterIndex,
+            title: text,
+            timestamp: Date(timeIntervalSince1970: Double(chapterIndex)),
+            items: [attributed],
+            sourceItems: [attributed],
+            displayRanges: [NSRange(location: 0, length: (text as NSString).length)],
+            heights: [120],
+            pageModels: [model],
+            fullProgresses: [0]
+        )
     }
 
     private func makeBookFixture() -> (book: Book, chapters: [Chapter]) {

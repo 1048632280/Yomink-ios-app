@@ -6,6 +6,7 @@ class TextReadViewBase: UIView {
     private(set) var frameRef: CTFrame?
     private(set) var highlightedRanges: [NSRange] = []
     private(set) var selectedRange: NSRange?
+    private(set) var displayRange: NSRange?
     var layout = ReaderLayout.notchedPhone {
         didSet {
             resetFrame()
@@ -51,8 +52,12 @@ class TextReadViewBase: UIView {
         resetFrame()
     }
 
-    func setAttributedText(_ attributedText: NSAttributedString) {
+    func setAttributedText(
+        _ attributedText: NSAttributedString,
+        displayRange: NSRange? = nil
+    ) {
         self.attributedText = attributedText
+        self.displayRange = clampedFrameRange(displayRange)
         applyContentColor()
         normalizeDecorationRanges()
     }
@@ -261,16 +266,45 @@ class TextReadViewBase: UIView {
             return
         }
 
+        guard let frameRange = effectiveFrameRange() else {
+            frameRef = nil
+            return
+        }
+
         let contentRect = contentRectOverride ?? layout.contentRect(in: bounds)
         let path = CGMutablePath()
         path.addRect(contentRect)
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
         frameRef = CTFramesetterCreateFrame(
             framesetter,
-            CFRange(location: 0, length: attributedText.length),
+            CFRange(location: frameRange.location, length: frameRange.length),
             path,
             nil
         )
+    }
+
+    private func effectiveFrameRange() -> NSRange? {
+        if let displayRange = clampedFrameRange(displayRange) {
+            return displayRange
+        }
+        return attributedText.length > 0
+            ? NSRange(location: 0, length: attributedText.length)
+            : nil
+    }
+
+    private func clampedFrameRange(_ range: NSRange?) -> NSRange? {
+        guard attributedText.length > 0,
+              let range,
+              range.length > 0 else {
+            return nil
+        }
+
+        let start = min(max(range.location, 0), attributedText.length)
+        let end = min(max(range.location + range.length, start), attributedText.length)
+        guard end > start else {
+            return nil
+        }
+        return NSRange(location: start, length: end - start)
     }
 
     private struct LineInfo {

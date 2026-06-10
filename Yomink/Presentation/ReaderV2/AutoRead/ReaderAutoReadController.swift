@@ -9,11 +9,12 @@ final class ReaderAutoReadController {
     private var lastProgressSaveTimestamp: CFTimeInterval = 0
     private(set) var isReading = false
     private(set) var isPausedForBackground = false
+    private(set) var isPausedForContentLoad = false
     private(set) var speed: CGFloat = CGFloat(ReaderSettings.default.autoReadSpeed)
 
     var onScrollTick: (() -> Void)?
     var onProgressSaveNeeded: (() -> Void)?
-    var onReachedEnd: (() -> Void)?
+    var onReachedEnd: (() -> Bool)?
 
     var hasDisplayLink: Bool {
         displayLink != nil
@@ -31,6 +32,7 @@ final class ReaderAutoReadController {
         self.speed = Self.normalizedSpeed(speed)
         isReading = true
         isPausedForBackground = false
+        isPausedForContentLoad = false
         startDisplayLinkIfNeeded()
     }
 
@@ -38,6 +40,7 @@ final class ReaderAutoReadController {
         invalidateDisplayLink()
         isReading = false
         isPausedForBackground = false
+        isPausedForContentLoad = false
         scrollView = nil
     }
 
@@ -57,7 +60,21 @@ final class ReaderAutoReadController {
         }
         self.scrollView = scrollView
         isPausedForBackground = false
-        startDisplayLinkIfNeeded()
+        if !isPausedForContentLoad {
+            startDisplayLinkIfNeeded()
+        }
+    }
+
+    func resumeAfterContentLoadIfNeeded(scrollView: UIScrollView) {
+        guard isReading,
+              isPausedForContentLoad else {
+            return
+        }
+        self.scrollView = scrollView
+        isPausedForContentLoad = false
+        if !isPausedForBackground {
+            startDisplayLinkIfNeeded()
+        }
     }
 
     func updateSpeed(_ speed: Double) {
@@ -79,13 +96,8 @@ final class ReaderAutoReadController {
             return
         }
 
-        let minOffsetY = -scrollView.adjustedContentInset.top
-        let maxOffsetY = max(
-            minOffsetY,
-            scrollView.contentSize.height
-                + scrollView.adjustedContentInset.bottom
-                - scrollView.bounds.height
-        )
+        let minOffsetY = Self.minOffsetY(for: scrollView)
+        let maxOffsetY = Self.maxOffsetY(for: scrollView)
         let proposedY = scrollView.contentOffset.y + distance
         let nextOffsetY = min(maxOffsetY, max(minOffsetY, proposedY))
         scrollView.setContentOffset(
@@ -98,11 +110,36 @@ final class ReaderAutoReadController {
             onProgressSaveNeeded?()
         }
 
-        if nextOffsetY >= maxOffsetY,
-           proposedY >= maxOffsetY {
-            stop()
-            onReachedEnd?()
+        let updatedMaxOffsetY = Self.maxOffsetY(for: scrollView)
+        if scrollView.contentOffset.y >= updatedMaxOffsetY,
+           proposedY >= updatedMaxOffsetY {
+            pauseForContentLoad()
+            let shouldKeepReading = onReachedEnd?() ?? false
+            if !shouldKeepReading {
+                stop()
+            }
         }
+    }
+
+    private func pauseForContentLoad() {
+        guard isReading else {
+            return
+        }
+        invalidateDisplayLink()
+        isPausedForContentLoad = true
+    }
+
+    private static func minOffsetY(for scrollView: UIScrollView) -> CGFloat {
+        -scrollView.adjustedContentInset.top
+    }
+
+    private static func maxOffsetY(for scrollView: UIScrollView) -> CGFloat {
+        max(
+            minOffsetY(for: scrollView),
+            scrollView.contentSize.height
+                + scrollView.adjustedContentInset.bottom
+                - scrollView.bounds.height
+        )
     }
 
     static func normalizedSpeed(_ speed: Double) -> CGFloat {

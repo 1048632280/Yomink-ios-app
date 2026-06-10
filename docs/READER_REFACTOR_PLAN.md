@@ -939,6 +939,14 @@ ReaderContentTarget(chapterID: chapterID, offset: offset)
 | 阶段 4：自动阅读联动 | 16 | 自动阅读速度系统（保留不变） | 保留不变 | `Yomink/Domain/Models/ReaderSettings.swift`、`Yomink/Presentation/ReaderV2/AutoRead/ReaderAutoReadController.swift` | 保留 `20...180` points/sec 速度范围和归一化逻辑，不改成原 App 的 1...7 档 |
 | 阶段 5：验证和文档 | 17 | 单测补强和静态验证 | 完成 | `YominkTests/ReaderV2CoreTests.swift`、Windows 本地环境 | 补充 bottom widget 顺序和自动阅读速度范围保护；`git diff --check` 通过；当前环境缺少 `swift` / `xcodebuild`，XCTest 需在 Xcode/CI 补跑 |
 
+### 上下滚动和自动阅读待修 Bug
+
+| 编号 | 状态 | 问题 | 可能位置 | 处理目标 |
+| --- | --- | --- | --- | --- |
+| BUG-SCROLL-001 | 完成 | 当前上下滚动内容仍会滚动到顶部标题/底部小组件 overlay 边缘之外；视觉上不是“正文紧贴上下组件之间滚动” | `ReaderScrollContainer.updateTableInsets()`、`ReaderScrollContainer.configureTableView()`、`ReaderScrollPageCell` 正文 frame | 已将纵向容器背景统一为全屏阅读背景，tableView 保持全屏承载但加阅读区 mask，正文只在顶部章节标题和底部小组件之间可见；widget overlay 保持透明文字层 |
+| BUG-SCROLL-002 | 完成 | 段落之间的段距在滚动/补页/上下页衔接时出现来回收缩，页面块拼接不自然 | `PaibanManager.paginate()`、`PaibanManager.usedHeight()`、`ReaderScrollPageCell`、`TextReadViewBase` | 已让纵向 page block 使用整章富文本和原始 `displayRange` 绘制，并用同一个 CoreText frame 的实际行框计算 row 高度，避免半段页首被当成新段落排版 |
+| BUG-SCROLL-003 | 完成 | 自动阅读跨章续载/下一章加载/刷新机制可能导致补充页面不稳定，滚动流畅度不够 | `ReaderV2ViewController.loadNextScrollChapterIfNeeded()`、`loadScrollChapter()`、`ReaderScrollContainer.appendSections()`、`ReaderAutoReadController.advance()` | 已改为上一章 prepend / 下一章 append section，不在自动阅读过程中无差别 reload；自动阅读到已加载末尾时暂停等待续章，append 成功后恢复原速度继续滚动 |
+
 ## 14. 测试计划
 
 ### 单元测试
