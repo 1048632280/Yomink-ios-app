@@ -150,8 +150,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         isViewVisible = true
         restoreReaderInteractivePopGesture()
         bindReaderGesturesToInteractivePopIfNeeded()
-        if deferNavigationBarHidingForInteractiveAuxiliaryReturn() {
-            scheduleNavigationBarHidingAfterInteractiveAuxiliaryReturn()
+        if deferNavigationBarHidingForAuxiliaryReturn() {
+            scheduleNavigationBarHidingAfterAuxiliaryReturn()
         } else {
             navigationController?.setNavigationBarHidden(true, animated: animated)
         }
@@ -1553,17 +1553,19 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
     }
 
-    private func deferNavigationBarHidingForInteractiveAuxiliaryReturn() -> Bool {
-        guard let transitionCoordinator,
-              transitionCoordinator.isInteractive
+    private func deferNavigationBarHidingForAuxiliaryReturn() -> Bool {
+        guard transitionCoordinator != nil,
+              let navigationController,
+              let readerStackController = navigationStackControllerForReader(),
+              let topViewController = navigationController.topViewController
         else {
             return false
         }
 
-        return true
+        return topViewController !== readerStackController
     }
 
-    private func scheduleNavigationBarHidingAfterInteractiveAuxiliaryReturn() {
+    private func scheduleNavigationBarHidingAfterAuxiliaryReturn() {
         guard let transitionCoordinator else {
             return
         }
@@ -1577,7 +1579,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
                 self.navigationController?.setNavigationBarHidden(
                     shouldHideNavigationBar,
-                    animated: true
+                    animated: false
                 )
             }
         }
