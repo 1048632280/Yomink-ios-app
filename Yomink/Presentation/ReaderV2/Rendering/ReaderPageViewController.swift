@@ -237,7 +237,7 @@ enum ReaderPageWidgetLayout {
 @MainActor
 final class ReaderBottomWidgetView: UIView {
     let timeLabel = UILabel()
-    let batteryView = ReaderBatteryIndicatorView()
+    let batteryView = WKJBatteryView()
     let batteryLabel = UILabel()
     let progressLabel = UILabel()
 
@@ -256,7 +256,7 @@ final class ReaderBottomWidgetView: UIView {
     private var widgetFont = ReaderPageWidgetLayout.font
     private var headerColor = ReaderTheme.standard.headerColor
     private static let leftWidgetSpacing: CGFloat = 4
-    private static let batteryIconSize = CGSize(width: 24, height: 12)
+    private static let batteryIconSize = CGSize(width: 17, height: 8)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -433,11 +433,9 @@ final class ReaderBottomWidgetView: UIView {
             return
         }
         let snapshot = batterySnapshotProvider()
-        let isLowBattery = snapshot.level < 0.2
-        let batteryColor = isLowBattery ? Self.lowBatteryColor : headerColor
+        batteryView.batteryState = snapshot.state
         batteryView.value = snapshot.level
-        batteryView.fillColor = batteryColor
-        batteryLabel.textColor = batteryColor
+        batteryLabel.textColor = headerColor
         batteryLabel.text = String(format: "%.0f%%", Double(snapshot.level * 100))
     }
 
@@ -458,8 +456,6 @@ final class ReaderBottomWidgetView: UIView {
         formatter.dateFormat = "HH:mm"
         return formatter
     }()
-
-    private static let lowBatteryColor = UIColor(red: 0.82, green: 0.20, blue: 0.18, alpha: 1)
 
     @objc private func batteryDidChange() {
         updateBattery()
@@ -486,38 +482,52 @@ struct ReaderBatterySnapshot {
 }
 
 @MainActor
-final class ReaderBatteryIndicatorView: UIView {
+final class WKJBatteryView: UIView {
+    private static let defaultColor = UIColor(white: 0.5490196078431373, alpha: 1)
+    private static let chargeColor = UIColor(red: 48.0 / 255.0, green: 208.0 / 255.0, blue: 88.0 / 255.0, alpha: 1)
+
+    private let batteryView = UIView()
+    private let frameLayer = CAShapeLayer()
+    private let arrowLayer = CAShapeLayer()
+    private var lastBatViewColor: UIColor?
     private var storedValue: CGFloat = 0
+    private var bWidth: CGFloat {
+        max(0, bounds.width - 1)
+    }
+    private var bHeight: CGFloat {
+        max(0, bounds.height)
+    }
 
     var value: CGFloat {
         get {
             storedValue
         }
         set {
+            guard newValue.isNaN == false else {
+                return
+            }
             storedValue = min(max(newValue, 0), 1)
-            setNeedsDisplay()
+            resetColor()
+            updateBatteryFrame()
         }
     }
 
-    var color: UIColor {
-        get {
-            outlineColor
-        }
-        set {
-            outlineColor = newValue
-            fillColor = newValue
-        }
-    }
-
-    var fillColor = ReaderTheme.standard.headerColor {
+    var color = WKJBatteryView.defaultColor {
         didSet {
-            setNeedsDisplay()
+            updateLayerColor()
+            resetColor()
         }
     }
 
-    private var outlineColor = ReaderTheme.standard.headerColor {
+    var batteryState: UIDevice.BatteryState = UIDevice.current.batteryState {
         didSet {
-            setNeedsDisplay()
+            resetColor()
+        }
+    }
+
+    private(set) var fillColor = WKJBatteryView.defaultColor {
+        didSet {
+            batteryView.backgroundColor = fillColor
         }
     }
 
@@ -525,6 +535,10 @@ final class ReaderBatteryIndicatorView: UIView {
         super.init(frame: frame)
         backgroundColor = .clear
         isOpaque = false
+        configureLayers()
+        addSubview(batteryView)
+        updateLayerColor()
+        resetColor()
     }
 
     @available(*, unavailable)
@@ -532,86 +546,69 @@ final class ReaderBatteryIndicatorView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    override func draw(_ rect: CGRect) {
-        guard let context = UIGraphicsGetCurrentContext(),
-              rect.width > 3,
-              rect.height > 2 else {
-            return
-        }
-        context.saveGState()
-
-        let scale = rect.height / 12
-        let capWidth = max(1.5, 1.55 * scale)
-        let capGap = max(0.55, 0.75 * scale)
-        let bodyRect = CGRect(
-            x: max(0.8, 0.9 * scale),
-            y: max(0.9, 1.1 * scale),
-            width: rect.width - capWidth - capGap - max(1.8, 2.0 * scale),
-            height: rect.height - max(1.8, 2.2 * scale)
-        )
-        let capHeight = min(rect.height - 4, max(4, 4.8 * scale))
-        let capRect = CGRect(
-            x: bodyRect.maxX + capGap,
-            y: (rect.height - capHeight) / 2,
-            width: capWidth,
-            height: capHeight
-        )
-        let bodyCornerRadius = min(2.3 * scale, bodyRect.height / 2)
-        let capCornerRadius = min(0.8 * scale, capRect.height / 2)
-
-        context.setShadow(
-            offset: CGSize(width: 0.6 * scale, height: 0.8 * scale),
-            blur: 1.2 * scale,
-            color: outlineColor.withAlphaComponent(0.28).cgColor
-        )
-        outlineColor.setFill()
-        UIBezierPath(roundedRect: bodyRect, cornerRadius: bodyCornerRadius).fill()
-        UIBezierPath(roundedRect: capRect, cornerRadius: capCornerRadius).fill()
-
-        context.setShadow(offset: .zero, blur: 0, color: nil)
-        UIColor(white: isDarkColor(outlineColor) ? 0.10 : 0.96, alpha: 1).setFill()
-        let innerInsetX = max(2.0, 2.0 * scale)
-        let innerInsetY = max(1.7, 1.8 * scale)
-        let innerRect = bodyRect.insetBy(dx: innerInsetX, dy: innerInsetY)
-        if innerRect.width > 0, innerRect.height > 0 {
-            UIBezierPath(
-                roundedRect: innerRect,
-                cornerRadius: min(1.5 * scale, innerRect.height / 2)
-            ).fill()
-
-            let fillPadding = max(0.5, 0.45 * scale)
-            let fillBounds = innerRect.insetBy(dx: fillPadding, dy: fillPadding)
-            let fillWidth = max(0, fillBounds.width * value)
-            let fillRect = CGRect(
-                x: fillBounds.minX,
-                y: fillBounds.minY,
-                width: fillWidth,
-                height: fillBounds.height
-            )
-            if fillRect.width > 0 {
-                fillColor.setFill()
-                UIBezierPath(
-                    roundedRect: fillRect,
-                    cornerRadius: min(1.0 * scale, fillRect.height / 2)
-                ).fill()
-            }
-        }
-        context.restoreGState()
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateBatteryPath()
+        updateBatteryFrame()
     }
 
-    private func isDarkColor(_ color: UIColor) -> Bool {
-        var white: CGFloat = 0
-        var alpha: CGFloat = 0
-        if color.getWhite(&white, alpha: &alpha) {
-            return white < 0.45
+    private func configureLayers() {
+        frameLayer.lineWidth = 1
+        frameLayer.fillColor = UIColor.clear.cgColor
+        layer.addSublayer(frameLayer)
+
+        arrowLayer.lineWidth = 1
+        arrowLayer.fillColor = UIColor.clear.cgColor
+        layer.addSublayer(arrowLayer)
+    }
+
+    private func updateLayerColor() {
+        let resolvedColor = color
+        frameLayer.strokeColor = resolvedColor.cgColor
+        arrowLayer.strokeColor = resolvedColor.cgColor
+    }
+
+    private func updateBatteryPath() {
+        let bodyRect = CGRect(x: 0, y: 0, width: bWidth, height: bHeight)
+        frameLayer.path = UIBezierPath(
+            roundedRect: bodyRect,
+            cornerRadius: 1
+        ).cgPath
+
+        let capRect = CGRect(
+            x: bWidth,
+            y: bHeight * 0.25,
+            width: 1,
+            height: bHeight * 0.5
+        )
+        arrowLayer.path = UIBezierPath(
+            roundedRect: capRect,
+            cornerRadius: 0
+        ).cgPath
+    }
+
+    private func updateBatteryFrame() {
+        batteryView.frame = CGRect(
+            x: 1,
+            y: 1,
+            width: max(0, bWidth - 2) * value,
+            height: max(0, bHeight - 2)
+        )
+    }
+
+    private func resetColor() {
+        let nextFillColor: UIColor
+        if batteryState == .charging {
+            nextFillColor = Self.chargeColor
+        } else if value < 0.1 {
+            nextFillColor = .red
+        } else {
+            nextFillColor = color
         }
 
-        var red: CGFloat = 0
-        var green: CGFloat = 0
-        var blue: CGFloat = 0
-        if color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
-            return red * 0.299 + green * 0.587 + blue * 0.114 < 0.45
+        if lastBatViewColor?.isEqual(nextFillColor) != true {
+            lastBatViewColor = nextFillColor
+            fillColor = nextFillColor
         }
-        return false
     }
 }

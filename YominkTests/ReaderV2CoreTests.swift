@@ -676,6 +676,9 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertFalse(controller.bottomWidgetView.timeLabel.isHidden)
         XCTAssertFalse(controller.bottomWidgetView.batteryView.isHidden)
         XCTAssertFalse(controller.bottomWidgetView.batteryLabel.isHidden)
+        XCTAssertEqual(controller.bottomWidgetView.batteryLabel.frame.minX, 0, accuracy: 0.1)
+        XCTAssertEqual(controller.bottomWidgetView.batteryView.bounds.size.width, 17, accuracy: 0.1)
+        XCTAssertEqual(controller.bottomWidgetView.batteryView.bounds.size.height, 8, accuracy: 0.1)
         XCTAssertLessThan(
             controller.bottomWidgetView.batteryLabel.frame.minX,
             controller.bottomWidgetView.batteryView.frame.minX
@@ -728,7 +731,7 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
-    func testBottomWidgetKeepsBatteryGreyWhileCharging() {
+    func testBottomWidgetTurnsBatteryLevelGreenWhileCharging() {
         let widget = ReaderBottomWidgetView(frame: CGRect(x: 0, y: 0, width: 180, height: 14))
         widget.batterySnapshotProvider = {
             ReaderBatterySnapshot(level: 0.75, state: .charging)
@@ -751,14 +754,15 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(widget.batteryLabel.text, Optional("75%"))
         XCTAssertTrue(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
-        XCTAssertTrue(widget.batteryView.fillColor.isEqual(ReaderTheme.standard.headerColor))
+        let chargeColor = UIColor(red: 48.0 / 255.0, green: 208.0 / 255.0, blue: 88.0 / 255.0, alpha: 1)
+        XCTAssertTrue(widget.batteryView.fillColor.isEqual(chargeColor))
     }
 
     @MainActor
-    func testBottomWidgetTurnsBatteryRedBelowTwentyPercent() {
+    func testBottomWidgetTurnsBatteryRedBelowTenPercent() {
         let widget = ReaderBottomWidgetView(frame: CGRect(x: 0, y: 0, width: 180, height: 14))
         widget.batterySnapshotProvider = {
-            ReaderBatterySnapshot(level: 0.19, state: .unplugged)
+            ReaderBatterySnapshot(level: 0.09, state: .unplugged)
         }
         widget.updateSettings(
             showTime: true,
@@ -776,10 +780,36 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         widget.layoutIfNeeded()
 
-        let expectedRed = UIColor(red: 0.82, green: 0.20, blue: 0.18, alpha: 1)
-        XCTAssertEqual(widget.batteryLabel.text, Optional("19%"))
-        XCTAssertTrue(widget.batteryLabel.textColor.isEqual(expectedRed))
-        XCTAssertTrue(widget.batteryView.fillColor.isEqual(expectedRed))
+        XCTAssertEqual(widget.batteryLabel.text, Optional("9%"))
+        XCTAssertTrue(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
+        XCTAssertTrue(widget.batteryView.fillColor.isEqual(.red))
+    }
+
+    @MainActor
+    func testBottomWidgetKeepsBatteryHeaderColorAtTenPercent() {
+        let widget = ReaderBottomWidgetView(frame: CGRect(x: 0, y: 0, width: 180, height: 14))
+        widget.batterySnapshotProvider = {
+            ReaderBatterySnapshot(level: 0.10, state: .unplugged)
+        }
+        widget.updateSettings(
+            showTime: true,
+            showBatteryView: true,
+            showBatteryLabel: true,
+            showChapterTitle: true,
+            showPageProgress: true,
+            showFullProgress: false
+        )
+        widget.updateContent(
+            chapterTitle: "Chapter",
+            pageIndex: 0,
+            pageCount: 1,
+            fullProgress: 0
+        )
+        widget.layoutIfNeeded()
+
+        XCTAssertEqual(widget.batteryLabel.text, Optional("10%"))
+        XCTAssertTrue(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
+        XCTAssertTrue(widget.batteryView.fillColor.isEqual(ReaderTheme.standard.headerColor))
     }
 
     @MainActor
