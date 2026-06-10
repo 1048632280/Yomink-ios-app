@@ -18,6 +18,9 @@ struct LibraryView: View {
     @State private var pendingReaderBook: Book?
     @State private var pendingReaderOpenID = UUID()
     @State private var readerNavigationGuardUntil: Date?
+    @State private var pendingSharedOpenURL: URL?
+    @State private var pendingSharedImportConfirmation: SharedImportConfirmation?
+    @State private var sharedImportCleanupURL: URL?
 
     init() {
         Self.configureNavigationBarAppearance()
@@ -43,6 +46,9 @@ struct LibraryView: View {
         }
         .ignoresSafeArea(.all)
         .statusBar(hidden: activeReaderBook != nil && isReaderStatusBarHidden)
+        .onOpenURL { url in
+            handleSharedOpenURL(url)
+        }
     }
 
     @ViewBuilder
@@ -219,6 +225,18 @@ struct LibraryView: View {
             } message: {
                 Text(viewModel.importErrorMessage ?? "")
             }
+            .alert(item: $pendingSharedImportConfirmation) { confirmation in
+                Alert(
+                    title: Text("import.shared.confirm.title"),
+                    message: Text(verbatim: confirmation.message),
+                    primaryButton: .default(Text("common.confirm")) {
+                        beginSharedTextImport(from: confirmation.url)
+                    },
+                    secondaryButton: .cancel(Text("common.cancel")) {
+                        cleanupTemporaryImportFile(at: confirmation.url)
+                    }
+                )
+            }
             .alert(item: $pendingBookDeletion) { deletion in
                 Alert(
                     title: Text("library.delete.confirm.title"),
@@ -243,12 +261,16 @@ struct LibraryView: View {
                         repository: services.libraryRepository,
                         scope: selectedScope
                     )
+                    processPendingSharedOpenURLIfReady()
                 }
             }
             .onChange(of: viewModel.importPreview?.sourceURL.absoluteString) { previewID in
                 if previewID != nil {
                     activeRoute = .importBook
                 }
+            }
+            .onChange(of: activeRoute) { route in
+                handleActiveRouteChange(route)
             }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 if viewModel.isSelecting {
@@ -521,7 +543,7 @@ struct LibraryView: View {
                             reloadBooksIfReady()
                         },
                         onOpenExistingBook: { book in
-                            viewModel.clearImportPreview()
+                            closeImportRoute()
                             openBookAfterRouteDismissal(book)
                         },
                         onCancel: {
@@ -934,6 +956,110 @@ struct LibraryView: View {
             .cornerRadius(8)
     }
 
+    private func handleSharedOpenURL(_ url: URL) {
+        if let pendingSharedOpenURL,
+           pendingSharedOpenURL != url {
+            cleanupTemporaryImportFile(at: pendingSharedOpenURL)
+        }
+
+        pendingSharedOpenURL = url
+        processPendingSharedOpenURLIfReady()
+    }
+
+    private func processPendingSharedOpenURLIfReady() {
+        guard let url = pendingSharedOpenURL,
+              case .ready = environment.bootstrapState
+        else {
+            return
+        }
+
+        pendingSharedOpenURL = nil
+        handleReadySharedOpenURL(url)
+    }
+
+    private func handleReadySharedOpenURL(_ url: URL) {
+        guard url.isFileURL else {
+            viewModel.showError(SharedImportOpenError.unsupportedFile, title: "import.error.title")
+            return
+        }
+
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            viewModel.showError(ImportService.ImportError.cannotReadFile, title: "import.error.title")
+            cleanupTemporaryImportFile(at: url)
+            return
+        }
+
+        guard !viewModel.isImporting,
+              viewModel.importPreview == nil,
+              pendingSharedImportConfirmation == nil
+        else {
+            viewModel.showError(SharedImportOpenError.importInProgress, title: "import.error.title")
+            cleanupTemporaryImportFile(at: url)
+            return
+        }
+
+        switch url.pathExtension.lowercased() {
+        case "txt":
+            pendingSharedImportConfirmation = SharedImportConfirmation(url: url)
+        case "ymk":
+            viewModel.showError(SharedImportOpenError.unsupportedYMK, title: "import.error.title")
+            cleanupTemporaryImportFile(at: url)
+        default:
+            viewModel.showError(SharedImportOpenError.unsupportedFile, title: "import.error.title")
+            cleanupTemporaryImportFile(at: url)
+        }
+    }
+
+    private func beginSharedTextImport(from url: URL) {
+        guard case let .ready(services) = environment.bootstrapState else {
+            pendingSharedOpenURL = url
+            return
+        }
+
+        sharedImportCleanupURL = url
+        let didStartPreview = viewModel.prepareImportPreview(
+            from: url,
+            importService: services.importService,
+            targetGroupID: currentImportGroupID,
+            onFailure: {
+                cleanupSharedImportIfNeeded(for: url)
+            }
+        )
+
+        guard didStartPreview else {
+            viewModel.showError(SharedImportOpenError.importInProgress, title: "import.error.title")
+            cleanupSharedImportIfNeeded(for: url)
+            return
+        }
+    }
+
+    private func handleActiveRouteChange(_ route: LibraryRoute?) {
+        guard route != .importBook,
+              viewModel.importPreview != nil
+        else {
+            return
+        }
+
+        closeImportRoute()
+    }
+
+    private func cleanupSharedImportIfNeeded(for url: URL) {
+        guard sharedImportCleanupURL == url else {
+            return
+        }
+
+        cleanupTemporaryImportFile(at: url)
+        sharedImportCleanupURL = nil
+    }
+
+    private func cleanupTemporaryImportFile(at url: URL) {
+        guard url.isFileURL else {
+            return
+        }
+
+        try? FileManager.default.removeItem(at: url)
+    }
+
     private func reloadBooksIfReady() {
         if case let .ready(services) = environment.bootstrapState {
             Task {
@@ -1090,6 +1216,10 @@ struct LibraryView: View {
     }
 
     private func closeImportRoute() {
+        if let preview = viewModel.importPreview {
+            cleanupSharedImportIfNeeded(for: preview.sourceURL)
+        }
+
         viewModel.clearImportPreview()
         activeRoute = nil
     }
@@ -1200,6 +1330,38 @@ private enum LibraryDrawerSide: Equatable {
             return min(max(translation, -width), 0)
         case .right:
             return max(min(translation, width), 0)
+        }
+    }
+}
+
+private struct SharedImportConfirmation: Identifiable, Equatable {
+    let url: URL
+
+    var id: String {
+        url.absoluteString
+    }
+
+    var message: String {
+        String(
+            format: NSLocalizedString("import.shared.confirm.message", comment: ""),
+            url.lastPathComponent
+        )
+    }
+}
+
+private enum SharedImportOpenError: LocalizedError {
+    case unsupportedYMK
+    case unsupportedFile
+    case importInProgress
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedYMK:
+            return NSLocalizedString("import.shared.unsupportedYMK", comment: "")
+        case .unsupportedFile:
+            return NSLocalizedString("import.shared.unsupportedFile", comment: "")
+        case .importInProgress:
+            return NSLocalizedString("import.shared.importInProgress", comment: "")
         }
     }
 }

@@ -175,7 +175,7 @@ final class LibraryViewModel: ObservableObject {
             guard let url = urls.first else {
                 return
             }
-            prepareImportPreview(
+            _ = prepareImportPreview(
                 from: url,
                 importService: importService,
                 targetGroupID: targetGroupID
@@ -373,11 +373,17 @@ final class LibraryViewModel: ObservableObject {
         )
     }
 
-    private func prepareImportPreview(
+    @discardableResult
+    func prepareImportPreview(
         from url: URL,
         importService: ImportService,
-        targetGroupID: UUID?
-    ) {
+        targetGroupID: UUID?,
+        onFailure: @escaping () -> Void = {}
+    ) -> Bool {
+        guard !isImporting else {
+            return false
+        }
+
         isImporting = true
         importTargetGroupID = targetGroupID
         batchImportProgress = nil
@@ -391,6 +397,7 @@ final class LibraryViewModel: ObservableObject {
                     showError(error, title: "import.error.title")
                     currentImportTask = nil
                     importTargetGroupID = nil
+                    onFailure()
                 }
             }
             isImporting = false
@@ -398,6 +405,7 @@ final class LibraryViewModel: ObservableObject {
                 currentImportTask = nil
             }
         }
+        return true
     }
 
     private func startBatchImport(
