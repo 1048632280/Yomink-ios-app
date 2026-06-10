@@ -1,4 +1,4 @@
-name: Build Unsigned IPA
+name: Build Unsigned IPA and Test
 
 on:
   workflow_dispatch:
@@ -12,17 +12,17 @@ on:
       - "Yomink.xcodeproj/**"
       - ".github/workflows/build-unsigned-ipa.yml"
 
+env:
+  PROJECT: Yomink.xcodeproj
+  SCHEME: Yomink
+
 jobs:
-  build:
+  build-ipa:
     name: Build unsigned IPA
     runs-on: macos-15
 
     env:
-      PROJECT: Yomink.xcodeproj
-      SCHEME: Yomink
       CONFIGURATION: Release
-      SIMULATOR_BUILD_DESTINATION: generic/platform=iOS Simulator
-      SIMULATOR_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest,arch=arm64
       ARCHIVE_PATH: build/Yomink.xcarchive
       IPA_PATH: artifacts/Yomink-unsigned.ipa
 
@@ -50,15 +50,6 @@ jobs:
             -resolvePackageDependencies \
             -project "$PROJECT" \
             -scheme "$SCHEME"
-
-      - name: Build Debug simulator
-        run: |
-          xcodebuild build \
-            -project "$PROJECT" \
-            -scheme "$SCHEME" \
-            -configuration Debug \
-            -destination "$SIMULATOR_BUILD_DESTINATION" \
-            CODE_SIGNING_ALLOWED=NO
 
       - name: Archive without code signing
         run: |
@@ -93,20 +84,55 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Run unit tests
+  run-tests:
+    name: Run unit tests
+    runs-on: macos-15
+
+    env:
+      CONFIGURATION: Debug
+      SIMULATOR_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 16,OS=latest,arch=arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Cache SwiftPM dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/org.swift.swiftpm
+            ~/Library/org.swift.swiftpm
+            ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: ${{ runner.os }}-spm-${{ hashFiles('Yomink.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: |
+            ${{ runner.os }}-spm-
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild \
+            -resolvePackageDependencies \
+            -project "$PROJECT" \
+            -scheme "$SCHEME"
+
+      - name: Build for testing
         run: |
           xcodebuild build-for-testing \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
-            -configuration Debug \
+            -configuration "$CONFIGURATION" \
             -destination "$SIMULATOR_TEST_DESTINATION" \
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO
 
+      - name: Run unit tests
+        run: |
           xcodebuild test-without-building \
             -project "$PROJECT" \
             -scheme "$SCHEME" \
-            -configuration Debug \
+            -configuration "$CONFIGURATION" \
             -destination "$SIMULATOR_TEST_DESTINATION" \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
