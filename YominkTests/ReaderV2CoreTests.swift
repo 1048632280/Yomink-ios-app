@@ -758,7 +758,8 @@ final class ReaderV2CoreTests: XCTestCase {
             ],
             heights: [120, 180],
             pageModels: [firstModel, secondModel],
-            fullProgresses: [0.1, 0.2]
+            fullProgresses: [0.1, 0.2],
+            bookTitle: "Book Title"
         )
 
         container.reload(
@@ -771,6 +772,7 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(container.turnPageType, .verticalContinuous)
         XCTAssertFalse(container.tableView.showsVerticalScrollIndicator)
+        XCTAssertNil(container.tableView.layer.mask)
         XCTAssertEqual(container.tableView.contentInset.top, 50, accuracy: 0.1)
         XCTAssertEqual(container.tableView.contentInset.bottom, 35, accuracy: 0.1)
         XCTAssertFalse(container.bottomWidgetView.progressLabel.isHidden)
@@ -786,13 +788,14 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(container.indexPath(for: secondModel), Optional(IndexPath(row: 1, section: 0)))
 
         container.display(
-            pageModel: secondModel,
-            pageController: readerV2PageController(pageModel: secondModel),
+            pageModel: firstModel,
+            pageController: readerV2PageController(pageModel: firstModel),
             direction: .forward,
             animated: false
         )
 
-        XCTAssertEqual(container.currentPageModel, Optional(secondModel))
+        XCTAssertEqual(container.currentPageModel, Optional(firstModel))
+        XCTAssertEqual(container.chapterTitleLabel.text, Optional("滚动章节"))
     }
 
     @MainActor
@@ -1396,8 +1399,6 @@ final class ReaderV2CoreTests: XCTestCase {
             title: text,
             timestamp: Date(timeIntervalSince1970: Double(chapterIndex)),
             items: [attributed],
-            sourceItems: [attributed],
-            displayRanges: [NSRange(location: 0, length: (text as NSString).length)],
             heights: [120],
             pageModels: [model],
             fullProgresses: [0]

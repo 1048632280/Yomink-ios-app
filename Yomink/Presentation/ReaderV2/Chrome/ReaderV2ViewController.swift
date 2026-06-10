@@ -61,6 +61,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var lastPaginationSize = CGSize.zero
     private var isViewVisible = false
     private var shouldStartAutoReadAfterOpen = false
+    private var autoReadEntryPageMode: ReaderSettings.PageMode?
     private var didRecordOpenHistory = false
     private var openedAt = Date()
 
@@ -404,7 +405,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         readerSettings = normalizedSettings
         if autoReadController.isReading,
            normalizedSettings.pageMode != .scroll {
-            stopAutoReading(animated: false)
+            stopAutoReading(animated: false, restoresEntryPageMode: false)
         }
         let needsRepagination = ReaderThemeManager.needsRepagination(
             from: previousSettings,
@@ -795,9 +796,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         )
         currentPageModel = pageModel
         updateMenuState()
-        if activeTurnPageType == .verticalContinuous {
-            loadNextScrollChapterIfNeeded()
-        } else {
+        if activeTurnPageType != .verticalContinuous {
             preloadAround(chapterIndex: pageModel.chapterIndex)
         }
         if shouldStartAutoReadAfterOpen {
@@ -943,8 +942,6 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             title: chapterTitle(at: chapterIndex),
             timestamp: Date(timeIntervalSince1970: Double(chapterIndex)),
             items: result.pages.map(\.attributedText),
-            sourceItems: result.pages.map(\.sourceAttributedText),
-            displayRanges: result.pages.map(\.displayRange),
             heights: heights,
             pageModels: pageModels,
             fullProgresses: pageModels.map { pageModel in
@@ -1007,14 +1004,21 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         loadScrollChapter(previousChapterIndex, insertsAtBeginning: true)
     }
 
-    private func loadNextScrollChapterIfNeeded() {
+    @discardableResult
+    private func loadNextScrollChapterIfNeeded(
+        resumesAutoReadAfterLoad: Bool = false
+    ) -> Bool {
         guard activeTurnPageType == .verticalContinuous,
-              let last = loadedScrollChapterIndexes.last ?? currentPageModel?.chapterIndex,
-              chapters.indices.contains(last + 1),
-              preloadTasks[last + 1] == nil else {
-            return
+              let last = loadedScrollChapterIndexes.last ?? currentPageModel?.chapterIndex else {
+            return false
         }
         let nextChapterIndex = last + 1
+        guard chapters.indices.contains(nextChapterIndex) else {
+            return false
+        }
+        if preloadTasks[nextChapterIndex] != nil {
+            return true
+        }
         if paginationCache[nextChapterIndex] != nil {
             let inserted = insertLoadedScrollChapter(
                 nextChapterIndex,
@@ -1023,17 +1027,40 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             if let scrollContainer = activeContainer as? ReaderScrollContainer {
                 if inserted,
                    let section = scrollSection(forChapterAt: nextChapterIndex) {
-                    scrollContainer.appendSections([section])
+                    scrollContainer.appendSections([section]) { [weak self, weak scrollContainer] in
+                        guard let self,
+                              let scrollContainer else {
+                            return
+                        }
+                        guard resumesAutoReadAfterLoad
+                            || self.autoReadController.isPausedForContentLoad else {
+                            return
+                        }
+                        self.autoReadController.resumeAfterContentLoadIfNeeded(
+                            scrollView: scrollContainer.tableView
+                        )
+                    }
+                } else if resumesAutoReadAfterLoad
+                    || autoReadController.isPausedForContentLoad {
+                    autoReadController.resumeAfterContentLoadIfNeeded(
+                        scrollView: scrollContainer.tableView
+                    )
                 }
             }
-            return
+            return true
         }
-        loadScrollChapter(nextChapterIndex, insertsAtBeginning: false)
+        loadScrollChapter(
+            nextChapterIndex,
+            insertsAtBeginning: false,
+            resumesAutoReadAfterLoad: resumesAutoReadAfterLoad
+        )
+        return true
     }
 
     private func loadScrollChapter(
         _ chapterIndex: Int,
-        insertsAtBeginning: Bool
+        insertsAtBeginning: Bool,
+        resumesAutoReadAfterLoad: Bool = false
     ) {
         preloadTasks[chapterIndex] = Task { [weak self] in
             do {
@@ -1046,6 +1073,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     atBeginning: insertsAtBeginning
                 )
                 if let scrollContainer = self.activeContainer as? ReaderScrollContainer {
+                    let shouldResumeAutoRead = resumesAutoReadAfterLoad
+                        || self.autoReadController.isPausedForContentLoad
                     if inserted,
                        let section = self.scrollSection(forChapterAt: chapterIndex) {
                         if insertsAtBeginning {
@@ -1056,12 +1085,16 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                                       let scrollContainer else {
                                     return
                                 }
+                                guard shouldResumeAutoRead else {
+                                    return
+                                }
                                 self.autoReadController.resumeAfterContentLoadIfNeeded(
                                     scrollView: scrollContainer.tableView
                                 )
                             }
                         }
-                    } else if !insertsAtBeginning {
+                    } else if !insertsAtBeginning,
+                              shouldResumeAutoRead {
                         self.autoReadController.resumeAfterContentLoadIfNeeded(
                             scrollView: scrollContainer.tableView
                         )
@@ -1716,6 +1749,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private func requestStartAutoReading() {
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(false, animated: true)
+        autoReadEntryPageMode = readerSettings.normalized.pageMode
         guard activeTurnPageType == .verticalContinuous else {
             shouldStartAutoReadAfterOpen = true
             var settings = readerSettings
@@ -1723,10 +1757,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             applyReaderSettings(settings)
             return
         }
-        startAutoReadingIfPossible()
+        startAutoReadingIfPossible(showsPanel: false)
     }
 
-    private func startAutoReadingIfPossible(showsPanel: Bool = true) {
+    private func startAutoReadingIfPossible(showsPanel: Bool = false) {
         guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
             shouldStartAutoReadAfterOpen = true
             return
@@ -1734,11 +1768,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         if let currentPageModel {
             ensureScrollChapterLoaded(currentPageModel.chapterIndex)
         }
+        let preservesScrollPosition = scrollContainer.tableView.numberOfSections > 0
         scrollContainer.reload(
             sections: scrollSections(),
             layout: layout,
             theme: theme,
-            widgetVisibility: readerSettings.normalized.widgetVisibility
+            widgetVisibility: readerSettings.normalized.widgetVisibility,
+            preservesVisualPosition: preservesScrollPosition
         )
         autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
         autoReadController.start(
@@ -1750,22 +1786,42 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         updateSystemAppearance()
     }
 
-    private func stopAutoReading(animated: Bool) {
+    private func stopAutoReading(
+        animated: Bool,
+        restoresEntryPageMode: Bool = true
+    ) {
         guard autoReadController.isReading
             || autoReadController.hasDisplayLink
-            || autoReadPanelView.isPanelVisible else {
+            || autoReadPanelView.isPanelVisible
+            || shouldStartAutoReadAfterOpen
+            || autoReadEntryPageMode != nil else {
             return
         }
-        finishAutoReading(animated: animated)
+        finishAutoReading(
+            animated: animated,
+            restoresEntryPageMode: restoresEntryPageMode
+        )
     }
 
-    private func finishAutoReading(animated: Bool) {
+    private func finishAutoReading(
+        animated: Bool,
+        restoresEntryPageMode: Bool = true
+    ) {
         shouldStartAutoReadAfterOpen = false
+        let entryPageMode = autoReadEntryPageMode
+        autoReadEntryPageMode = nil
         autoReadController.stop()
         setAutoReadPanelVisible(false, animated: animated)
         updateMenuState()
         updateSystemAppearance()
         saveProgressImmediately()
+        if restoresEntryPageMode,
+           let entryPageMode,
+           readerSettings.normalized.pageMode != entryPageMode {
+            var settings = readerSettings
+            settings.pageMode = entryPageMode
+            applyReaderSettings(settings)
+        }
     }
 
     private func pauseAutoReadingForBackground() {
@@ -1816,47 +1872,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         let nextChapterIndex = (loadedScrollChapterIndexes.last ?? currentPageModel.chapterIndex) + 1
         if chapters.indices.contains(nextChapterIndex) {
-            if preloadTasks[nextChapterIndex] != nil {
-                return true
-            }
-            preloadTasks[nextChapterIndex] = Task { [weak self] in
-                do {
-                    guard let self else {
-                        return
-                    }
-                    _ = try await self.divisionResult(forChapterAt: nextChapterIndex)
-                    let inserted = self.insertLoadedScrollChapter(
-                        nextChapterIndex,
-                        atBeginning: false
-                    )
-                    if let scrollContainer = self.activeContainer as? ReaderScrollContainer {
-                        if inserted,
-                           let section = self.scrollSection(forChapterAt: nextChapterIndex) {
-                            scrollContainer.appendSections([section]) { [weak self, weak scrollContainer] in
-                                guard let self,
-                                      let scrollContainer else {
-                                    return
-                                }
-                                self.autoReadController.resumeAfterContentLoadIfNeeded(
-                                    scrollView: scrollContainer.tableView
-                                )
-                            }
-                        } else {
-                            self.autoReadController.resumeAfterContentLoadIfNeeded(
-                                scrollView: scrollContainer.tableView
-                            )
-                        }
-                    }
-                    self.preloadTasks[nextChapterIndex] = nil
-                } catch is CancellationError {
-                    self?.preloadTasks[nextChapterIndex] = nil
-                } catch {
-                    self?.preloadTasks[nextChapterIndex] = nil
-                    self?.finishAutoReading(animated: true)
-                    self?.showError(error)
-                }
-            }
-            return true
+            return loadNextScrollChapterIfNeeded(resumesAutoReadAfterLoad: true)
         }
         finishAutoReading(animated: true)
         return false
@@ -2021,7 +2037,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func closeReader() {
-        stopAutoReading(animated: false)
+        stopAutoReading(animated: false, restoresEntryPageMode: false)
         saveProgressImmediately()
         onClose()
     }

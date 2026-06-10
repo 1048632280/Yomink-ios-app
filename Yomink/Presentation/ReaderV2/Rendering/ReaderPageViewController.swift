@@ -197,10 +197,12 @@ enum ReaderPageWidgetLayout {
     static func headerTitle(
         bookTitle: String,
         chapterTitle: String,
-        pageIndex: Int
+        pageIndex: Int,
+        prefersBookTitleOnFirstPage: Bool = true
     ) -> String {
         let normalizedBookTitle = bookTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        if pageIndex == 0,
+        if prefersBookTitleOnFirstPage,
+           pageIndex == 0,
            normalizedBookTitle.isEmpty == false {
             return normalizedBookTitle
         }

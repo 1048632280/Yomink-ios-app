@@ -4,6 +4,7 @@ import UIKit
 final class ReaderScrollPageCell: UITableViewCell {
     static let reuseIdentifier = "ReaderScrollPageCell"
 
+    private let pageBackgroundView = ReaderPageBackgroundView(frame: .zero)
     private let textView = TextReadView(frame: .zero)
     private(set) var pageModel: ReaderPageModel?
     var onTextSelectionAction: ((ReaderTextSelectionAction, String) -> Void)? {
@@ -24,7 +25,9 @@ final class ReaderScrollPageCell: UITableViewCell {
         contentView.backgroundColor = .clear
         contentView.isOpaque = false
 
+        pageBackgroundView.translatesAutoresizingMaskIntoConstraints = false
         textView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(pageBackgroundView)
         contentView.addSubview(textView)
         let textLeadingConstraint = textView.leadingAnchor.constraint(
             equalTo: contentView.leadingAnchor,
@@ -38,6 +41,11 @@ final class ReaderScrollPageCell: UITableViewCell {
         self.textTrailingConstraint = textTrailingConstraint
 
         NSLayoutConstraint.activate([
+            pageBackgroundView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            pageBackgroundView.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            pageBackgroundView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            pageBackgroundView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+
             textView.topAnchor.constraint(equalTo: contentView.topAnchor),
             textLeadingConstraint,
             textTrailingConstraint,
@@ -66,8 +74,8 @@ final class ReaderScrollPageCell: UITableViewCell {
 
     func configure(
         attributedText: NSAttributedString,
-        sourceAttributedText: NSAttributedString? = nil,
-        displayRange: NSRange? = nil,
+        sourceAttributedText _: NSAttributedString? = nil,
+        displayRange _: NSRange? = nil,
         pageModel: ReaderPageModel,
         layout: ReaderLayout,
         theme: ReaderTheme,
@@ -79,16 +87,20 @@ final class ReaderScrollPageCell: UITableViewCell {
         self.pageModel = pageModel
         self.layout = layout
         self.theme = theme
+        pageBackgroundView.apply(theme: theme)
         textLeadingConstraint?.constant = layout.leftMargin
         textTrailingConstraint?.constant = -layout.rightMargin
         textView.layout = layout
         textView.contentColor = theme.contentColor
         textView.contentRectOverride = textView.bounds
         textView.onSelectionAction = onTextSelectionAction
-        textView.setAttributedText(
-            sourceAttributedText ?? attributedText,
-            displayRange: displayRange
-        )
+        textView.setAttributedText(attributedText)
         setNeedsLayout()
+    }
+
+    func apply(theme: ReaderTheme) {
+        self.theme = theme
+        pageBackgroundView.apply(theme: theme)
+        textView.contentColor = theme.contentColor
     }
 }

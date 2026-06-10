@@ -5,8 +5,6 @@ struct ReaderScrollSection {
     var title: String
     var timestamp: Date
     var items: [NSAttributedString]
-    var sourceItems: [NSAttributedString] = []
-    var displayRanges: [NSRange] = []
     var heights: [CGFloat]
     var pageModels: [ReaderPageModel]
     var fullProgresses: [Double]
@@ -17,8 +15,8 @@ struct ReaderScrollSection {
 final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     private let backgroundPageView = ReaderPageBackgroundView(frame: .zero)
     let tableView = UITableView(frame: .zero, style: .plain)
-    let headerOverlayView = UIView()
-    let bottomOverlayView = UIView()
+    let headerOverlayView = ReaderPageBackgroundView(frame: .zero)
+    let bottomOverlayView = ReaderPageBackgroundView(frame: .zero)
     let chapterTitleLabel = UILabel()
     let bottomWidgetView = ReaderBottomWidgetView()
 
@@ -74,7 +72,10 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         self.widgetVisibility = widgetVisibility
         view.backgroundColor = theme.backgroundColor
         backgroundPageView.apply(theme: theme)
+        headerOverlayView.apply(theme: theme)
+        bottomOverlayView.apply(theme: theme)
         tableView.backgroundColor = .clear
+        tableView.layer.mask = nil
         updateWidgetAppearance()
         updateTableInsets()
         tableView.reloadData()
@@ -176,9 +177,10 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         tableView.backgroundColor = .clear
         tableView.visibleCells.forEach { cell in
             cell.backgroundColor = .clear
+            (cell as? ReaderScrollPageCell)?.apply(theme: theme)
         }
-        headerOverlayView.backgroundColor = .clear
-        bottomOverlayView.backgroundColor = .clear
+        headerOverlayView.apply(theme: theme)
+        bottomOverlayView.apply(theme: theme)
         updateWidgetAppearance()
     }
 
@@ -274,8 +276,10 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
 
     private func configureWidgets() {
         headerOverlayView.backgroundColor = .clear
+        headerOverlayView.apply(theme: theme)
         headerOverlayView.isUserInteractionEnabled = false
         bottomOverlayView.backgroundColor = .clear
+        bottomOverlayView.apply(theme: theme)
         bottomOverlayView.isUserInteractionEnabled = false
         chapterTitleLabel.backgroundColor = .clear
         chapterTitleLabel.textAlignment = .left
@@ -318,7 +322,6 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
             screenSize: bottomWidgetView.bounds.size,
             layoutConfig: layout
         )
-        updateTableMask()
     }
 
     private func updateTableInsets() {
@@ -331,27 +334,6 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         tableView.contentInset = insets
         tableView.scrollIndicatorInsets = insets
         lastTableInsets = insets
-        updateTableMask()
-    }
-
-    private func updateTableMask() {
-        guard tableView.bounds.width > 0,
-              tableView.bounds.height > 0 else {
-            tableView.layer.mask = nil
-            return
-        }
-        let topInset = topReadingInset()
-        let bottomInset = bottomReadingInset()
-        let visibleRect = CGRect(
-            x: 0,
-            y: min(max(topInset, 0), tableView.bounds.height),
-            width: tableView.bounds.width,
-            height: max(0, tableView.bounds.height - topInset - bottomInset)
-        )
-        let maskLayer = CAShapeLayer()
-        maskLayer.frame = CGRect(origin: .zero, size: tableView.bounds.size)
-        maskLayer.path = UIBezierPath(rect: visibleRect).cgPath
-        tableView.layer.mask = maskLayer
     }
 
     private func topReadingInset() -> CGFloat {
@@ -414,7 +396,8 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         chapterTitleLabel.text = ReaderPageWidgetLayout.headerTitle(
             bookTitle: section.bookTitle,
             chapterTitle: section.title,
-            pageIndex: pageModel.pageIndex
+            pageIndex: pageModel.pageIndex,
+            prefersBookTitleOnFirstPage: false
         )
         bottomWidgetView.updateContent(
             chapterTitle: section.title,
@@ -478,12 +461,6 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
         cell.onTextSelectionAction = onTextSelectionAction
         cell.configure(
             attributedText: section.items[indexPath.row],
-            sourceAttributedText: section.sourceItems.indices.contains(indexPath.row)
-                ? section.sourceItems[indexPath.row]
-                : nil,
-            displayRange: section.displayRanges.indices.contains(indexPath.row)
-                ? section.displayRanges[indexPath.row]
-                : nil,
             pageModel: section.pageModels[indexPath.row],
             layout: layout,
             theme: theme,
@@ -509,7 +486,7 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
-        let topThreshold = -scrollView.adjustedContentInset.top + scrollView.bounds.height * 0.2
+        let topThreshold = -scrollView.adjustedContentInset.top - 24
         if (scrollView.isDragging || scrollView.isTracking),
            scrollView.contentOffset.y <= topThreshold {
             onLoadPreviousChapter?()

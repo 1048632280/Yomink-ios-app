@@ -261,15 +261,14 @@ struct PaibanManager {
                 fullText: attributedText.string
             )
 
+            let pageAttributedText = attributedText.attributedSubstring(from: range)
             let height = returnsHeights
-                ? Self.usedHeight(
-                    for: frame,
-                    displayRange: range,
-                    attributedText: attributedText,
+                ? Self.suggestedHeight(
+                    for: pageAttributedText,
+                    fittingWidth: pageRect.width,
                     fallback: pageRect.height
                 )
                 : pageRect.height
-            let pageAttributedText = attributedText.attributedSubstring(from: range)
             pages.append(
                 ReaderDivisionPage(
                     attributedText: pageAttributedText,
@@ -320,100 +319,28 @@ struct PaibanManager {
         )
     }
 
-    private static func usedHeight(
-        for frame: CTFrame,
-        displayRange: NSRange,
-        attributedText: NSAttributedString,
+    private static func suggestedHeight(
+        for attributedText: NSAttributedString,
+        fittingWidth: CGFloat,
         fallback: CGFloat
     ) -> CGFloat {
-        let lines = CTFrameGetLines(frame)
-        let lineCount = CFArrayGetCount(lines)
-        guard lineCount > 0,
-              displayRange.length > 0 else {
+        guard attributedText.length > 0 else {
             return max(1, fallback)
         }
-
-        var origins = Array(repeating: CGPoint.zero, count: lineCount)
-        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
-        let frameBounds = CTFrameGetPath(frame).boundingBox
-        let originsAreRelative = origins.allSatisfy {
-            $0.x >= 0
-                && $0.x <= frameBounds.width
-                && $0.y >= 0
-                && $0.y <= frameBounds.height
-        }
-
-        var top = -CGFloat.greatestFiniteMagnitude
-        var bottom = CGFloat.greatestFiniteMagnitude
-        for index in 0..<lineCount {
-            let line = unsafeBitCast(
-                CFArrayGetValueAtIndex(lines, index),
-                to: CTLine.self
-            )
-            let lineRange = CTLineGetStringRange(line)
-            guard lineRange.location != kCFNotFound,
-                  lineRange.length > 0,
-                  rangesIntersect(lineRange, displayRange) else {
-                continue
-            }
-
-            var ascent: CGFloat = 0
-            var descent: CGFloat = 0
-            var leading: CGFloat = 0
-            CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
-
-            let origin = origins[index]
-            let drawingOrigin = originsAreRelative
-                ? CGPoint(x: frameBounds.minX + origin.x, y: frameBounds.minY + origin.y)
-                : origin
-            top = max(top, drawingOrigin.y + ascent)
-            bottom = min(bottom, drawingOrigin.y - descent)
-        }
-
-        guard top.isFinite,
-              bottom.isFinite,
-              top > bottom else {
-            return max(1, fallback)
-        }
-
-        let trailingSpacing = trailingParagraphSpacing(
-            in: attributedText,
-            range: displayRange
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        let constraint = CGSize(
+            width: max(1, fittingWidth),
+            height: CGFloat.greatestFiniteMagnitude
         )
-        let height = ceil(top - bottom + trailingSpacing + 2)
-        return min(max(1, height), max(1, fallback))
+        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            CFRange(location: 0, length: attributedText.length),
+            nil,
+            constraint,
+            nil
+        )
+        let bufferedHeight = ceil(size.height) + 2
+        return min(max(1, bufferedHeight), max(1, fallback))
     }
 
-    private static func rangesIntersect(
-        _ lineRange: CFRange,
-        _ displayRange: NSRange
-    ) -> Bool {
-        let lineStart = lineRange.location
-        let lineEnd = lineRange.location + lineRange.length
-        let displayStart = displayRange.location
-        let displayEnd = displayRange.location + displayRange.length
-        return max(lineStart, displayStart) < min(lineEnd, displayEnd)
-    }
-
-    private static func trailingParagraphSpacing(
-        in attributedText: NSAttributedString,
-        range: NSRange
-    ) -> CGFloat {
-        guard attributedText.length > 0,
-              range.length > 0 else {
-            return 0
-        }
-        let endIndex = min(range.location + range.length - 1, attributedText.length - 1)
-        let text = attributedText.string as NSString
-        let character = text.character(at: endIndex)
-        guard character == 10 || character == 13,
-              let paragraph = attributedText.attribute(
-                  .paragraphStyle,
-                  at: endIndex,
-                  effectiveRange: nil
-              ) as? NSParagraphStyle else {
-            return 0
-        }
-        return ceil(paragraph.paragraphSpacing)
-    }
 }
