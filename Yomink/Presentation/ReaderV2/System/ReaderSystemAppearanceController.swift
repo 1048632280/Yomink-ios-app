@@ -43,14 +43,6 @@ final class ReaderSystemAppearanceController {
         state.theme.isDark ? .lightContent : .darkContent
     }
 
-    var prefersHomeIndicatorAutoHidden: Bool {
-        state.settings.normalized.autoHideHomeIndicator
-    }
-
-    var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
-        state.settings.normalized.autoHideHomeIndicator ? .bottom : []
-    }
-
     func update(
         settings: ReaderSettings,
         theme: ReaderTheme,

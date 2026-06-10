@@ -124,11 +124,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     override var prefersHomeIndicatorAutoHidden: Bool {
-        systemAppearanceController.prefersHomeIndicatorAutoHidden
+        Self.homeIndicatorAutoHidden(for: readerSettings)
     }
 
     override var preferredScreenEdgesDeferringSystemGestures: UIRectEdge {
-        systemAppearanceController.preferredScreenEdgesDeferringSystemGestures
+        Self.screenEdgesDeferringSystemGestures(for: readerSettings)
     }
 
     override func viewDidLoad() {
@@ -1247,6 +1247,20 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             isAutoReadPanelVisible: autoReadPanelView.isPanelVisible,
             isAutoReading: autoReadController.isReading
         )
+        updateHomeIndicatorPreferences()
+    }
+
+    private func updateHomeIndicatorPreferences() {
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
+        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+    }
+
+    static func homeIndicatorAutoHidden(for settings: ReaderSettings) -> Bool {
+        settings.normalized.autoHideHomeIndicator
+    }
+
+    static func screenEdgesDeferringSystemGestures(for settings: ReaderSettings) -> UIRectEdge {
+        homeIndicatorAutoHidden(for: settings) ? .bottom : []
     }
 
     private func chapterTitle(at index: Int) -> String {

@@ -1219,8 +1219,6 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertTrue(controller.prefersStatusBarHidden)
         XCTAssertEqual(controller.preferredStatusBarStyle, .darkContent)
-        XCTAssertTrue(controller.prefersHomeIndicatorAutoHidden)
-        XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, .bottom)
 
         controller.update(
             settings: settings,
@@ -1280,7 +1278,6 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertFalse(controller.prefersStatusBarHidden)
         XCTAssertEqual(controller.preferredStatusBarStyle, .lightContent)
-        XCTAssertEqual(controller.preferredScreenEdgesDeferringSystemGestures, [])
 
         controller.update(
             settings: settings,
@@ -1295,6 +1292,19 @@ final class ReaderV2CoreTests: XCTestCase {
 
         controller.reset()
         XCTAssertFalse(controller.prefersStatusBarHidden)
+    }
+
+    @MainActor
+    func testReaderV2HomeIndicatorPreferencesFollowReaderSettings() {
+        var settings = ReaderSettings.default
+
+        XCTAssertTrue(ReaderV2ViewController.homeIndicatorAutoHidden(for: settings))
+        XCTAssertEqual(ReaderV2ViewController.screenEdgesDeferringSystemGestures(for: settings), .bottom)
+
+        settings.autoHideHomeIndicator = false
+
+        XCTAssertFalse(ReaderV2ViewController.homeIndicatorAutoHidden(for: settings))
+        XCTAssertEqual(ReaderV2ViewController.screenEdgesDeferringSystemGestures(for: settings), [])
     }
 
     @MainActor
