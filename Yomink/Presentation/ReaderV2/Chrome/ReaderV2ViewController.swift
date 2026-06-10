@@ -148,6 +148,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         isViewVisible = true
+        HostingControllerHomeIndicatorBridge.ensureInstalledForCurrentlyRegisteredClasses()
+        refreshHomeIndicatorDeferralPreferences()
         restoreReaderInteractivePopGesture()
         bindReaderGesturesToInteractivePopIfNeeded()
         if deferNavigationBarHidingForAuxiliaryReturn() {
@@ -166,7 +168,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         if navigationController?.topViewController === navigationStackControllerForReader() {
             navigationController?.setNavigationBarHidden(true, animated: false)
         }
-        updateHomeIndicatorPreferences()
+        HostingControllerHomeIndicatorBridge.ensureInstalledForCurrentlyRegisteredClasses()
+        refreshHomeIndicatorDeferralPreferencesOnNextRunLoop()
     }
 
     override func viewDidLayoutSubviews() {
@@ -252,7 +255,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         activeTurnPageType = turnPageType
         container.apply(theme: theme)
         bindReaderGesturesToInteractivePopIfNeeded()
-        updateHomeIndicatorPreferences()
+        refreshHomeIndicatorDeferralPreferences()
 
         if let currentPageModel,
            paginationCache[currentPageModel.chapterIndex]?.pages.indices.contains(currentPageModel.pageIndex) == true {
@@ -422,7 +425,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         readerSettings = normalizedSettings
-        updateHomeIndicatorPreferences()
+        refreshHomeIndicatorDeferralPreferences()
         if autoReadController.isReading,
            normalizedSettings.pageMode != .scroll {
             stopAutoReading(animated: false, restoresEntryPageMode: false)
@@ -1250,20 +1253,49 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             isAutoReadPanelVisible: autoReadPanelView.isPanelVisible,
             isAutoReading: autoReadController.isReading
         )
-        updateHomeIndicatorPreferences()
+        refreshHomeIndicatorDeferralPreferences()
     }
 
-    private func updateHomeIndicatorPreferences() {
-        setNeedsUpdateOfHomeIndicatorAutoHidden()
-        setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+    private func refreshHomeIndicatorDeferralPreferences() {
+        var controllers: [UIViewController] = [self]
+
+        if let navigationController {
+            controllers.append(navigationController)
+        }
+
+        var ancestor = parent
+        while let current = ancestor {
+            controllers.append(current)
+            ancestor = current.parent
+        }
+
+        if let rootViewController = view.window?.rootViewController {
+            controllers.append(rootViewController)
+        }
+
+        var visited = Set<ObjectIdentifier>()
+        for controller in controllers {
+            guard visited.insert(ObjectIdentifier(controller)).inserted else {
+                continue
+            }
+            controller.setNeedsUpdateOfHomeIndicatorAutoHidden()
+            controller.setNeedsUpdateOfScreenEdgesDeferringSystemGestures()
+        }
     }
 
-    static func homeIndicatorAutoHidden(for settings: ReaderSettings) -> Bool {
-        settings.normalized.autoHideHomeIndicator
+    private func refreshHomeIndicatorDeferralPreferencesOnNextRunLoop() {
+        refreshHomeIndicatorDeferralPreferences()
+        DispatchQueue.main.async { [weak self] in
+            self?.refreshHomeIndicatorDeferralPreferences()
+        }
+    }
+
+    static func homeIndicatorAutoHidden(for _: ReaderSettings) -> Bool {
+        false
     }
 
     static func screenEdgesDeferringSystemGestures(for settings: ReaderSettings) -> UIRectEdge {
-        homeIndicatorAutoHidden(for: settings) ? .bottom : []
+        settings.normalized.autoHideHomeIndicator ? .bottom : []
     }
 
     private func chapterTitle(at index: Int) -> String {
@@ -1981,6 +2013,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         resumeAutoReadingAfterPauseIfNeeded()
         updateSystemAppearance()
+        refreshHomeIndicatorDeferralPreferencesOnNextRunLoop()
     }
 
     @objc private func pageTapGestureRecognized(_ recognizer: UITapGestureRecognizer) {

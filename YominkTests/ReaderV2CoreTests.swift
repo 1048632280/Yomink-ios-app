@@ -1298,7 +1298,7 @@ final class ReaderV2CoreTests: XCTestCase {
     func testReaderV2HomeIndicatorPreferencesFollowReaderSettings() {
         var settings = ReaderSettings.default
 
-        XCTAssertTrue(ReaderV2ViewController.homeIndicatorAutoHidden(for: settings))
+        XCTAssertFalse(ReaderV2ViewController.homeIndicatorAutoHidden(for: settings))
         XCTAssertEqual(ReaderV2ViewController.screenEdgesDeferringSystemGestures(for: settings), .bottom)
 
         settings.autoHideHomeIndicator = false
