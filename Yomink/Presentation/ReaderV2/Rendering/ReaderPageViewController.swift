@@ -255,7 +255,7 @@ final class ReaderBottomWidgetView: UIView {
     private var fullProgress: Double = 0
     private var widgetFont = ReaderPageWidgetLayout.font
     private var headerColor = ReaderTheme.standard.headerColor
-    private static let leftWidgetSpacing: CGFloat = 4
+    private static let leftWidgetSpacing: CGFloat = 3
     private static let batteryIconSize = CGSize(width: 17, height: 8)
 
     override init(frame: CGRect) {

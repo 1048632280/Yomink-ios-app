@@ -689,12 +689,12 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertEqual(
             controller.bottomWidgetView.batteryView.frame.minX - controller.bottomWidgetView.batteryLabel.frame.maxX,
-            4,
+            3,
             accuracy: 0.1
         )
         XCTAssertEqual(
             controller.bottomWidgetView.timeLabel.frame.minX - controller.bottomWidgetView.batteryView.frame.maxX,
-            4,
+            3,
             accuracy: 0.1
         )
         XCTAssertEqual(
@@ -782,7 +782,7 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(widget.batteryLabel.text, Optional("9%"))
         XCTAssertTrue(widget.batteryLabel.textColor.isEqual(ReaderTheme.standard.headerColor))
-        XCTAssertTrue(widget.batteryView.fillColor.isEqual(.red))
+        XCTAssertTrue(widget.batteryView.fillColor.isEqual(UIColor.red))
     }
 
     @MainActor
