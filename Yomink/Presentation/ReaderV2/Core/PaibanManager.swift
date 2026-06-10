@@ -70,9 +70,10 @@ struct PaibanManager {
         doubleColumn: Bool = false,
         returnsHeights: Bool = false
     ) -> ReaderDivisionResult {
+        let title = chapterTitle.trimmingUnicodeWhitespace()
         let attributedText = attributedText(
             text: normalizedBodyText(text),
-            chapterTitle: chapterTitle
+            chapterTitle: title
         )
         return paginate(
             attributedText,
@@ -114,11 +115,13 @@ struct PaibanManager {
         text: String,
         chapterTitle: String
     ) -> NSAttributedString {
-        let title = chapterTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = chapterTitle.trimmingUnicodeWhitespace()
+        let body = Self.normalizedBodyForDisplay(text, chapterTitle: title)
         let fullText: String
         if title.isEmpty {
             fullText = body
+        } else if body.isEmpty {
+            fullText = title
         } else {
             fullText = "\(title)\n\(body)"
         }
@@ -153,7 +156,7 @@ struct PaibanManager {
                     paragraphSpacing: layout.titleParagraphSpacing,
                     wordSpacing: layout.titleWordSpacing,
                     firstLineIndent: 0,
-                    strokeWidth: layout.titleFontWeight
+                    fontWeight: layout.titleFontWeight
                 ),
                 range: titleAttributeRange
             )
@@ -166,7 +169,7 @@ struct PaibanManager {
                     paragraphSpacing: layout.paragraphSpacing,
                     wordSpacing: layout.wordSpacing,
                     firstLineIndent: layout.fontSize * layout.headIndent,
-                    strokeWidth: layout.fontWeight
+                    fontWeight: layout.fontWeight
                 ),
                 range: bodyRange
             )
@@ -176,7 +179,7 @@ struct PaibanManager {
     }
 
     private func normalizedBodyText(_ text: String) -> String {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = text.trimmingUnicodeWhitespace()
         let body = trimmed.isEmpty
             ? NSLocalizedString(
                 "reader.emptyChapter",
@@ -199,7 +202,7 @@ struct PaibanManager {
         paragraphSpacing: CGFloat,
         wordSpacing: CGFloat,
         firstLineIndent: CGFloat,
-        strokeWidth: CGFloat
+        fontWeight: CGFloat
     ) -> [NSAttributedString.Key: Any] {
         let paragraph = NSMutableParagraphStyle()
         paragraph.alignment = .justified
@@ -207,14 +210,12 @@ struct PaibanManager {
         paragraph.lineSpacing = lineSpacing
         paragraph.paragraphSpacing = paragraphSpacing
         paragraph.firstLineHeadIndent = firstLineIndent
-        let normalizedStrokeWidth = ReaderFontManager.clampedStrokeWidth(strokeWidth)
 
         return [
-            .font: fontManager.font(size: fontSize),
+            .font: fontManager.font(size: fontSize, weightValue: fontWeight),
             .foregroundColor: theme.contentColor,
             .paragraphStyle: paragraph,
-            .kern: NSNumber(value: Double(wordSpacing)),
-            .strokeWidth: NSNumber(value: Double(normalizedStrokeWidth))
+            .kern: NSNumber(value: Double(wordSpacing))
         ]
     }
 
@@ -261,7 +262,10 @@ struct PaibanManager {
                 fullText: attributedText.string
             )
 
-            let pageAttributedText = attributedText.attributedSubstring(from: range)
+            let pageAttributedText = Self.pageAttributedText(
+                from: attributedText,
+                range: range
+            )
             let height = returnsHeights
                 ? Self.suggestedHeight(
                     for: pageAttributedText,
@@ -293,6 +297,85 @@ struct PaibanManager {
             width: max(size.width.isFinite ? size.width : 0, 1),
             height: max(size.height.isFinite ? size.height : 0, 1)
         )
+    }
+
+    private static func normalizedBodyForDisplay(
+        _ text: String,
+        chapterTitle: String
+    ) -> String {
+        let normalizedLines = text
+            .trimmingUnicodeWhitespace()
+            .components(separatedBy: "\n")
+            .map { line in
+                line.trimmingUnicodeWhitespace()
+            }
+        let body = normalizedLines.joined(separator: "\n")
+        guard let firstLine = normalizedLines.first,
+              normalizedTitleLine(firstLine) == normalizedTitleLine(chapterTitle) else {
+            return body
+        }
+        return normalizedLines
+            .dropFirst()
+            .joined(separator: "\n")
+            .trimmingUnicodeWhitespace()
+    }
+
+    private static func normalizedTitleLine(_ text: String) -> String {
+        text.unicodeScalars
+            .filter { !$0.properties.isWhitespace }
+            .map(String.init)
+            .joined()
+    }
+
+    private static func pageAttributedText(
+        from attributedText: NSAttributedString,
+        range: NSRange
+    ) -> NSAttributedString {
+        let pageAttributedText = NSMutableAttributedString(
+            attributedString: attributedText.attributedSubstring(from: range)
+        )
+        guard range.location > 0,
+              pageAttributedText.length > 0,
+              !isNewParagraphStart(at: range.location, in: attributedText.string) else {
+            return pageAttributedText
+        }
+
+        let paragraphRange = (pageAttributedText.string as NSString)
+            .paragraphRange(for: NSRange(location: 0, length: 0))
+        guard paragraphRange.length > 0,
+              let paragraphStyle = pageAttributedText.attribute(
+                .paragraphStyle,
+                at: 0,
+                effectiveRange: nil
+              ) as? NSParagraphStyle else {
+            return pageAttributedText
+        }
+
+        let adjustedStyle = paragraphStyle.mutableCopy() as? NSMutableParagraphStyle
+        adjustedStyle?.firstLineHeadIndent = 0
+        if let adjustedStyle {
+            pageAttributedText.addAttribute(
+                .paragraphStyle,
+                value: adjustedStyle,
+                range: paragraphRange
+            )
+        }
+        return pageAttributedText
+    }
+
+    private static func isNewParagraphStart(
+        at location: Int,
+        in text: String
+    ) -> Bool {
+        guard location > 0 else {
+            return true
+        }
+        let nsText = text as NSString
+        guard location <= nsText.length else {
+            return false
+        }
+        let previous = nsText.substring(with: NSRange(location: location - 1, length: 1))
+        return previous.rangeOfCharacter(from: .newlines) != nil
     }
 
     private static func visibleRange(
@@ -343,4 +426,23 @@ struct PaibanManager {
         return min(max(1, bufferedHeight), max(1, fallback))
     }
 
+}
+
+private extension String {
+    func trimmingUnicodeWhitespace() -> String {
+        var start = startIndex
+        var end = endIndex
+        while start < end,
+              self[start].unicodeScalars.allSatisfy({ $0.properties.isWhitespace }) {
+            start = index(after: start)
+        }
+        while end > start {
+            let previous = index(before: end)
+            guard self[previous].unicodeScalars.allSatisfy({ $0.properties.isWhitespace }) else {
+                break
+            }
+            end = previous
+        }
+        return String(self[start..<end])
+    }
 }

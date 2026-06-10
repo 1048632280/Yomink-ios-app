@@ -178,6 +178,9 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(manager.bodyFont(size: .nan).pointSize, 20, accuracy: 0.0001)
         XCTAssertEqual(manager.titleFont(size: 2).pointSize, 8, accuracy: 0.0001)
+        XCTAssertEqual(ReaderFontManager.normalizedFontWeightValue(.infinity), 0)
+        XCTAssertEqual(ReaderFontManager.normalizedFontWeightValue(-1), 0)
+        XCTAssertEqual(ReaderFontManager.normalizedFontWeightValue(7), 5)
         XCTAssertEqual(ReaderFontManager.clampedStrokeWidth(-12), -10)
         XCTAssertEqual(ReaderFontManager.clampedStrokeWidth(12), 10)
         XCTAssertEqual(ReaderFontManager.clampedStrokeWidth(.infinity), 0)
@@ -186,8 +189,8 @@ final class ReaderV2CoreTests: XCTestCase {
     func testPaibanManagerBuildsTitleAndBodyAttributes() {
         var layout = ReaderLayout.phone
         layout.fontSize = 22
-        layout.fontWeight = -12
-        layout.titleFontWeight = 12
+        layout.fontWeight = 0
+        layout.titleFontWeight = 3
         layout.wordSpacing = 1.5
         layout.titleWordSpacing = 2.5
         let manager = PaibanManager(layout: layout, theme: .standard)
@@ -201,13 +204,77 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual((titleAttributes[.font] as? UIFont)?.pointSize ?? 0, 23, accuracy: 0.0001)
         XCTAssertEqual((bodyAttributes[.font] as? UIFont)?.pointSize ?? 0, 22, accuracy: 0.0001)
-        XCTAssertEqual((titleAttributes[.strokeWidth] as? NSNumber)?.doubleValue ?? 0, 10, accuracy: 0.0001)
-        XCTAssertEqual((bodyAttributes[.strokeWidth] as? NSNumber)?.doubleValue ?? 0, -10, accuracy: 0.0001)
+        XCTAssertNil(titleAttributes[.strokeWidth])
+        XCTAssertNil(bodyAttributes[.strokeWidth])
+        XCTAssertTrue((titleAttributes[.foregroundColor] as? UIColor)?.isEqual(ReaderTheme.standard.contentColor) == true)
+        XCTAssertTrue((bodyAttributes[.foregroundColor] as? UIColor)?.isEqual(ReaderTheme.standard.contentColor) == true)
         XCTAssertEqual((titleAttributes[.kern] as? NSNumber)?.doubleValue ?? 0, 2.5, accuracy: 0.0001)
         XCTAssertEqual((bodyAttributes[.kern] as? NSNumber)?.doubleValue ?? 0, 1.5, accuracy: 0.0001)
 
         let bodyParagraph = bodyAttributes[.paragraphStyle] as? NSParagraphStyle
         XCTAssertEqual(bodyParagraph?.firstLineHeadIndent ?? 0, 44, accuracy: 0.0001)
+    }
+
+    func testPaibanManagerRemovesDuplicateBodyTitleAndLeadingWhitespace() {
+        let manager = PaibanManager(layout: .phone, theme: .standard)
+        let attributed = manager.attributedText(
+            text: "  Chapter 1  \n\u{3000}\tFirst paragraph\n  Second paragraph",
+            chapterTitle: "Chapter 1"
+        )
+
+        XCTAssertEqual(
+            attributed.string,
+            "Chapter 1\nFirst paragraph\nSecond paragraph"
+        )
+        XCTAssertFalse(attributed.string.contains("Chapter 1\nChapter 1"))
+        XCTAssertEqual(
+            manager.attributedText(text: " Chapter 1 ", chapterTitle: "Chapter 1").string,
+            "Chapter 1"
+        )
+    }
+
+    func testPaibanManagerRemovesContinuationPageFirstLineIndent() {
+        var layout = ReaderLayout.phone
+        layout.fontSize = 20
+        layout.headIndent = 2
+        layout.lineSpacing = 0
+        layout.paragraphSpacing = 0
+        let manager = PaibanManager(layout: layout, theme: .standard)
+        let text = Array(repeating: "word", count: 160).joined(separator: " ")
+        let result = manager.divideText(
+            text,
+            chapterTitle: "",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 180, height: 42)
+        )
+
+        let sourceText = result.pages.first?.sourceAttributedText.string ?? ""
+        guard let continuationPage = result.pages.first(where: { page in
+            guard page.displayRange.location > 0 else {
+                return false
+            }
+            let previous = (sourceText as NSString).substring(
+                with: NSRange(location: page.displayRange.location - 1, length: 1)
+            )
+            return previous != "\n"
+        }) else {
+            XCTFail("Expected at least one continuation page")
+            return
+        }
+
+        let continuationParagraph = continuationPage.attributedText.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(continuationParagraph?.firstLineHeadIndent ?? -1, 0, accuracy: 0.0001)
+
+        let originalParagraph = continuationPage.sourceAttributedText.attribute(
+            .paragraphStyle,
+            at: continuationPage.displayRange.location,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(originalParagraph?.firstLineHeadIndent ?? 0, 40, accuracy: 0.0001)
     }
 
     func testPaibanManagerPaginatesSingleChapterIntoContinuousRanges() {
