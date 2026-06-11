@@ -522,6 +522,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return nil
         }
         if prefersContentRangeProgress,
+           let record = recordForTopVisibleScrollAnchor() {
+            return record
+        }
+        if prefersContentRangeProgress,
            let progress = contentRangeProgress(for: currentPageModel) {
             return ReaderRecord(
                 chapterIndex: currentPageModel.chapterIndex,
@@ -533,7 +537,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             pageCount: currentPageModel.pageCount,
             pageIndex: currentPageModel.pageIndex,
             progress: currentPageModel.chapterProgress,
-            usesPageIndex: true
+            usesPageIndex: currentPageModel.usesPageIndex
         )
         return ReaderRecord(
             chapterIndex: currentPageModel.chapterIndex,
@@ -543,6 +547,28 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             pageCount: currentPageModel.pageCount,
             usesPageIndex: currentPageModel.usesPageIndex
         )
+    }
+
+    private func recordForTopVisibleScrollAnchor() -> ReaderRecord? {
+        guard let scrollContainer = activeContainer as? ReaderScrollContainer,
+              let pageModel = scrollContainer.topVisiblePageModel(),
+              pageModel.isNormal else {
+            return nil
+        }
+        return ReaderRecord(
+            chapterIndex: pageModel.chapterIndex,
+            progress: pageModel.chapterProgress,
+            chapterTitle: chapterTitle(at: pageModel.chapterIndex)
+        )
+    }
+
+    private func updateCurrentPageModelFromTopVisibleScrollAnchor() {
+        guard let scrollContainer = activeContainer as? ReaderScrollContainer,
+              let pageModel = scrollContainer.topVisiblePageModel(),
+              pageModel.isNormal else {
+            return
+        }
+        currentPageModel = pageModel
     }
 
     private func contentRangeProgress(for pageModel: ReaderPageModel) -> Double? {
@@ -847,7 +873,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 pageCount: currentPageModel.pageCount,
                 pageIndex: currentPageModel.pageIndex,
                 progress: currentPageModel.chapterProgress,
-                usesPageIndex: true
+                usesPageIndex: currentPageModel.usesPageIndex
             )
             let record = ReaderRecord(
                 chapterIndex: currentPageModel.chapterIndex,
@@ -956,7 +982,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             pageCount: result.pageCount,
             pageIndex: pageIndex,
             chapterProgress: record.progress,
-            usesPageIndex: true,
+            usesPageIndex: canUseStoredPageIndex,
             pageStatus: .normal
         )
     }
@@ -1206,6 +1232,49 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         )
     }
 
+    private func makeScrollPageModel(
+        chapterIndex: Int,
+        pageIndex: Int,
+        pageCount: Int,
+        page: ReaderDivisionPage,
+        sourceLength: Int
+    ) -> ReaderPageModel {
+        ReaderPageModel(
+            chapterCount: chapters.count,
+            chapterIndex: chapterIndex,
+            pageCount: pageCount,
+            pageIndex: pageIndex,
+            chapterProgress: contentProgress(
+                for: page.displayRange.location,
+                sourceLength: sourceLength
+            ),
+            usesPageIndex: false,
+            pageStatus: .normal
+        )
+    }
+
+    private func sourceLength(for result: ReaderDivisionResult) -> Int {
+        result.pages.reduce(0) { partial, page in
+            max(
+                partial,
+                page.sourceAttributedText.length,
+                page.displayRange.location + page.displayRange.length
+            )
+        }
+    }
+
+    private func contentProgress(
+        for sourceLocation: Int,
+        sourceLength: Int
+    ) -> Double {
+        guard sourceLength > 0 else {
+            return 0
+        }
+        return ReaderPageModel.clampedProgress(
+            Double(max(sourceLocation, 0)) / Double(sourceLength)
+        )
+    }
+
     private func scrollSections() -> [ReaderScrollSection] {
         let chapterIndexes = activeTurnPageType == .verticalContinuous
             ? loadedScrollChapterIndexes
@@ -1219,11 +1288,14 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return nil
         }
 
+        let sourceLength = sourceLength(for: result)
         let pageModels = result.pages.indices.map { pageIndex in
-            makePageModel(
+            makeScrollPageModel(
                 chapterIndex: chapterIndex,
                 pageIndex: pageIndex,
-                pageCount: result.pageCount
+                pageCount: result.pageCount,
+                page: result.pages[pageIndex],
+                sourceLength: sourceLength
             )
         }
         let fallbackHeight = max(lastPaginationSize.height, view.bounds.height, 1)
@@ -1243,6 +1315,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     chapterProgress: pageModel.chapterProgress
                 )
             },
+            sourceRanges: result.pages.map(\.displayRange),
+            sourceLengths: Array(repeating: sourceLength, count: result.pages.count),
             bookTitle: book.title
         )
     }
@@ -1459,6 +1533,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func saveProgressImmediately() {
+        updateCurrentPageModelFromTopVisibleScrollAnchor()
         guard let currentPageModel,
               let progress = progressBridge?.readingProgress(from: currentPageModel) else {
             return
@@ -2117,6 +2192,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         clearTextSelection()
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(false, animated: true)
+        guard currentPageModel?.isNormal == true else {
+            showError(ReaderV2Error.pageUnavailable)
+            return
+        }
         guard activeTurnPageType == .verticalContinuous else {
             autoReadEntryPageMode = readerSettings.normalized.pageMode
             guard let record = recordForCurrentPage(prefersContentRangeProgress: true) else {
@@ -2192,7 +2271,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     recordsOpenHistory: true
                 )
                 self.startAutoReadingIfPossible(
-                    showsPanel: true,
+                    showsPanel: false,
                     reloadsSections: false
                 )
             } catch is CancellationError {
@@ -2245,12 +2324,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             guard self.openGeneration == generation else {
                 return
             }
-            self.startAutoReadingIfPossible(showsPanel: true)
+            self.updateCurrentPageModelFromTopVisibleScrollAnchor()
+            self.startAutoReadingIfPossible(showsPanel: false)
         }
     }
 
     private func startAutoReadingIfPossible(
-        showsPanel: Bool = true,
+        showsPanel: Bool = false,
         reloadsSections: Bool = true
     ) {
         clearTextSelection()
@@ -2317,6 +2397,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         autoReadController.stop()
         updateMenuState()
         updateSystemAppearance()
+        updateCurrentPageModelFromTopVisibleScrollAnchor()
         saveProgressImmediately()
         if restoresEntryPageMode,
            let entryPageMode,
@@ -2437,7 +2518,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         if autoReadController.isReading {
-            setAutoReadPanelVisible(true, animated: true)
+            if tapAction(at: location) == .menu {
+                setAutoReadPanelVisible(true, animated: true)
+            }
             return
         }
 

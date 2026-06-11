@@ -8,6 +8,8 @@ struct ReaderScrollSection {
     var heights: [CGFloat]
     var pageModels: [ReaderPageModel]
     var fullProgresses: [Double]
+    var sourceRanges: [NSRange] = []
+    var sourceLengths: [Int] = []
     var bookTitle: String = ""
 }
 
@@ -227,8 +229,44 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         return pageModel
     }
 
+    func topVisiblePageModel() -> ReaderPageModel? {
+        guard isViewLoaded,
+              tableView.bounds.width > 0,
+              tableView.bounds.height > 0 else {
+            return visiblePageModel()
+        }
+
+        let topY = tableView.contentOffset.y + tableView.adjustedContentInset.top + 1
+        let visibleRows = (tableView.indexPathsForVisibleRows ?? []).sorted {
+            if $0.section == $1.section {
+                return $0.row < $1.row
+            }
+            return $0.section < $1.section
+        }
+
+        for indexPath in visibleRows {
+            let rect = tableView.rectForRow(at: indexPath)
+            guard rect.maxY >= topY else {
+                continue
+            }
+            let localY = min(max(topY - rect.minY, 0), max(rect.height - 1, 0))
+            if let pageModel = anchoredPageModel(at: indexPath, localY: localY) {
+                return pageModel
+            }
+        }
+
+        if let target = tableView.indexPathForRow(
+            at: CGPoint(x: tableView.bounds.midX, y: topY)
+        ),
+           let pageModel = anchoredPageModel(at: target, localY: 0) {
+            return pageModel
+        }
+
+        return visiblePageModel()
+    }
+
     func notifyVisiblePageFromAutoRead() {
-        notifyVisiblePageIfNeeded()
+        notifyVisiblePageIfNeeded(preferredPageModel: topVisiblePageModel())
     }
 
     func maybeLoadMoreForAutoRead() {
@@ -241,7 +279,7 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
                 + tableView.adjustedContentInset.bottom
                 - tableView.bounds.height
         )
-        let threshold = maxOffsetY - tableView.bounds.height * 0.5
+        let threshold = maxOffsetY - tableView.bounds.height * 2.5
         if tableView.contentOffset.y >= threshold {
             onLoadNextChapter?()
         }
@@ -284,6 +322,9 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         tableView.showsVerticalScrollIndicator = false
         tableView.scrollsToTop = false
         tableView.contentInsetAdjustmentBehavior = .never
+        tableView.estimatedRowHeight = 0
+        tableView.estimatedSectionHeaderHeight = 0
+        tableView.estimatedSectionFooterHeight = 0
         tableView.dataSource = self
         tableView.delegate = self
         tableView.register(
@@ -368,17 +409,29 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     }
 
     private func topReadingInset() -> CGFloat {
-        let titleBottom = layout.widgetTitleTop + ReaderPageWidgetLayout.height + 8
-        return widgetVisibility.chapterTitle
-            ? max(layout.topMargin, titleBottom)
-            : layout.topMargin
+        if widgetVisibility.chapterTitle {
+            return ReaderPageWidgetLayout.titleFrame(
+                screenSize: view.bounds.size,
+                layout: layout
+            ).maxY
+        }
+        return layout.topMargin
     }
 
     private func bottomReadingInset() -> CGFloat {
-        max(
-            layout.bottomMargin,
-            layout.widgetBottom + ReaderPageWidgetLayout.height + 8
-        )
+        let hasBottomWidget = widgetVisibility.time
+            || widgetVisibility.batteryIcon
+            || widgetVisibility.batteryPercentage
+            || widgetVisibility.chapterPageProgress
+            || widgetVisibility.globalProgress
+        if hasBottomWidget {
+            let bottomFrame = ReaderPageWidgetLayout.bottomFrame(
+                screenSize: view.bounds.size,
+                layout: layout
+            )
+            return max(0, view.bounds.height - bottomFrame.minY)
+        }
+        return layout.bottomMargin
     }
 
     private func readableViewportHeight() -> CGFloat {
@@ -442,16 +495,144 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         sections.first { $0.chapterIndex == chapterIndex }
     }
 
-    private func notifyVisiblePageIfNeeded() {
+    private func anchoredPageModel(
+        at indexPath: IndexPath,
+        localY: CGFloat
+    ) -> ReaderPageModel? {
+        guard sections.indices.contains(indexPath.section) else {
+            return nil
+        }
+        let section = sections[indexPath.section]
+        guard section.pageModels.indices.contains(indexPath.row) else {
+            return nil
+        }
+
+        let baseModel = section.pageModels[indexPath.row]
+        guard baseModel.isNormal else {
+            return currentPageModel?.isNormal == true ? currentPageModel : nil
+        }
+
+        let sourceRange = section.sourceRanges.indices.contains(indexPath.row)
+            ? section.sourceRanges[indexPath.row]
+            : NSRange(location: 0, length: 0)
+        let sourceLength = section.sourceLengths.indices.contains(indexPath.row)
+            ? section.sourceLengths[indexPath.row]
+            : 0
+        guard sourceLength > 0,
+              sourceRange.length > 0 else {
+            return baseModel
+        }
+
+        let sourceLocation = sourceLocationFromVisibleCell(
+            at: indexPath,
+            sourceRange: sourceRange,
+            localY: localY
+        ) ?? fallbackSourceLocation(
+            sourceRange: sourceRange,
+            rowHeight: max(tableView.rectForRow(at: indexPath).height, 1),
+            localY: localY
+        )
+        let progress = ReaderPageModel.clampedProgress(
+            Double(sourceLocation) / Double(sourceLength)
+        )
+        return ReaderPageModel(
+            chapterCount: baseModel.chapterCount,
+            chapterIndex: baseModel.chapterIndex,
+            pageCount: baseModel.pageCount,
+            pageIndex: baseModel.pageIndex,
+            chapterProgress: progress,
+            usesPageIndex: false,
+            pageStatus: baseModel.pageStatus
+        )
+    }
+
+    private func sourceLocationFromVisibleCell(
+        at indexPath: IndexPath,
+        sourceRange: NSRange,
+        localY: CGFloat
+    ) -> Int? {
+        guard let cell = tableView.cellForRow(at: indexPath) as? ReaderScrollPageCell else {
+            return nil
+        }
+        cell.layoutIfNeeded()
+
+        let textView = cell.textView
+        let localPointInCell = CGPoint(x: cell.bounds.midX, y: localY)
+        let startPoint = textView.convert(localPointInCell, from: cell)
+        let contentRect = textView.activeContentRect
+        let edgeProbe = min(24, max(contentRect.width * 0.2, 0))
+        let xCandidates = [
+            contentRect.midX,
+            contentRect.minX + edgeProbe,
+            contentRect.maxX - edgeProbe
+        ]
+        let startY = min(max(startPoint.y, contentRect.minY), contentRect.maxY)
+        let maxScanY = min(contentRect.maxY, startY + max(80, layout.fontSize * 3))
+        var y = startY
+        while y <= maxScanY {
+            for x in xCandidates {
+                if let localIndex = textView.characterIndex(at: CGPoint(x: x, y: y)) {
+                    return sourceRange.location + min(max(localIndex, 0), sourceRange.length)
+                }
+            }
+            y += max(4, layout.fontSize / 2)
+        }
+        return nil
+    }
+
+    private func fallbackSourceLocation(
+        sourceRange: NSRange,
+        rowHeight: CGFloat,
+        localY: CGFloat
+    ) -> Int {
+        let fraction = min(max(localY / max(rowHeight, 1), 0), 1)
+        let offset = Int((Double(sourceRange.length) * Double(fraction)).rounded(.down))
+        return sourceRange.location + min(max(offset, 0), max(sourceRange.length - 1, 0))
+    }
+
+    private func notifyVisiblePageIfNeeded(
+        preferredPageModel: ReaderPageModel? = nil,
+        allowsProgressChange: Bool = false
+    ) {
         guard !isProgrammaticScroll,
-              let pageModel = visiblePageModel(),
+              let pageModel = preferredPageModel ?? visiblePageModel(),
               pageModel.isNormal,
-              pageModel != currentPageModel else {
+              shouldNotifyVisiblePage(
+                  pageModel,
+                  currentPageModel,
+                  allowsProgressChange: allowsProgressChange
+              ) else {
             return
         }
         currentPageModel = pageModel
         updateCurrentWidgetContent()
         onPageTurnCompleted?(pageModel)
+    }
+
+    private func shouldNotifyVisiblePage(
+        _ pageModel: ReaderPageModel,
+        _ currentPageModel: ReaderPageModel?,
+        allowsProgressChange: Bool
+    ) -> Bool {
+        guard let currentPageModel else {
+            return true
+        }
+        if allowsProgressChange {
+            return pageModel != currentPageModel
+        }
+        return !isSameVisiblePage(pageModel, currentPageModel)
+    }
+
+    private func isSameVisiblePage(
+        _ lhs: ReaderPageModel,
+        _ rhs: ReaderPageModel?
+    ) -> Bool {
+        guard let rhs else {
+            return false
+        }
+        return lhs.chapterIndex == rhs.chapterIndex
+            && lhs.pageIndex == rhs.pageIndex
+            && lhs.pageStatus == rhs.pageStatus
     }
 
     private func clampedContentOffset(_ offset: CGPoint) -> CGPoint {
@@ -530,11 +711,17 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
     }
 
     func scrollViewDidEndDragging(_: UIScrollView, willDecelerate _: Bool) {
-        notifyVisiblePageIfNeeded()
+        notifyVisiblePageIfNeeded(
+            preferredPageModel: topVisiblePageModel(),
+            allowsProgressChange: true
+        )
     }
 
     func scrollViewDidEndDecelerating(_: UIScrollView) {
-        notifyVisiblePageIfNeeded()
+        notifyVisiblePageIfNeeded(
+            preferredPageModel: topVisiblePageModel(),
+            allowsProgressChange: true
+        )
     }
 
     func scrollViewDidEndScrollingAnimation(_: UIScrollView) {

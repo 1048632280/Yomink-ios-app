@@ -399,7 +399,7 @@ struct PaibanManager {
 
     private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {
         let lineHeight = layout.fontSize + max(0, layout.lineSpacing)
-        return max(lineHeight * 3, layout.paragraphSpacing)
+        return max(lineHeight * 6, layout.paragraphSpacing)
     }
 
     private static func visibleRange(
@@ -458,9 +458,69 @@ struct PaibanManager {
             constraint,
             nil
         )
-        let measuredHeight = size.height.isFinite ? size.height : fallback
+        let suggestedHeight = size.height.isFinite ? size.height : fallback
+        let frameHeight = measuredLineHeight(
+            framesetter: framesetter,
+            frameRange: frameRange,
+            fittingWidth: fittingWidth,
+            fallback: fallback
+        )
+        let measuredHeight = max(suggestedHeight, frameHeight)
         let bufferedHeight = ceil(measuredHeight) + 2
         return max(1, bufferedHeight)
+    }
+
+    private static func measuredLineHeight(
+        framesetter: CTFramesetter,
+        frameRange: CFRange,
+        fittingWidth: CGFloat,
+        fallback: CGFloat
+    ) -> CGFloat {
+        let pathHeight = max(fallback * 2, 1_000)
+        let path = CGMutablePath()
+        path.addRect(
+            CGRect(
+                x: 0,
+                y: 0,
+                width: max(1, fittingWidth),
+                height: pathHeight
+            )
+        )
+        let frame = CTFramesetterCreateFrame(
+            framesetter,
+            frameRange,
+            path,
+            nil
+        )
+        let lines = CTFrameGetLines(frame)
+        let lineCount = CFArrayGetCount(lines)
+        guard lineCount > 0 else {
+            return fallback
+        }
+
+        var origins = Array(repeating: CGPoint.zero, count: lineCount)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        var minY = CGFloat.greatestFiniteMagnitude
+        var maxY = -CGFloat.greatestFiniteMagnitude
+        for index in 0..<lineCount {
+            let line = unsafeBitCast(
+                CFArrayGetValueAtIndex(lines, index),
+                to: CTLine.self
+            )
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
+            CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            let baselineY = origins[index].y
+            minY = min(minY, baselineY - descent)
+            maxY = max(maxY, baselineY + ascent + leading)
+        }
+        guard minY.isFinite,
+              maxY.isFinite,
+              maxY >= minY else {
+            return fallback
+        }
+        return max(1, maxY - minY)
     }
 
 }

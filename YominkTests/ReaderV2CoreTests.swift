@@ -961,8 +961,9 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(container.turnPageType, .verticalContinuous)
         XCTAssertFalse(container.tableView.showsVerticalScrollIndicator)
         XCTAssertNil(container.tableView.layer.mask)
-        XCTAssertEqual(container.tableView.contentInset.top, 50, accuracy: 0.1)
-        XCTAssertEqual(container.tableView.contentInset.bottom, 35, accuracy: 0.1)
+        XCTAssertEqual(container.tableView.contentInset.top, 34, accuracy: 0.1)
+        XCTAssertEqual(container.tableView.contentInset.bottom, 27, accuracy: 0.1)
+        XCTAssertEqual(container.tableView.estimatedRowHeight, 0, accuracy: 0.1)
         XCTAssertFalse(container.bottomWidgetView.progressLabel.isHidden)
         XCTAssertEqual(container.tableView.numberOfSections, 1)
         XCTAssertEqual(container.tableView.numberOfRows(inSection: 0), 2)
@@ -1034,6 +1035,53 @@ final class ReaderV2CoreTests: XCTestCase {
         container.notifyVisiblePageFromAutoRead()
 
         XCTAssertNil(completedModel)
+    }
+
+    @MainActor
+    func testReaderScrollContainerDoesNotNotifyEveryAutoReadProgressTick() {
+        let container = ReaderScrollContainer()
+        container.loadViewIfNeeded()
+        container.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let firstModel = readerV2PageModel(pageIndex: 0, pageCount: 2)
+        let secondModel = readerV2PageModel(pageIndex: 1, pageCount: 2)
+        let section = ReaderScrollSection(
+            chapterIndex: 0,
+            title: "Chapter",
+            timestamp: Date(timeIntervalSince1970: 0),
+            items: [
+                NSAttributedString(string: "first page text"),
+                NSAttributedString(string: "second page text")
+            ],
+            heights: [300, 300],
+            pageModels: [firstModel, secondModel],
+            fullProgresses: [0, 0.5],
+            sourceRanges: [
+                NSRange(location: 0, length: 100),
+                NSRange(location: 100, length: 100)
+            ],
+            sourceLengths: [200, 200]
+        )
+        var completedModels: [ReaderPageModel] = []
+        container.onPageTurnCompleted = { pageModel in
+            completedModels.append(pageModel)
+        }
+
+        container.reload(sections: [section], layout: .phone, theme: .standard)
+        container.view.layoutIfNeeded()
+        container.display(
+            pageModel: firstModel,
+            pageController: readerV2PageController(pageModel: firstModel),
+            direction: .forward,
+            animated: false
+        )
+
+        container.tableView.contentOffset.y = -container.tableView.adjustedContentInset.top + 80
+        container.notifyVisiblePageFromAutoRead()
+        XCTAssertTrue(completedModels.isEmpty)
+
+        container.tableView.contentOffset.y = -container.tableView.adjustedContentInset.top + 340
+        container.notifyVisiblePageFromAutoRead()
+        XCTAssertEqual(completedModels.map(\.pageIndex), [1])
     }
 
     @MainActor

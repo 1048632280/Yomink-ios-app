@@ -7,8 +7,6 @@ final class ReaderAutoReadController {
     private var displayLink: CADisplayLink?
     private var lastProgressSaveTimestamp: CFTimeInterval = 0
     private var pendingStartTask: Task<Void, Never>?
-    private var updateCounter = 0
-    private var updateInterval = 0
     private var updatePixels: CGFloat = 0
     private(set) var isReading = false
     private(set) var isPausedForBackground = false
@@ -108,14 +106,6 @@ final class ReaderAutoReadController {
             return
         }
 
-        if updateInterval > 0 {
-            updateCounter += 1
-            let mod = updateInterval + 1
-            guard updateCounter % mod == 1 else {
-                return
-            }
-        }
-
         let distance = updatePixels
         guard distance > 0,
               scrollView.contentSize.height > 0 else {
@@ -148,16 +138,23 @@ final class ReaderAutoReadController {
     }
 
     private static func maxOffsetY(for scrollView: UIScrollView) -> CGFloat {
-        let pageHeight = autoReadPageHeight(for: scrollView)
         return max(
             minOffsetY(for: scrollView),
-            scrollView.contentSize.height - pageHeight
+            scrollView.contentSize.height
+                + scrollView.adjustedContentInset.bottom
+                - scrollView.bounds.height
         )
     }
 
     private static func autoReadPageHeight(for scrollView: UIScrollView) -> CGFloat {
         let footerHeight = (scrollView as? UITableView)?.tableFooterView?.bounds.height ?? 0
-        return max(1, scrollView.bounds.height - footerHeight - 5)
+        return max(
+            1,
+            scrollView.bounds.height
+                - scrollView.adjustedContentInset.bottom
+                - footerHeight
+                - 5
+        )
     }
 
     static func normalizedSpeed(_ speed: Double) -> CGFloat {
@@ -215,12 +212,10 @@ final class ReaderAutoReadController {
     private func rebuildAutoReadStep() {
         let grade = Int(floor(Self.normalizedSpeed(Double(speed))))
         let onePixel = 1.0 / max(UIScreen.main.scale, 1)
-        updateCounter = 0
         if grade <= 4 {
-            updateInterval = 5 - grade
-            updatePixels = onePixel
+            let interval = 5 - grade
+            updatePixels = onePixel / CGFloat(interval + 1)
         } else {
-            updateInterval = 0
             updatePixels = CGFloat(grade - 4) * onePixel
         }
     }
