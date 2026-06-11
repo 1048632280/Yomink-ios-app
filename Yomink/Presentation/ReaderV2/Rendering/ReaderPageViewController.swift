@@ -14,12 +14,6 @@ final class ReaderPageViewController: UIViewController {
     private var fullProgress: Double = 0
     private var widgetVisibility = ReaderSettings.WidgetVisibility.default
 
-    var onTextSelectionAction: ((ReaderTextSelectionAction, String) -> Void)? {
-        didSet {
-            textView.onSelectionAction = onTextSelectionAction
-        }
-    }
-
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
@@ -72,10 +66,6 @@ final class ReaderPageViewController: UIViewController {
 
     func setHighlightedRanges(_ ranges: [NSRange]) {
         textView.setHighlightedRanges(ranges)
-    }
-
-    func setSelectedRange(_ range: NSRange?) {
-        textView.setSelectedRange(range)
     }
 
     func updateTheme(headerColor: UIColor) {
@@ -164,7 +154,6 @@ final class ReaderPageViewController: UIViewController {
         backgroundView.apply(theme: theme)
         textView.layout = layout
         textView.contentColor = theme.contentColor
-        textView.onSelectionAction = onTextSelectionAction
         if let page {
             textView.setAttributedText(page.attributedText)
         }

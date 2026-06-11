@@ -514,29 +514,6 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
-    func testTextReadViewMapsTouchPointToSelectionRange() {
-        let manager = PaibanManager(layout: .phone, theme: .standard)
-        let attributed = manager.attributedText(
-            text: "Alpha beta gamma",
-            chapterTitle: "Selection"
-        )
-        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 340, height: 520))
-        view.layout = .phone
-        view.setAttributedText(attributed)
-        view.layoutIfNeeded()
-
-        let rects = view.textRects(for: NSRange(location: 0, length: min(8, view.attributedText.length)))
-        guard let firstRect = rects.first else {
-            XCTFail("Expected text rect for selection hit testing")
-            return
-        }
-        let range = view.selectionRange(at: CGPoint(x: firstRect.midX, y: firstRect.midY))
-
-        XCTAssertNotNil(range)
-        XCTAssertTrue(range?.length ?? 0 > 0)
-    }
-
-    @MainActor
     func testTextReadViewUsesOriginalDisplayRangeForVerticalPages() {
         let manager = PaibanManager(layout: .phone, theme: .standard)
         let result = manager.divideText(
@@ -563,7 +540,7 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
-    func testTextReadViewClampsSelectionAndHighlightRanges() {
+    func testTextReadViewClampsHighlightRanges() {
         let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         view.setAttributedText(NSAttributedString(string: "abcdef"))
 
@@ -571,10 +548,8 @@ final class ReaderV2CoreTests: XCTestCase {
             NSRange(location: 2, length: 99),
             NSRange(location: 20, length: 1)
         ])
-        view.setSelectedRange(NSRange(location: 1, length: 99))
 
         XCTAssertEqual(view.highlightedRanges, [NSRange(location: 2, length: 4)])
-        XCTAssertEqual(view.selectedRange, Optional(NSRange(location: 1, length: 5)))
     }
 
     @MainActor
@@ -608,12 +583,10 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         controller.loadViewIfNeeded()
         controller.setHighlightedRanges([NSRange(location: 0, length: 8)])
-        controller.setSelectedRange(NSRange(location: 1, length: 4))
 
         XCTAssertEqual(controller.backgroundView.displayedImageName, "theme_bg5")
         XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.standard.contentColor))
         XCTAssertEqual(controller.textView.highlightedRanges, [NSRange(location: 0, length: 8)])
-        XCTAssertEqual(controller.textView.selectedRange, Optional(NSRange(location: 1, length: 4)))
 
         controller.configure(
             page: page,

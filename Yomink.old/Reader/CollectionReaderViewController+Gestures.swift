@@ -7,13 +7,6 @@ extension CollectionReaderViewController {
             return
         }
         let location = gesture.location(in: view)
-        if shouldSuppressNextTapForTextSelection {
-            shouldSuppressNextTapForTextSelection = false
-            return
-        }
-        if handleTapForTextSelection(at: location) {
-            return
-        }
         if isAutoReading {
             if shouldSuppressNextAutoReadTap {
                 shouldSuppressNextAutoReadTap = false
@@ -115,17 +108,6 @@ extension CollectionReaderViewController {
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
-        if gestureRecognizer === textSelectionLongPressGesture {
-            return allowsTextSelectionInteraction
-        }
-        if isTextSelectionActive,
-           gestureRecognizer is UISwipeGestureRecognizer {
-            return false
-        }
-        if isTextSelectionActive,
-           gestureRecognizer === collectionView.panGestureRecognizer {
-            return false
-        }
         if gestureRecognizer === moreMenuDismissTapGesture {
             guard isMoreMenuVisible else {
                 return false

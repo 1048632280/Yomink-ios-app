@@ -5,13 +5,8 @@ final class ReaderScrollPageCell: UITableViewCell {
     static let reuseIdentifier = "ReaderScrollPageCell"
 
     private let pageBackgroundView = ReaderPageBackgroundView(frame: .zero)
-    private(set) var textView = TextReadView(frame: .zero)
+    private let textView = TextReadView(frame: .zero)
     private(set) var pageModel: ReaderPageModel?
-    var onTextSelectionAction: ((ReaderTextSelectionAction, String) -> Void)? {
-        didSet {
-            textView.onSelectionAction = onTextSelectionAction
-        }
-    }
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard
     private var textLeadingConstraint: NSLayoutConstraint?
@@ -63,8 +58,6 @@ final class ReaderScrollPageCell: UITableViewCell {
         pageModel = nil
         textView.setAttributedText(NSAttributedString(string: ""))
         textView.setHighlightedRanges([])
-        textView.setSelectedRange(nil)
-        textView.onSelectionAction = onTextSelectionAction
     }
 
     override func layoutSubviews() {
@@ -93,7 +86,6 @@ final class ReaderScrollPageCell: UITableViewCell {
         textView.layout = layout
         textView.contentColor = theme.contentColor
         textView.contentRectOverride = textView.bounds
-        textView.onSelectionAction = onTextSelectionAction
         textView.setAttributedText(attributedText)
         setNeedsLayout()
     }

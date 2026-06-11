@@ -8,8 +8,6 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
     var makePageController: (@MainActor (ReaderPageModel) -> ReaderPageViewController?)?
     var adjacentPageModel: (@MainActor (ReaderPageModel, Int) -> ReaderPageModel?)?
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)?
-    var onPageTurnStarted: (@MainActor () -> Void)?
-    var onTextSelectionAction: (@MainActor (ReaderTextSelectionAction, String) -> Void)?
 
     var turnPageType: ReaderTurnPageType {
         .horizontalScroll
@@ -115,7 +113,6 @@ extension ReaderPageContainer: UIPageViewControllerDataSource, UIPageViewControl
         _ pageViewController: UIPageViewController,
         viewControllerBefore viewController: UIViewController
     ) -> UIViewController? {
-        onPageTurnStarted?()
         guard let pageController = viewController as? ReaderPageViewController else {
             return nil
         }
@@ -126,7 +123,6 @@ extension ReaderPageContainer: UIPageViewControllerDataSource, UIPageViewControl
         _ pageViewController: UIPageViewController,
         viewControllerAfter viewController: UIViewController
     ) -> UIViewController? {
-        onPageTurnStarted?()
         guard let pageController = viewController as? ReaderPageViewController else {
             return nil
         }

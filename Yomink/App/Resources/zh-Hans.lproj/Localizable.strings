@@ -254,9 +254,6 @@
 "reader.more.contentSearch" = "内容搜索";
 "reader.more.contentFilter" = "内容过滤";
 "reader.more.pageTouchAreas" = "翻页区域";
-"reader.selection.copy" = "拷贝";
-"reader.selection.search" = "搜索";
-"reader.selection.filter" = "过滤";
 "reader.bookDetail.title" = "书籍详情";
 "reader.bookDetail.unknownAuthor" = "未知作者";
 "reader.bookDetail.wordCount" = "%d 字";

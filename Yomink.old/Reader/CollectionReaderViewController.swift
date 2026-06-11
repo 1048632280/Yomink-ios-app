@@ -91,7 +91,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         ]
     )
     let loadingIndicator = UIActivityIndicatorView(style: .large)
-    let textSelectionOverlay = ReaderTextSelectionOverlayView()
 
     enum Layout {
         static let topBarContentHeight: CGFloat = 46
@@ -212,10 +211,8 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
     var lastAutoReadProgressUpdateTimestamp: CFTimeInterval = 0
     var autoReadVelocity: CGFloat = 0
     var shouldSuppressNextAutoReadTap = false
-    var shouldSuppressNextTapForTextSelection = false
     weak var autoReadTouchResetGesture: UIGestureRecognizer?
     weak var moreMenuDismissTapGesture: UIGestureRecognizer?
-    weak var textSelectionLongPressGesture: UILongPressGestureRecognizer?
     private weak var edgeBackGesture: UIScreenEdgePanGestureRecognizer?
     private weak var configuredInteractivePopGesture: UIGestureRecognizer?
     static let autoReadForwardInertiaDecayConstant: CGFloat = 2.5
@@ -272,7 +269,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         openHistoryTask?.cancel()
         autoReadDisplayLink?.invalidate()
         autoReadDisplayLink = nil
-        UIMenuController.shared.setMenuVisible(false, animated: false)
     }
 
     override var prefersStatusBarHidden: Bool {
@@ -316,7 +312,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
         configureCollectionView()
         configureVerticalContentCovers()
         configureFixedWidgetOverlay()
-        configureTextSelection()
         configureMenus()
         configureLoadingIndicator()
         configureGestures()
@@ -391,7 +386,6 @@ final class CollectionReaderViewController: UIViewController, UICollectionViewDa
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        clearTextSelection()
         let destination = transitionCoordinator?.viewController(forKey: .to)
         let hidesNavigationBar = (destination as? ReaderPageTouchAreasViewController) != nil
         navigationController?.setNavigationBarHidden(
