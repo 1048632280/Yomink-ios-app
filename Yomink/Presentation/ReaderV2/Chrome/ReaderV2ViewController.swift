@@ -34,6 +34,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private let settingsPanelView = ReaderV2SettingsPanelView()
     private let autoReadPanelView = ReaderV2AutoReadPanelView()
     private let autoReadController = ReaderAutoReadController()
+    private let textSelectionOverlay = ReaderTextSelectionOverlayView()
     private let loadingIndicator = UIActivityIndicatorView(style: .large)
     private lazy var systemAppearanceController = ReaderSystemAppearanceController(
         hostViewController: self,
@@ -65,6 +66,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var didRecordOpenHistory = false
     private var openedAt = Date()
     private weak var configuredInteractivePopGesture: UIGestureRecognizer?
+    private weak var textSelectionLongPressGesture: UILongPressGestureRecognizer?
 
     private var loadGeneration = 0
     private var openGeneration = 0
@@ -135,6 +137,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         super.viewDidLoad()
         view.backgroundColor = theme.backgroundColor
         configureContainer(for: activeTurnPageType)
+        configureTextSelectionOverlay()
         configureMenu()
         configureSettingsPanel()
         configureAutoReadPanel()
@@ -181,6 +184,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         isViewVisible = false
+        clearTextSelection()
         pauseAutoReadingForBackground()
         saveProgressImmediately()
         updateSystemAppearance()
@@ -190,6 +194,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard book.id != self.book.id else {
             return
         }
+        clearTextSelection()
         self.book = book
         menuView.configure(bookTitle: book.title)
         resetReaderState()
@@ -202,6 +207,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
 
+        clearTextSelection()
         if let currentContainer = activeContainer?.viewController {
             currentContainer.willMove(toParent: nil)
             currentContainer.view.removeFromSuperview()
@@ -230,12 +236,20 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         container.onTextSelectionAction = { [weak self] action, text in
             self?.handleTextSelectionAction(action, text: text)
         }
+        if let pageContainer = container as? ReaderPageContainer {
+            pageContainer.onPageTurnStarted = { [weak self] in
+                self?.clearTextSelection()
+            }
+        }
         if let scrollContainer = container as? ReaderScrollContainer {
             scrollContainer.onLoadPreviousChapter = { [weak self] in
                 self?.loadPreviousScrollChapterIfNeeded()
             }
             scrollContainer.onLoadNextChapter = { [weak self] in
                 self?.loadNextScrollChapterIfNeeded()
+            }
+            scrollContainer.onScrollStarted = { [weak self] in
+                self?.clearTextSelection()
             }
         }
 
@@ -267,6 +281,36 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 recordsOpenHistory: false
             )
         }
+    }
+
+    private func configureTextSelectionOverlay() {
+        textSelectionOverlay.translatesAutoresizingMaskIntoConstraints = false
+        textSelectionOverlay.onCopy = { [weak self] in
+            self?.copySelectedText()
+        }
+        textSelectionOverlay.onSearch = { [weak self] in
+            self?.searchSelectedText()
+        }
+        textSelectionOverlay.onFilter = { [weak self] in
+            self?.filterSelectedText()
+        }
+        view.addSubview(textSelectionOverlay)
+        NSLayoutConstraint.activate([
+            textSelectionOverlay.topAnchor.constraint(equalTo: view.topAnchor),
+            textSelectionOverlay.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            textSelectionOverlay.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            textSelectionOverlay.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+
+        let longPressGesture = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(textSelectionLongPressRecognized(_:))
+        )
+        longPressGesture.minimumPressDuration = 0.45
+        longPressGesture.cancelsTouchesInView = false
+        longPressGesture.delegate = self
+        view.addGestureRecognizer(longPressGesture)
+        textSelectionLongPressGesture = longPressGesture
     }
 
     private func configureMenu() {
@@ -424,6 +468,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
 
+        clearTextSelection()
         readerSettings = normalizedSettings
         refreshHomeIndicatorDeferralPreferences()
         if autoReadController.isReading,
@@ -521,6 +566,146 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         view.addGestureRecognizer(tapGesture)
     }
 
+    private struct TextSelectionTarget {
+        let pageFrame: CGRect
+        let context: ReaderTextSelectionPageContext
+        let locationInPage: CGPoint
+    }
+
+    private var allowsTextSelectionInteraction: Bool {
+        !autoReadController.isReading
+            && !shouldStartAutoReadAfterOpen
+            && !menuView.isMenuVisible
+            && !settingsPanelView.isPanelVisible
+            && !autoReadPanelView.isPanelVisible
+            && presentedViewController == nil
+            && !loadingIndicator.isAnimating
+    }
+
+    private func clearTextSelection() {
+        textSelectionOverlay.clearSelection()
+    }
+
+    @objc private func textSelectionLongPressRecognized(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began,
+              allowsTextSelectionInteraction else {
+            return
+        }
+
+        let location = gesture.location(in: view)
+        guard let target = textSelectionTarget(at: location),
+              let boundary = target.context.characterBoundary(at: target.locationInPage),
+              let range = target.context.paragraphRange(containingUTF16Index: boundary) else {
+            return
+        }
+
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        setMenuVisible(false, animated: false)
+        setAutoReadPanelVisible(false, animated: false)
+        textSelectionOverlay.showSelection(
+            pageFrame: target.pageFrame,
+            context: target.context,
+            range: range
+        )
+    }
+
+    private func textSelectionTarget(at locationInView: CGPoint) -> TextSelectionTarget? {
+        if let pageContainer = activeContainer as? ReaderPageContainer {
+            return textSelectionTarget(
+                in: pageContainer,
+                locationInView: locationInView
+            )
+        }
+        if let scrollContainer = activeContainer as? ReaderScrollContainer {
+            return textSelectionTarget(
+                in: scrollContainer,
+                locationInView: locationInView
+            )
+        }
+        return nil
+    }
+
+    private func textSelectionTarget(
+        in pageContainer: ReaderPageContainer,
+        locationInView: CGPoint
+    ) -> TextSelectionTarget? {
+        let pageControllers = pageContainer.pageViewController.viewControllers ?? []
+        for viewController in pageControllers {
+            guard let pageController = viewController as? ReaderPageViewController,
+                  let target = textSelectionTarget(
+                    in: pageController.textView,
+                    locationInView: locationInView
+                  ) else {
+                continue
+            }
+            return target
+        }
+        return nil
+    }
+
+    private func textSelectionTarget(
+        in scrollContainer: ReaderScrollContainer,
+        locationInView: CGPoint
+    ) -> TextSelectionTarget? {
+        let tablePoint = scrollContainer.tableView.convert(locationInView, from: view)
+        guard let indexPath = scrollContainer.tableView.indexPathForRow(at: tablePoint),
+              let cell = scrollContainer.tableView.cellForRow(at: indexPath) as? ReaderScrollPageCell else {
+            return nil
+        }
+        return textSelectionTarget(
+            in: cell.textView,
+            locationInView: locationInView
+        )
+    }
+
+    private func textSelectionTarget(
+        in textView: TextReadView,
+        locationInView: CGPoint
+    ) -> TextSelectionTarget? {
+        let locationInPage = textView.convert(locationInView, from: view)
+        guard textView.bounds.insetBy(dx: 0, dy: -10).contains(locationInPage),
+              let context = textView.selectionPageContext(),
+              context.contentRect.insetBy(dx: 0, dy: -10).contains(locationInPage) else {
+            return nil
+        }
+
+        return TextSelectionTarget(
+            pageFrame: textView.convert(textView.bounds, to: view),
+            context: context,
+            locationInPage: locationInPage
+        )
+    }
+
+    private func copySelectedText() {
+        let text = textSelectionOverlay.selectedText
+        guard !text.isEmpty else {
+            clearTextSelection()
+            return
+        }
+        UIPasteboard.general.string = text
+        clearTextSelection()
+    }
+
+    private func searchSelectedText() {
+        let text = textSelectionOverlay.selectedText
+        guard !text.isEmpty else {
+            clearTextSelection()
+            return
+        }
+        clearTextSelection()
+        showContentSearch(initialKeyword: text)
+    }
+
+    private func filterSelectedText() {
+        let text = textSelectionOverlay.selectedText
+        guard !text.isEmpty else {
+            clearTextSelection()
+            return
+        }
+        clearTextSelection()
+        showFilterRules(initialSource: text)
+    }
+
     private func startInitialLoad() {
         loadGeneration += 1
         let generation = loadGeneration
@@ -604,6 +789,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func resetReaderState() {
+        clearTextSelection()
         loadTask?.cancel()
         openTask?.cancel()
         saveTask?.cancel()
@@ -652,6 +838,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard changed else {
             return
         }
+        clearTextSelection()
         lastPaginationSize = size
         paginationCache.removeAll()
         loadedScrollChapterIndexes.removeAll()
@@ -689,6 +876,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         closesMenuOnSuccess: Bool = false,
         onSuccess: (() -> Void)? = nil
     ) {
+        clearTextSelection()
         openGeneration += 1
         let generation = openGeneration
         if showsLoading {
@@ -802,6 +990,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
               let pageController = makePageViewController(for: pageModel) else {
             throw ReaderV2Error.pageUnavailable
         }
+        clearTextSelection()
         if let scrollContainer = activeContainer as? ReaderScrollContainer {
             ensureScrollChapterLoaded(pageModel.chapterIndex)
             scrollContainer.reload(
@@ -1446,6 +1635,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard chapters.isEmpty == false else {
             return
         }
+        clearTextSelection()
         let listViewController = ReaderContentsViewController(
             bookID: book.id,
             repository: repository,
@@ -1468,6 +1658,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard chapters.isEmpty == false else {
             return
         }
+        clearTextSelection()
         let searchViewController = ReaderContentSearchViewController(
             book: book,
             fileStore: fileStore,
@@ -1487,6 +1678,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard chapters.isEmpty == false else {
             return
         }
+        clearTextSelection()
         let detailViewController = ReaderBookDetailViewController(
             book: book,
             repository: repository,
@@ -1515,6 +1707,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func showFilterRules(initialSource: String?) {
+        clearTextSelection()
         let filterViewController = ReaderFilterRulesViewController(
             bookID: book.id,
             repository: repository,
@@ -1538,6 +1731,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func showPageTouchAreas() {
+        clearTextSelection()
         let viewController = ReaderPageTouchAreasViewController(settings: readerSettings) { [weak self] settings in
             self?.applyReaderSettings(settings)
         }
@@ -1824,6 +2018,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         animated: Bool
     ) {
         if visible {
+            clearTextSelection()
             menuView.setMenuVisible(true, animated: animated)
             setAutoReadPanelVisible(false, animated: animated)
         }
@@ -1832,6 +2027,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func showSettingsPanelFromReaderMenu() {
+        clearTextSelection()
         menuView.setBarsVisible(
             top: false,
             bottom: false,
@@ -1871,6 +2067,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func requestStartAutoReading() {
+        clearTextSelection()
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(false, animated: true)
         autoReadEntryPageMode = readerSettings.normalized.pageMode
@@ -2021,6 +2218,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
         let location = recognizer.location(in: view)
+        if textSelectionOverlay.hasSelection {
+            if textSelectionOverlay.selectionOrHandleContains(location) {
+                textSelectionOverlay.showMenu(animated: true)
+            } else {
+                clearTextSelection()
+            }
+            return
+        }
+
         if autoReadPanelView.isPanelVisible {
             if !autoReadPanelView.frame.contains(location) {
                 setAutoReadPanelVisible(false, animated: true)
@@ -2070,6 +2276,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if let textSelectionLongPressGesture,
+           gestureRecognizer === textSelectionLongPressGesture {
+            return allowsTextSelectionInteraction
+        }
+
         if let interactivePopGesture = configuredInteractivePopGesture,
            gestureRecognizer === interactivePopGesture {
             guard let navigationController,
@@ -2102,11 +2313,6 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             if currentView is UIControl {
                 return false
             }
-            if let textReadView = currentView as? TextReadView,
-               textReadView.isSelectionActive {
-                textReadView.clearSelection()
-                return false
-            }
             touchedView = currentView.superview
         }
         return true
@@ -2116,6 +2322,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard let currentPageModel else {
             return
         }
+        clearTextSelection()
         let targetChapterIndex = currentPageModel.chapterIndex + delta
         guard chapters.indices.contains(targetChapterIndex) else {
             return
@@ -2143,6 +2350,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         guard let currentPageModel else {
             return
         }
+        clearTextSelection()
         stopAutoReading(animated: false)
         let record = ReaderRecord(
             chapterIndex: currentPageModel.chapterIndex,
@@ -2162,6 +2370,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         delta: Int,
         animated: Bool
     ) {
+        clearTextSelection()
         let direction: ReaderPageTurnDirection = delta > 0 ? .forward : .reverse
         openTask?.cancel()
         openTask = Task { [weak self] in
@@ -2186,12 +2395,14 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func closeReader() {
+        clearTextSelection()
         stopAutoReading(animated: false, restoresEntryPageMode: false)
         saveProgressImmediately()
         onClose()
     }
 
     private func pageTurnCompleted(to pageModel: ReaderPageModel) {
+        clearTextSelection()
         if !autoReadController.isReading {
             closeReaderMenuOverlays(animated: true)
         }

@@ -35,6 +35,7 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     var onTextSelectionAction: (@MainActor (ReaderTextSelectionAction, String) -> Void)?
     var onLoadPreviousChapter: (() -> Void)?
     var onLoadNextChapter: (() -> Void)?
+    var onScrollStarted: (() -> Void)?
 
     var turnPageType: ReaderTurnPageType {
         .verticalContinuous
@@ -502,6 +503,10 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
             onLoadPreviousChapter?()
         }
         maybeLoadMoreForAutoRead()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        onScrollStarted?()
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {

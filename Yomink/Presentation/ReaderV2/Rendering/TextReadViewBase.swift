@@ -72,6 +72,20 @@ class TextReadViewBase: UIView {
         setNeedsDisplay()
     }
 
+    func selectionPageContext() -> ReaderTextSelectionPageContext? {
+        guard attributedText.length > 0,
+              bounds.width > 0,
+              bounds.height > 0 else {
+            return nil
+        }
+        return ReaderTextSelectionPageContext(
+            text: attributedText.string,
+            attributedText: attributedText,
+            pageBounds: bounds,
+            drawingContentRect: contentRectOverride ?? layout.contentRect(in: bounds)
+        )
+    }
+
     func characterIndex(at point: CGPoint) -> Int? {
         lineInfo(at: point)?.stringIndex
     }
