@@ -44,6 +44,8 @@
 		C0DE60000000000000001C01 /* ReaderAutoReadController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001C00 /* ReaderAutoReadController.swift */; };
 		C0DE60000000000000001D01 /* ReaderV2AutoReadPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001D00 /* ReaderV2AutoReadPanelView.swift */; };
 		C0DE60000000000000001F01 /* ReaderV2Slider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000001F00 /* ReaderV2Slider.swift */; };
+		C0DE60000000000000002101 /* ReaderTextSelectionOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000002100 /* ReaderTextSelectionOverlayView.swift */; };
+		C0DE60000000000000002201 /* ReaderTextSelectionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE60000000000000002200 /* ReaderTextSelectionController.swift */; };
 		1F77D3C1BDBD4F7B8C2A3A01 /* TXTTextDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */; };
 		C0DE10000000000000000101 /* ReaderBookDetailViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */; };
 		C0DE10000000000000000201 /* ReaderBookDetailEditViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */; };
@@ -145,6 +147,8 @@
 		C0DE60000000000000001C00 /* ReaderAutoReadController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AutoRead/ReaderAutoReadController.swift; sourceTree = "<group>"; };
 		C0DE60000000000000001D00 /* ReaderV2AutoReadPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome/ReaderV2AutoReadPanelView.swift; sourceTree = "<group>"; };
 		C0DE60000000000000001F00 /* ReaderV2Slider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome/ReaderV2Slider.swift; sourceTree = "<group>"; };
+		C0DE60000000000000002100 /* ReaderTextSelectionOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Selection/ReaderTextSelectionOverlayView.swift; sourceTree = "<group>"; };
+		C0DE60000000000000002200 /* ReaderTextSelectionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Selection/ReaderTextSelectionController.swift; sourceTree = "<group>"; };
 		1F77D3C1BDBD4F7B8C2A3A00 /* TXTTextDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TXTTextDecoder.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000100 /* ReaderBookDetailViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailViewController.swift; sourceTree = "<group>"; };
 		C0DE10000000000000000200 /* ReaderBookDetailEditViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderBookDetailEditViewController.swift; sourceTree = "<group>"; };
@@ -433,6 +437,8 @@
 				C0DE60000000000000001800 /* ReaderThemeManager.swift */,
 				C0DE60000000000000001B00 /* ReaderSystemAppearanceController.swift */,
 				C0DE60000000000000001C00 /* ReaderAutoReadController.swift */,
+				C0DE60000000000000002100 /* ReaderTextSelectionOverlayView.swift */,
+				C0DE60000000000000002200 /* ReaderTextSelectionController.swift */,
 				C0DE60000000000000000B00 /* TextReadViewBase.swift */,
 				C0DE60000000000000000C00 /* TextReadView.swift */,
 				C0DE60000000000000000D00 /* ReaderPageViewController.swift */,
@@ -679,6 +685,8 @@
 				C0DE60000000000000001C01 /* ReaderAutoReadController.swift in Sources */,
 				C0DE60000000000000001D01 /* ReaderV2AutoReadPanelView.swift in Sources */,
 				C0DE60000000000000001F01 /* ReaderV2Slider.swift in Sources */,
+				C0DE60000000000000002101 /* ReaderTextSelectionOverlayView.swift in Sources */,
+				C0DE60000000000000002201 /* ReaderTextSelectionController.swift in Sources */,
 				C0DE30000000000000000201 /* ReaderNavigationHelpers.swift in Sources */,
 				C0DE30000000000000000301 /* ReaderContentTarget.swift in Sources */,
 				C0DE30000000000000000401 /* ReaderContentsViewController.swift in Sources */,

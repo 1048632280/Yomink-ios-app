@@ -72,6 +72,20 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         pageViewController.view.backgroundColor = theme.backgroundColor
     }
 
+    func selectableTextView(
+        at location: CGPoint,
+        from coordinateView: UIView
+    ) -> TextReadView? {
+        guard let pageController = pageViewController.viewControllers?.first as? ReaderPageViewController else {
+            return nil
+        }
+        let textLocation = pageController.textView.convert(location, from: coordinateView)
+        guard pageController.textView.bounds.contains(textLocation) else {
+            return nil
+        }
+        return pageController.textView
+    }
+
     func pageController(adjacentTo pageController: ReaderPageViewController, delta: Int) -> ReaderPageViewController? {
         guard let pageModel = pageController.pageModel,
               let model = adjacentPageModel?(pageModel, delta) else {

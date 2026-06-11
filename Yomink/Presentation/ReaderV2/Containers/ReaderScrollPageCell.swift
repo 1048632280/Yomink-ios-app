@@ -5,7 +5,7 @@ final class ReaderScrollPageCell: UITableViewCell {
     static let reuseIdentifier = "ReaderScrollPageCell"
 
     private let pageBackgroundView = ReaderPageBackgroundView(frame: .zero)
-    private let textView = TextReadView(frame: .zero)
+    private(set) var textView = TextReadView(frame: .zero)
     private(set) var pageModel: ReaderPageModel?
     private var layout = ReaderLayout.notchedPhone
     private var theme = ReaderTheme.standard

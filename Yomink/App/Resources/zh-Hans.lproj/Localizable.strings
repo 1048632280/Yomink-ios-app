@@ -273,6 +273,9 @@
 "reader.search.loadMore" = "点击或上拉加载更多";
 "reader.search.allLoaded" = "已经全部加载完毕";
 "reader.search.empty" = "未找到包含“%@”的内容";
+"reader.selection.copy" = "复制";
+"reader.selection.search" = "搜索";
+"reader.selection.filter" = "过滤";
 "reader.filter.title" = "内容过滤";
 "reader.filter.addTitle" = "添加过滤规则";
 "reader.filter.editTitle" = "编辑过滤规则";

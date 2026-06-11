@@ -553,6 +553,54 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testTextReadViewSelectionTextTrimsEdgesAndKeepsInternalWhitespace() {
+        let text = "  first line\nsecond line  "
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        view.setAttributedText(NSAttributedString(string: text))
+
+        let range = NSRange(location: 0, length: (text as NSString).length)
+
+        XCTAssertEqual(
+            view.selectedString(in: range),
+            "first line\nsecond line"
+        )
+    }
+
+    @MainActor
+    func testTextReadViewParagraphSelectionTrimsVisibleParagraphEdges() {
+        let text = "  first paragraph  \nsecond paragraph"
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        view.setAttributedText(NSAttributedString(string: text))
+
+        let firstIndex = (text as NSString).range(of: "first").location
+        let range = view.paragraphRange(containing: firstIndex)
+
+        XCTAssertEqual(
+            range.map { view.selectedString(in: $0, trimsWhitespace: false) },
+            Optional("first paragraph")
+        )
+    }
+
+    @MainActor
+    func testTextReadViewSelectionRangeKeepsComposedCharactersWhole() {
+        let flag = "\u{1F1E8}\u{1F1F3}"
+        let text = "A\(flag)B"
+        let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
+        view.setAttributedText(NSAttributedString(string: text))
+
+        let flagRange = (text as NSString).range(of: flag)
+        let range = view.normalizedSelectionRange(
+            start: flagRange.location + 1,
+            end: flagRange.location + 2
+        )
+
+        XCTAssertEqual(
+            range.map { view.selectedString(in: $0, trimsWhitespace: false) },
+            Optional(flag)
+        )
+    }
+
+    @MainActor
     func testReaderPageViewControllerAppliesThemeAndDecorationRanges() {
         let manager = PaibanManager(layout: .phone, theme: .standard)
         let result = manager.divideText(

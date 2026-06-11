@@ -34,6 +34,7 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     var onPageTurnCompleted: (@MainActor (ReaderPageModel) -> Void)?
     var onLoadPreviousChapter: (() -> Void)?
     var onLoadNextChapter: (() -> Void)?
+    var onScrollBegan: (() -> Void)?
 
     var turnPageType: ReaderTurnPageType {
         .verticalContinuous
@@ -240,6 +241,23 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
         if tableView.contentOffset.y >= threshold {
             onLoadNextChapter?()
         }
+    }
+
+    func selectableTextView(
+        at location: CGPoint,
+        from coordinateView: UIView
+    ) -> TextReadView? {
+        let tableLocation = tableView.convert(location, from: coordinateView)
+        guard let indexPath = tableView.indexPathForRow(at: tableLocation),
+              let cell = tableView.cellForRow(at: indexPath) as? ReaderScrollPageCell else {
+            return nil
+        }
+
+        let textLocation = cell.textView.convert(location, from: coordinateView)
+        guard cell.textView.bounds.contains(textLocation) else {
+            return nil
+        }
+        return cell.textView
     }
 
     func prioritizeReturnGesture(_ returnGesture: UIGestureRecognizer) {
@@ -500,6 +518,10 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
             onLoadPreviousChapter?()
         }
         maybeLoadMoreForAutoRead()
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        onScrollBegan?()
     }
 
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
