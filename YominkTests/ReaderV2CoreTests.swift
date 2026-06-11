@@ -149,6 +149,24 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(progress?.usesPageIndex, true)
     }
 
+    func testProgressBridgeDoesNotPersistNonNormalPageStatus() {
+        let fixture = makeBookFixture()
+        let bridge = ReaderProgressBridge(book: fixture.book, chapters: fixture.chapters)
+        let progress = bridge.readingProgress(
+            from: ReaderPageModel(
+                chapterCount: fixture.chapters.count,
+                chapterIndex: 1,
+                pageCount: 10,
+                pageIndex: 3,
+                chapterProgress: 0,
+                usesPageIndex: true,
+                pageStatus: .loading
+            )
+        )
+
+        XCTAssertNil(progress)
+    }
+
     func testReaderLayoutContentRectUsesFlippedCoreTextMargins() {
         let rect = ReaderLayout.notchedPhone.contentRect(
             in: CGRect(x: 0, y: 0, width: 390, height: 844)
@@ -991,6 +1009,33 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testReaderScrollContainerDoesNotNotifyNonNormalVisiblePage() {
+        let container = ReaderScrollContainer()
+        container.loadViewIfNeeded()
+        container.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let loadingModel = ReaderPageModel(
+            chapterCount: 1,
+            chapterIndex: 0,
+            pageCount: 1,
+            pageIndex: 0,
+            chapterProgress: 0,
+            usesPageIndex: true,
+            pageStatus: .loading
+        )
+        let section = readerV2ScrollSection(chapterIndex: 0, model: loadingModel)
+        var completedModel: ReaderPageModel?
+        container.onPageTurnCompleted = { pageModel in
+            completedModel = pageModel
+        }
+
+        container.reload(sections: [section], layout: .phone, theme: .standard)
+        container.view.layoutIfNeeded()
+        container.notifyVisiblePageFromAutoRead()
+
+        XCTAssertNil(completedModel)
+    }
+
+    @MainActor
     func testReaderScrollPageCellConfiguresPageModelAndText() {
         let cell = ReaderScrollPageCell(
             style: .default,
@@ -1429,7 +1474,6 @@ final class ReaderV2CoreTests: XCTestCase {
         var reachedEndCount = 0
         controller.onReachedEnd = {
             reachedEndCount += 1
-            return false
         }
 
         controller.start(scrollView: scrollView, speed: 5)
@@ -1437,31 +1481,27 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(reachedEndCount, 1)
         XCTAssertTrue(controller.isReading)
-        XCTAssertFalse(controller.isPausedForContentLoad)
     }
 
     @MainActor
-    func testReaderAutoReadControllerPausesAtLoadedEndWhenContinuationStarts() {
+    func testReaderAutoReadControllerKeepsDisplayLinkAtLoadedEndWhenContinuationStarts() {
         let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
         scrollView.contentSize = CGSize(width: 100, height: 95)
         let controller = ReaderAutoReadController()
         var reachedEndCount = 0
         controller.onReachedEnd = {
             reachedEndCount += 1
-            return true
         }
 
         controller.start(scrollView: scrollView, speed: 5)
+        controller.pauseForBackground()
+        controller.resumeAfterBackgroundIfNeeded(scrollView: scrollView)
+        XCTAssertTrue(controller.hasDisplayLink)
+
         controller.advance()
 
         XCTAssertEqual(reachedEndCount, 1)
         XCTAssertTrue(controller.isReading)
-        XCTAssertTrue(controller.isPausedForContentLoad)
-        XCTAssertFalse(controller.hasDisplayLink)
-
-        controller.resumeAfterContentLoadIfNeeded(scrollView: scrollView)
-        XCTAssertTrue(controller.isReading)
-        XCTAssertFalse(controller.isPausedForContentLoad)
         XCTAssertTrue(controller.hasDisplayLink)
     }
 

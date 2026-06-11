@@ -10,16 +10,14 @@ final class ReaderAutoReadController {
     private var updateCounter = 0
     private var updateInterval = 0
     private var updatePixels: CGFloat = 0
-    private var lastEndSignalContentHeight: CGFloat?
     private(set) var isReading = false
     private(set) var isPausedForBackground = false
-    private(set) var isPausedForContentLoad = false
     private(set) var isPausedForUserInteraction = false
     private(set) var speed: CGFloat = CGFloat(ReaderSettings.default.autoReadSpeed)
 
     var onScrollTick: (() -> Void)?
     var onProgressSaveNeeded: (() -> Void)?
-    var onReachedEnd: (() -> Bool)?
+    var onReachedEnd: (() -> Void)?
 
     var hasDisplayLink: Bool {
         displayLink != nil
@@ -38,7 +36,6 @@ final class ReaderAutoReadController {
         self.speed = Self.normalizedSpeed(speed)
         isReading = true
         isPausedForBackground = false
-        isPausedForContentLoad = false
         isPausedForUserInteraction = false
         rebuildAutoReadStep()
         scheduleDisplayLinkStart()
@@ -50,9 +47,7 @@ final class ReaderAutoReadController {
         invalidateDisplayLink()
         isReading = false
         isPausedForBackground = false
-        isPausedForContentLoad = false
         isPausedForUserInteraction = false
-        lastEndSignalContentHeight = nil
         scrollView = nil
     }
 
@@ -74,22 +69,7 @@ final class ReaderAutoReadController {
         }
         self.scrollView = scrollView
         isPausedForBackground = false
-        if !isPausedForContentLoad,
-           !isPausedForUserInteraction {
-            startDisplayLinkIfNeeded()
-        }
-    }
-
-    func resumeAfterContentLoadIfNeeded(scrollView: UIScrollView) {
-        guard isReading,
-              isPausedForContentLoad else {
-            return
-        }
-        self.scrollView = scrollView
-        isPausedForContentLoad = false
-        lastEndSignalContentHeight = nil
-        if !isPausedForBackground,
-           !isPausedForUserInteraction {
+        if !isPausedForUserInteraction {
             startDisplayLinkIfNeeded()
         }
     }
@@ -108,8 +88,7 @@ final class ReaderAutoReadController {
         }
         self.scrollView = scrollView
         isPausedForUserInteraction = false
-        if !isPausedForBackground,
-           !isPausedForContentLoad {
+        if !isPausedForBackground {
             startDisplayLinkIfNeeded()
         }
     }
@@ -159,24 +138,9 @@ final class ReaderAutoReadController {
 
         let pageHeight = Self.autoReadPageHeight(for: scrollView)
         let nearBottom = nextOffsetY + pageHeight >= scrollView.contentSize.height
-        if nearBottom,
-           lastEndSignalContentHeight != scrollView.contentSize.height {
-            lastEndSignalContentHeight = scrollView.contentSize.height
-            let shouldWaitForContinuation = onReachedEnd?() ?? false
-            if shouldWaitForContinuation {
-                pauseForContentLoad()
-            }
+        if nearBottom {
+            onReachedEnd?()
         }
-    }
-
-    private func pauseForContentLoad() {
-        guard isReading else {
-            return
-        }
-        pendingStartTask?.cancel()
-        pendingStartTask = nil
-        invalidateDisplayLink()
-        isPausedForContentLoad = true
     }
 
     private static func minOffsetY(for scrollView: UIScrollView) -> CGFloat {
@@ -208,7 +172,6 @@ final class ReaderAutoReadController {
                   !Task.isCancelled,
                   self.isReading,
                   !self.isPausedForBackground,
-                  !self.isPausedForContentLoad,
                   !self.isPausedForUserInteraction else {
                 return
             }

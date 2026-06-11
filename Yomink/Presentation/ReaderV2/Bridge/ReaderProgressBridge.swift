@@ -59,7 +59,8 @@ struct ReaderProgressBridge: Sendable {
     }
 
     func readingProgress(from pageModel: ReaderPageModel) -> ReadingProgress? {
-        guard chapters.indices.contains(pageModel.chapterIndex) else {
+        guard pageModel.isNormal,
+              chapters.indices.contains(pageModel.chapterIndex) else {
             return nil
         }
         let chapter = chapters[pageModel.chapterIndex]

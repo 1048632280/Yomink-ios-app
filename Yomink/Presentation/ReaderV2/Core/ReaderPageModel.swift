@@ -33,6 +33,10 @@ struct ReaderPageModel: Equatable, Sendable {
         self.pageStatus = pageStatus
     }
 
+    var isNormal: Bool {
+        pageStatus == .normal
+    }
+
     static func clampedProgress(_ value: Double) -> Double {
         guard value.isFinite else {
             return 0

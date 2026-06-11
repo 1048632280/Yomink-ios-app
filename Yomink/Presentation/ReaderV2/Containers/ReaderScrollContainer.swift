@@ -222,7 +222,11 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
               sections[target.section].pageModels.indices.contains(target.row) else {
             return currentPageModel
         }
-        return sections[target.section].pageModels[target.row]
+        let pageModel = sections[target.section].pageModels[target.row]
+        guard pageModel.isNormal else {
+            return currentPageModel?.isNormal == true ? currentPageModel : nil
+        }
+        return pageModel
     }
 
     func notifyVisiblePageFromAutoRead() {
@@ -443,6 +447,7 @@ final class ReaderScrollContainer: UIViewController, ReaderContainerProtocol {
     private func notifyVisiblePageIfNeeded() {
         guard !isProgrammaticScroll,
               let pageModel = visiblePageModel(),
+              pageModel.isNormal,
               pageModel != currentPageModel else {
             return
         }
