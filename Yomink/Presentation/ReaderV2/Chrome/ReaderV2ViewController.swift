@@ -2236,6 +2236,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             if currentView is UIControl {
                 return false
             }
+            if textSelectionController?.hasSelection == true,
+               currentView is ReaderTextSelectionOverlayView {
+                return false
+            }
             touchedView = currentView.superview
         }
         let location = touch.location(in: view)

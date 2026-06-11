@@ -6,13 +6,15 @@ enum ReaderTextSelectionHandle {
 }
 
 @MainActor
-final class ReaderTextSelectionOverlayView: UIView {
+final class ReaderTextSelectionOverlayView: UIView, UIGestureRecognizerDelegate {
     private let startHandleView = ReaderSelectionHandleView(kind: .start)
     private let endHandleView = ReaderSelectionHandleView(kind: .end)
     private var selectionRects: [CGRect] = []
 
     var onClearRequested: (() -> Void)?
+    var onMenuRequested: (() -> Void)?
     var onHandlePan: ((ReaderTextSelectionHandle, CGPoint, UIGestureRecognizer.State) -> Void)?
+    var onExternalPan: ((CGPoint, UIGestureRecognizer.State) -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -54,7 +56,7 @@ final class ReaderTextSelectionOverlayView: UIView {
 
         context.saveGState()
         UIColor.systemBlue.withAlphaComponent(0.26).setFill()
-        for selectionRect in selectionRects where selectionRect.intersects(rect) {
+        for selectionRect in drawingSelectionRects() where selectionRect.intersects(rect) {
             UIBezierPath(
                 roundedRect: selectionRect.integral,
                 cornerRadius: 2
@@ -73,6 +75,14 @@ final class ReaderTextSelectionOverlayView: UIView {
             action: #selector(selectionOverlayTapped(_:))
         )
         addGestureRecognizer(tapGesture)
+
+        let externalPan = UIPanGestureRecognizer(
+            target: self,
+            action: #selector(externalAreaPanned(_:))
+        )
+        externalPan.delegate = self
+        addGestureRecognizer(externalPan)
+        tapGesture.require(toFail: externalPan)
 
         let startPan = UIPanGestureRecognizer(
             target: self,
@@ -96,6 +106,12 @@ final class ReaderTextSelectionOverlayView: UIView {
             || endHandleView.frame.insetBy(dx: -8, dy: -8).contains(location) {
             return
         }
+        if containsSelection(at: location) {
+            DispatchQueue.main.async { [weak self] in
+                self?.onMenuRequested?()
+            }
+            return
+        }
         DispatchQueue.main.async { [weak self] in
             self?.onClearRequested?()
         }
@@ -107,6 +123,59 @@ final class ReaderTextSelectionOverlayView: UIView {
 
     @objc private func endHandlePanned(_ recognizer: UIPanGestureRecognizer) {
         onHandlePan?(.end, recognizer.location(in: self), recognizer.state)
+    }
+
+    @objc private func externalAreaPanned(_ recognizer: UIPanGestureRecognizer) {
+        onExternalPan?(recognizer.location(in: self), recognizer.state)
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        let location = touch.location(in: self)
+        return !containsHandle(at: location)
+            && !containsSelection(at: location)
+    }
+
+    private func containsHandle(at point: CGPoint) -> Bool {
+        startHandleView.frame.insetBy(dx: -8, dy: -8).contains(point)
+            || endHandleView.frame.insetBy(dx: -8, dy: -8).contains(point)
+    }
+
+    private func containsSelection(at point: CGPoint) -> Bool {
+        drawingSelectionRects().contains { rect in
+            rect.insetBy(dx: -6, dy: -6).contains(point)
+        }
+    }
+
+    private func drawingSelectionRects() -> [CGRect] {
+        guard selectionRects.count > 1 else {
+            return selectionRects
+        }
+
+        var rects = selectionRects.sorted {
+            if abs($0.minY - $1.minY) > 1 {
+                return $0.minY < $1.minY
+            }
+            return $0.minX < $1.minX
+        }
+
+        for index in rects.indices.dropFirst() {
+            let previousIndex = rects.index(before: index)
+            let previousMaxY = rects[previousIndex].maxY
+            guard rects[index].minY > previousMaxY else {
+                continue
+            }
+
+            let midpoint = (previousMaxY + rects[index].minY) / 2
+            rects[previousIndex].size.height = midpoint - rects[previousIndex].minY
+            let currentMaxY = rects[index].maxY
+            rects[index].origin.y = midpoint
+            rects[index].size.height = currentMaxY - midpoint
+        }
+
+        return rects
     }
 }
 

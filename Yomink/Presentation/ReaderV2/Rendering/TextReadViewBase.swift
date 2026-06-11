@@ -139,7 +139,7 @@ class TextReadViewBase: UIView {
     }
 
     func paragraphRange(containing index: Int) -> NSRange? {
-        guard let selectableRange,
+        guard let selectableRange = selectableTextRange,
               selectableRange.length > 0 else {
             return nil
         }
@@ -161,7 +161,7 @@ class TextReadViewBase: UIView {
         start: Int,
         end: Int
     ) -> NSRange? {
-        guard let selectableRange,
+        guard let selectableRange = selectableTextRange,
               selectableRange.length > 0 else {
             return nil
         }

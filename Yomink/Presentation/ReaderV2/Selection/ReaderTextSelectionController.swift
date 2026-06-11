@@ -13,6 +13,7 @@ final class ReaderTextSelectionController: NSObject {
     private var longPressGesture: UILongPressGestureRecognizer?
     private weak var selectedTextView: TextReadView?
     private var overlayView: ReaderTextSelectionOverlayView?
+    private var magnifierView: ReaderSelectionMagnifierView?
     private var selectedRange: NSRange?
     private var isDraggingHandle = false
 
@@ -41,6 +42,7 @@ final class ReaderTextSelectionController: NSObject {
         selectedTextView = nil
         overlayView?.removeFromSuperview()
         overlayView = nil
+        hideMagnifier()
         isDraggingHandle = false
         if hidesMenu {
             UIMenuController.shared.setMenuVisible(false, animated: false)
@@ -98,11 +100,19 @@ final class ReaderTextSelectionController: NSObject {
 
         let location = recognizer.location(in: hostView)
         guard let textView = targetProvider(location) else {
+            if hasSelection {
+                hideMenu(animated: true)
+            }
             return
         }
         let textLocation = textView.convert(location, from: hostView)
-        guard let characterIndex = textView.characterIndex(at: textLocation),
-              let paragraphRange = textView.paragraphRange(containing: characterIndex) else {
+        guard let characterIndex = textView.characterIndex(at: textLocation) else {
+            if hasSelection {
+                hideMenu(animated: true)
+            }
+            return
+        }
+        guard let paragraphRange = textView.paragraphRange(containing: characterIndex) else {
             return
         }
 
@@ -136,8 +146,14 @@ final class ReaderTextSelectionController: NSObject {
         overlay.onClearRequested = { [weak self] in
             self?.clearSelection()
         }
+        overlay.onMenuRequested = { [weak self] in
+            self?.showMenu(animated: true)
+        }
         overlay.onHandlePan = { [weak self] handle, point, state in
             self?.handlePan(handle: handle, point: point, state: state)
+        }
+        overlay.onExternalPan = { [weak self] point, state in
+            self?.handleExternalPan(point: point, state: state)
         }
         textView.addSubview(overlay)
         overlayView = overlay
@@ -221,6 +237,31 @@ final class ReaderTextSelectionController: NSObject {
         }
     }
 
+    private func handleExternalPan(
+        point: CGPoint,
+        state: UIGestureRecognizer.State
+    ) {
+        guard let selectedTextView,
+              let hostView else {
+            return
+        }
+
+        switch state {
+        case .began:
+            hideMenu(animated: true)
+            showMagnifier(sourceView: selectedTextView, sourcePoint: point, hostView: hostView)
+        case .changed:
+            showMagnifier(sourceView: selectedTextView, sourcePoint: point, hostView: hostView)
+        case .ended, .cancelled, .failed:
+            hideMagnifier()
+            if hasSelection {
+                showMenu(animated: true)
+            }
+        default:
+            break
+        }
+    }
+
     private func showMenu(animated: Bool) {
         guard !isDraggingHandle,
               let selectedTextView,
@@ -242,6 +283,37 @@ final class ReaderTextSelectionController: NSObject {
         menuResponder.becomeFirstResponder()
         menu.setTargetRect(targetRect, in: selectedTextView)
         menu.setMenuVisible(true, animated: animated)
+    }
+
+    private func hideMenu(animated: Bool) {
+        UIMenuController.shared.setMenuVisible(false, animated: animated)
+    }
+
+    private func showMagnifier(
+        sourceView: UIView,
+        sourcePoint: CGPoint,
+        hostView: UIView
+    ) {
+        let magnifier = magnifierView ?? ReaderSelectionMagnifierView()
+        if magnifier.superview == nil {
+            hostView.addSubview(magnifier)
+        }
+        magnifierView = magnifier
+        magnifier.update(sourceView: sourceView, sourcePoint: sourcePoint)
+
+        let hostPoint = hostView.convert(sourcePoint, from: sourceView)
+        let x = min(
+            max(hostPoint.x, magnifier.bounds.width / 2 + 12),
+            max(magnifier.bounds.width / 2 + 12, hostView.bounds.width - magnifier.bounds.width / 2 - 12)
+        )
+        let y = max(magnifier.bounds.height / 2 + 12, hostPoint.y - 78)
+        magnifier.center = CGPoint(x: x, y: y)
+        magnifier.isHidden = false
+    }
+
+    private func hideMagnifier() {
+        magnifierView?.removeFromSuperview()
+        magnifierView = nil
     }
 
     private func fallbackInsertionIndex(
@@ -276,5 +348,62 @@ final class ReaderTextSelectionController: NSObject {
             return ""
         }
         return selectedTextView.selectedString(in: selectedRange)
+    }
+}
+
+@MainActor
+private final class ReaderSelectionMagnifierView: UIView {
+    private weak var sourceView: UIView?
+    private var sourcePoint = CGPoint.zero
+    private let magnification: CGFloat = 1.85
+
+    init() {
+        super.init(frame: CGRect(x: 0, y: 0, width: 118, height: 76))
+        backgroundColor = .systemBackground
+        isOpaque = false
+        isUserInteractionEnabled = false
+        layer.cornerRadius = 14
+        layer.borderWidth = 1
+        layer.borderColor = UIColor.systemBlue.withAlphaComponent(0.45).cgColor
+        layer.shadowColor = UIColor.black.cgColor
+        layer.shadowOpacity = 0.18
+        layer.shadowRadius = 9
+        layer.shadowOffset = CGSize(width: 0, height: 5)
+        clipsToBounds = false
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    func update(sourceView: UIView, sourcePoint: CGPoint) {
+        self.sourceView = sourceView
+        self.sourcePoint = sourcePoint
+        setNeedsDisplay()
+    }
+
+    override func draw(_ rect: CGRect) {
+        guard let sourceView,
+              let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
+
+        let clipPath = UIBezierPath(
+            roundedRect: bounds.insetBy(dx: 1, dy: 1),
+            cornerRadius: 13
+        )
+        UIColor.systemBackground.setFill()
+        clipPath.fill()
+
+        context.saveGState()
+        clipPath.addClip()
+        context.translateBy(
+            x: bounds.midX - sourcePoint.x * magnification,
+            y: bounds.midY - sourcePoint.y * magnification
+        )
+        context.scaleBy(x: magnification, y: magnification)
+        sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)
+        context.restoreGState()
     }
 }
