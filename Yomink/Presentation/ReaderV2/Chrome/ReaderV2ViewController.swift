@@ -66,6 +66,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var didRecordOpenHistory = false
     private var openedAt = Date()
     private weak var configuredInteractivePopGesture: UIGestureRecognizer?
+    private weak var autoReadTouchPauseGesture: UILongPressGestureRecognizer?
 
     private var loadGeneration = 0
     private var openGeneration = 0
@@ -159,6 +160,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         configureLoadingIndicator()
         configureTapGesture()
         configureTextSelection()
+        configureAutoReadTouchPauseGesture()
         configureLifecycleObservers()
         startInitialLoad()
     }
@@ -585,6 +587,19 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 )
             ]
         )
+    }
+
+    private func configureAutoReadTouchPauseGesture() {
+        let gesture = UILongPressGestureRecognizer(
+            target: self,
+            action: #selector(autoReadTouchPauseGestureRecognized(_:))
+        )
+        gesture.minimumPressDuration = 0
+        gesture.allowableMovement = .greatestFiniteMagnitude
+        gesture.cancelsTouchesInView = false
+        gesture.delegate = self
+        view.addGestureRecognizer(gesture)
+        autoReadTouchPauseGesture = gesture
     }
 
     private var canStartTextSelection: Bool {
@@ -2093,6 +2108,22 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         updateSystemAppearance()
     }
 
+    @objc private func autoReadTouchPauseGestureRecognized(_ recognizer: UILongPressGestureRecognizer) {
+        guard autoReadController.isReading,
+              let scrollContainer = activeContainer as? ReaderScrollContainer else {
+            return
+        }
+
+        switch recognizer.state {
+        case .began, .changed:
+            autoReadController.pauseForUserInteraction()
+        case .ended, .cancelled, .failed:
+            autoReadController.resumeAfterUserInteractionIfNeeded(scrollView: scrollContainer.tableView)
+        default:
+            break
+        }
+    }
+
     private func autoReadSpeedChanged(_ speed: Double) {
         var settings = readerSettings
         settings.autoReadSpeed = speed
@@ -2204,6 +2235,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer === autoReadTouchPauseGesture {
+            return autoReadController.isReading
+        }
+
         if let interactivePopGesture = configuredInteractivePopGesture,
            gestureRecognizer === interactivePopGesture {
             guard let navigationController,
@@ -2231,6 +2266,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return true
         }
 
+        let location = touch.location(in: view)
+        if gestureRecognizer === autoReadTouchPauseGesture {
+            guard autoReadController.isReading,
+                  !autoReadPanelView.frame.contains(location),
+                  !readerOverlayContainsInteractiveContent(at: location) else {
+                return false
+            }
+        }
+
         var touchedView = touch.view
         while let currentView = touchedView {
             if currentView is UIControl {
@@ -2242,11 +2286,18 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             }
             touchedView = currentView.superview
         }
-        let location = touch.location(in: view)
         if readerOverlayContainsInteractiveContent(at: location) {
             return false
         }
         return true
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+    ) -> Bool {
+        gestureRecognizer === autoReadTouchPauseGesture
+            || otherGestureRecognizer === autoReadTouchPauseGesture
     }
 
     private func goToChapter(delta: Int) {

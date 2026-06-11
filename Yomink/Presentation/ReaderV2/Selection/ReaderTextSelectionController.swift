@@ -1,7 +1,7 @@
 import UIKit
 
 @MainActor
-final class ReaderTextSelectionController: NSObject {
+final class ReaderTextSelectionController: NSObject, UIGestureRecognizerDelegate {
     typealias TargetProvider = (CGPoint) -> TextReadView?
 
     private weak var hostView: UIView?
@@ -11,11 +11,13 @@ final class ReaderTextSelectionController: NSObject {
     private let menuItems: [UIMenuItem]
 
     private var longPressGesture: UILongPressGestureRecognizer?
+    private var externalDragGesture: ReaderImmediatePanGestureRecognizer?
     private weak var selectedTextView: TextReadView?
     private var overlayView: ReaderTextSelectionOverlayView?
     private var magnifierView: ReaderSelectionMagnifierView?
     private var selectedRange: NSRange?
     private var isDraggingHandle = false
+    private var restoresMenuAfterBlankLongPress = false
 
     var hasSelection: Bool {
         selectedRange != nil
@@ -35,6 +37,7 @@ final class ReaderTextSelectionController: NSObject {
         self.menuItems = menuItems
         super.init()
         configureLongPressGesture(on: hostView)
+        configureExternalDragGesture(on: hostView)
     }
 
     func clearSelection(hidesMenu: Bool = true) {
@@ -43,7 +46,9 @@ final class ReaderTextSelectionController: NSObject {
         overlayView?.removeFromSuperview()
         overlayView = nil
         hideMagnifier()
+        externalDragGesture?.isEnabled = false
         isDraggingHandle = false
+        restoresMenuAfterBlankLongPress = false
         if hidesMenu {
             UIMenuController.shared.setMenuVisible(false, animated: false)
         }
@@ -86,38 +91,55 @@ final class ReaderTextSelectionController: NSObject {
         longPressGesture = gesture
     }
 
+    private func configureExternalDragGesture(on hostView: UIView) {
+        let gesture = ReaderImmediatePanGestureRecognizer(
+            target: self,
+            action: #selector(externalDragRecognized(_:))
+        )
+        gesture.delegate = self
+        gesture.isEnabled = false
+        hostView.addGestureRecognizer(gesture)
+        externalDragGesture = gesture
+    }
+
     @objc private func longPressRecognized(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began else {
-            return
-        }
-        guard isSelectionEnabled() else {
-            clearSelection()
-            return
-        }
-        guard let hostView else {
-            return
-        }
-
-        let location = recognizer.location(in: hostView)
-        guard let textView = targetProvider(location) else {
-            if hasSelection {
-                hideMenu(animated: true)
+        switch recognizer.state {
+        case .began:
+            restoresMenuAfterBlankLongPress = false
+            guard isSelectionEnabled() else {
+                clearSelection()
+                return
             }
-            return
-        }
-        let textLocation = textView.convert(location, from: hostView)
-        guard let characterIndex = textView.characterIndex(at: textLocation) else {
-            if hasSelection {
-                hideMenu(animated: true)
+            guard let hostView else {
+                return
             }
-            return
-        }
-        guard let paragraphRange = textView.paragraphRange(containing: characterIndex) else {
-            return
-        }
 
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        select(range: paragraphRange, in: textView)
+            let location = recognizer.location(in: hostView)
+            guard let textView = targetProvider(location) else {
+                hideMenuForBlankLongPressIfNeeded()
+                return
+            }
+            let textLocation = textView.convert(location, from: hostView)
+            guard let characterIndex = textView.characterIndex(at: textLocation) else {
+                hideMenuForBlankLongPressIfNeeded()
+                return
+            }
+            guard let paragraphRange = textView.paragraphRange(containing: characterIndex) else {
+                return
+            }
+
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            select(range: paragraphRange, in: textView)
+        case .ended, .cancelled, .failed:
+            if restoresMenuAfterBlankLongPress {
+                restoresMenuAfterBlankLongPress = false
+                if hasSelection {
+                    showMenu(animated: true)
+                }
+            }
+        default:
+            break
+        }
     }
 
     private func select(range: NSRange, in textView: TextReadView) {
@@ -130,6 +152,7 @@ final class ReaderTextSelectionController: NSObject {
 
         selectedTextView = textView
         selectedRange = normalizedRange
+        externalDragGesture?.isEnabled = true
         installOverlayIfNeeded(on: textView)
         updateOverlay(on: textView, range: normalizedRange)
         showMenu(animated: true)
@@ -152,8 +175,15 @@ final class ReaderTextSelectionController: NSObject {
         overlay.onHandlePan = { [weak self] handle, point, state in
             self?.handlePan(handle: handle, point: point, state: state)
         }
-        overlay.onExternalPan = { [weak self] point, state in
-            self?.handleExternalPan(point: point, state: state)
+        overlay.onExternalPan = { [weak self, weak overlay] point, state in
+            guard let overlay else {
+                return
+            }
+            self?.handleExternalPan(
+                point: point,
+                state: state,
+                coordinateView: overlay
+            )
         }
         textView.addSubview(overlay)
         overlayView = overlay
@@ -239,19 +269,32 @@ final class ReaderTextSelectionController: NSObject {
 
     private func handleExternalPan(
         point: CGPoint,
-        state: UIGestureRecognizer.State
+        state: UIGestureRecognizer.State,
+        coordinateView: UIView
     ) {
         guard let selectedTextView,
               let hostView else {
             return
         }
 
+        let hostPoint = hostView.convert(point, from: coordinateView)
+        let textPoint = selectedTextView.convert(hostPoint, from: hostView)
         switch state {
         case .began:
             hideMenu(animated: true)
-            showMagnifier(sourceView: selectedTextView, sourcePoint: point, hostView: hostView)
+            showMagnifier(
+                sourceView: selectedTextView,
+                sourcePoint: clampedSourcePoint(textPoint, in: selectedTextView),
+                hostView: hostView,
+                anchorPoint: hostPoint
+            )
         case .changed:
-            showMagnifier(sourceView: selectedTextView, sourcePoint: point, hostView: hostView)
+            showMagnifier(
+                sourceView: selectedTextView,
+                sourcePoint: clampedSourcePoint(textPoint, in: selectedTextView),
+                hostView: hostView,
+                anchorPoint: hostPoint
+            )
         case .ended, .cancelled, .failed:
             hideMagnifier()
             if hasSelection {
@@ -260,6 +303,25 @@ final class ReaderTextSelectionController: NSObject {
         default:
             break
         }
+    }
+
+    @objc private func externalDragRecognized(_ recognizer: ReaderImmediatePanGestureRecognizer) {
+        guard let hostView else {
+            return
+        }
+        handleExternalPan(
+            point: recognizer.location(in: hostView),
+            state: recognizer.state,
+            coordinateView: hostView
+        )
+    }
+
+    private func hideMenuForBlankLongPressIfNeeded() {
+        guard hasSelection else {
+            return
+        }
+        hideMenu(animated: true)
+        restoresMenuAfterBlankLongPress = true
     }
 
     private func showMenu(animated: Bool) {
@@ -292,7 +354,8 @@ final class ReaderTextSelectionController: NSObject {
     private func showMagnifier(
         sourceView: UIView,
         sourcePoint: CGPoint,
-        hostView: UIView
+        hostView: UIView,
+        anchorPoint: CGPoint
     ) {
         let magnifier = magnifierView ?? ReaderSelectionMagnifierView()
         if magnifier.superview == nil {
@@ -301,12 +364,11 @@ final class ReaderTextSelectionController: NSObject {
         magnifierView = magnifier
         magnifier.update(sourceView: sourceView, sourcePoint: sourcePoint)
 
-        let hostPoint = hostView.convert(sourcePoint, from: sourceView)
         let x = min(
-            max(hostPoint.x, magnifier.bounds.width / 2 + 12),
+            max(anchorPoint.x, magnifier.bounds.width / 2 + 12),
             max(magnifier.bounds.width / 2 + 12, hostView.bounds.width - magnifier.bounds.width / 2 - 12)
         )
-        let y = max(magnifier.bounds.height / 2 + 12, hostPoint.y - 78)
+        let y = max(magnifier.bounds.height / 2 + 12, anchorPoint.y - 82)
         magnifier.center = CGPoint(x: x, y: y)
         magnifier.isHidden = false
     }
@@ -314,6 +376,35 @@ final class ReaderTextSelectionController: NSObject {
     private func hideMagnifier() {
         magnifierView?.removeFromSuperview()
         magnifierView = nil
+    }
+
+    private func clampedSourcePoint(_ point: CGPoint, in sourceView: UIView) -> CGPoint {
+        CGPoint(
+            x: min(max(point.x, sourceView.bounds.minX), sourceView.bounds.maxX),
+            y: min(max(point.y, sourceView.bounds.minY), sourceView.bounds.maxY)
+        )
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldReceive touch: UITouch
+    ) -> Bool {
+        guard gestureRecognizer === externalDragGesture else {
+            return true
+        }
+        guard hasSelection else {
+            return false
+        }
+
+        var touchedView = touch.view
+        while let currentView = touchedView {
+            if currentView is UIControl
+                || currentView is ReaderTextSelectionOverlayView {
+                return false
+            }
+            touchedView = currentView.superview
+        }
+        return true
     }
 
     private func fallbackInsertionIndex(
@@ -355,20 +446,19 @@ final class ReaderTextSelectionController: NSObject {
 private final class ReaderSelectionMagnifierView: UIView {
     private weak var sourceView: UIView?
     private var sourcePoint = CGPoint.zero
-    private let magnification: CGFloat = 1.85
+    private let magnification: CGFloat = 1.9
+    private let lensInset: CGFloat = 4
 
     init() {
-        super.init(frame: CGRect(x: 0, y: 0, width: 118, height: 76))
-        backgroundColor = .systemBackground
+        super.init(frame: CGRect(x: 0, y: 0, width: 112, height: 112))
+        backgroundColor = .clear
         isOpaque = false
         isUserInteractionEnabled = false
-        layer.cornerRadius = 14
-        layer.borderWidth = 1
-        layer.borderColor = UIColor.systemBlue.withAlphaComponent(0.45).cgColor
+        layer.cornerRadius = 56
         layer.shadowColor = UIColor.black.cgColor
-        layer.shadowOpacity = 0.18
-        layer.shadowRadius = 9
-        layer.shadowOffset = CGSize(width: 0, height: 5)
+        layer.shadowOpacity = 0.22
+        layer.shadowRadius = 10
+        layer.shadowOffset = CGSize(width: 0, height: 4)
         clipsToBounds = false
     }
 
@@ -383,27 +473,38 @@ private final class ReaderSelectionMagnifierView: UIView {
         setNeedsDisplay()
     }
 
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        layer.cornerRadius = bounds.width / 2
+        layer.shadowPath = UIBezierPath(ovalIn: bounds.insetBy(dx: lensInset, dy: lensInset)).cgPath
+    }
+
     override func draw(_ rect: CGRect) {
         guard let sourceView,
               let context = UIGraphicsGetCurrentContext() else {
             return
         }
 
-        let clipPath = UIBezierPath(
-            roundedRect: bounds.insetBy(dx: 1, dy: 1),
-            cornerRadius: 13
-        )
+        let lensRect = bounds.insetBy(dx: lensInset, dy: lensInset)
+        let clipPath = UIBezierPath(ovalIn: lensRect)
         UIColor.systemBackground.setFill()
         clipPath.fill()
 
         context.saveGState()
         clipPath.addClip()
         context.translateBy(
-            x: bounds.midX - sourcePoint.x * magnification,
-            y: bounds.midY - sourcePoint.y * magnification
+            x: lensRect.midX - sourcePoint.x * magnification,
+            y: lensRect.midY - sourcePoint.y * magnification
         )
         context.scaleBy(x: magnification, y: magnification)
         sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)
         context.restoreGState()
+
+        UIColor.systemBackground.withAlphaComponent(0.95).setStroke()
+        clipPath.lineWidth = 3
+        clipPath.stroke()
+        UIColor.systemBlue.withAlphaComponent(0.28).setStroke()
+        clipPath.lineWidth = 1
+        clipPath.stroke()
     }
 }

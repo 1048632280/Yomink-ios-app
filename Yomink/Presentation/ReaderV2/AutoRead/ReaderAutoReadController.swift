@@ -10,6 +10,7 @@ final class ReaderAutoReadController {
     private(set) var isReading = false
     private(set) var isPausedForBackground = false
     private(set) var isPausedForContentLoad = false
+    private(set) var isPausedForUserInteraction = false
     private(set) var speed: CGFloat = CGFloat(ReaderSettings.default.autoReadSpeed)
 
     var onScrollTick: (() -> Void)?
@@ -33,6 +34,7 @@ final class ReaderAutoReadController {
         isReading = true
         isPausedForBackground = false
         isPausedForContentLoad = false
+        isPausedForUserInteraction = false
         startDisplayLinkIfNeeded()
     }
 
@@ -41,6 +43,7 @@ final class ReaderAutoReadController {
         isReading = false
         isPausedForBackground = false
         isPausedForContentLoad = false
+        isPausedForUserInteraction = false
         scrollView = nil
     }
 
@@ -60,7 +63,8 @@ final class ReaderAutoReadController {
         }
         self.scrollView = scrollView
         isPausedForBackground = false
-        if !isPausedForContentLoad {
+        if !isPausedForContentLoad,
+           !isPausedForUserInteraction {
             startDisplayLinkIfNeeded()
         }
     }
@@ -72,7 +76,29 @@ final class ReaderAutoReadController {
         }
         self.scrollView = scrollView
         isPausedForContentLoad = false
-        if !isPausedForBackground {
+        if !isPausedForBackground,
+           !isPausedForUserInteraction {
+            startDisplayLinkIfNeeded()
+        }
+    }
+
+    func pauseForUserInteraction() {
+        guard isReading else {
+            return
+        }
+        invalidateDisplayLink()
+        isPausedForUserInteraction = true
+    }
+
+    func resumeAfterUserInteractionIfNeeded(scrollView: UIScrollView) {
+        guard isReading,
+              isPausedForUserInteraction else {
+            return
+        }
+        self.scrollView = scrollView
+        isPausedForUserInteraction = false
+        if !isPausedForBackground,
+           !isPausedForContentLoad {
             startDisplayLinkIfNeeded()
         }
     }
@@ -84,6 +110,7 @@ final class ReaderAutoReadController {
     func advance(by interval: TimeInterval) {
         guard isReading,
               let scrollView,
+              !isPausedForUserInteraction,
               !scrollView.isDragging,
               !scrollView.isTracking,
               !scrollView.isDecelerating else {

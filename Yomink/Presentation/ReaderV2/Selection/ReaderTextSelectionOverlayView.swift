@@ -76,7 +76,7 @@ final class ReaderTextSelectionOverlayView: UIView, UIGestureRecognizerDelegate 
         )
         addGestureRecognizer(tapGesture)
 
-        let externalPan = UIPanGestureRecognizer(
+        let externalPan = ReaderImmediatePanGestureRecognizer(
             target: self,
             action: #selector(externalAreaPanned(_:))
         )
@@ -125,7 +125,7 @@ final class ReaderTextSelectionOverlayView: UIView, UIGestureRecognizerDelegate 
         onHandlePan?(.end, recognizer.location(in: self), recognizer.state)
     }
 
-    @objc private func externalAreaPanned(_ recognizer: UIPanGestureRecognizer) {
+    @objc private func externalAreaPanned(_ recognizer: UIGestureRecognizer) {
         onExternalPan?(recognizer.location(in: self), recognizer.state)
     }
 
@@ -176,6 +176,71 @@ final class ReaderTextSelectionOverlayView: UIView, UIGestureRecognizerDelegate 
         }
 
         return rects
+    }
+}
+
+final class ReaderImmediatePanGestureRecognizer: UIGestureRecognizer {
+    private var initialPoint: CGPoint?
+    private let activationDistance: CGFloat = 2
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        guard touches.count == 1,
+              let touch = touches.first,
+              let view else {
+            state = .failed
+            return
+        }
+        initialPoint = touch.location(in: view)
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesMoved(touches, with: event)
+        guard let initialPoint,
+              let touch = touches.first,
+              let view else {
+            state = .failed
+            return
+        }
+
+        let point = touch.location(in: view)
+        let dx = point.x - initialPoint.x
+        let dy = point.y - initialPoint.y
+        let distance = sqrt(dx * dx + dy * dy)
+
+        switch state {
+        case .possible where distance >= activationDistance:
+            state = .began
+        case .began, .changed:
+            state = .changed
+        default:
+            break
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesEnded(touches, with: event)
+        switch state {
+        case .began, .changed:
+            state = .ended
+        default:
+            state = .failed
+        }
+    }
+
+    override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesCancelled(touches, with: event)
+        switch state {
+        case .began, .changed:
+            state = .cancelled
+        default:
+            state = .failed
+        }
+    }
+
+    override func reset() {
+        super.reset()
+        initialPoint = nil
     }
 }
 
