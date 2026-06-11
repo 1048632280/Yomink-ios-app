@@ -1,6 +1,6 @@
 import UIKit
 
-struct ReaderTheme {
+struct ReaderTheme: @unchecked Sendable {
     var contentColor: UIColor
     var headerColor: UIColor
     var backgroundColor: UIColor

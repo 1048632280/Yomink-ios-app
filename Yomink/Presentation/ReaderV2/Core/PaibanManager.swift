@@ -1,7 +1,7 @@
 import CoreText
 import UIKit
 
-struct ReaderDivisionPage {
+struct ReaderDivisionPage: @unchecked Sendable {
     let attributedText: NSAttributedString
     let displayRange: NSRange
     let usedHeight: CGFloat
@@ -20,7 +20,7 @@ struct ReaderDivisionPage {
     }
 }
 
-struct ReaderDivisionResult {
+struct ReaderDivisionResult: @unchecked Sendable {
     let pages: [ReaderDivisionPage]
     let requestedDoubleColumn: Bool
     let usesDoubleColumn: Bool
@@ -268,10 +268,13 @@ struct PaibanManager {
             )
             let height = returnsHeights
                 ? Self.suggestedHeight(
-                    for: attributedText,
-                    range: range,
+                    for: pageAttributedText,
                     fittingWidth: pageRect.width,
                     fallback: pageRect.height
+                ) + Self.trailingSpacing(
+                    after: range,
+                    in: attributedText.string,
+                    layout: layout
                 )
                 : pageRect.height
             pages.append(
@@ -379,6 +382,26 @@ struct PaibanManager {
         return previous.rangeOfCharacter(from: .newlines) != nil
     }
 
+    private static func trailingSpacing(
+        after range: NSRange,
+        in text: String,
+        layout: ReaderLayout
+    ) -> CGFloat {
+        let end = range.location + range.length
+        let nsText = text as NSString
+        guard end < nsText.length else {
+            return chapterBreakSpacing(layout: layout)
+        }
+        return isNewParagraphStart(at: end, in: text)
+            ? max(0, layout.paragraphSpacing)
+            : max(0, layout.lineSpacing)
+    }
+
+    private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {
+        let lineHeight = layout.fontSize + max(0, layout.lineSpacing)
+        return max(lineHeight * 3, layout.paragraphSpacing)
+    }
+
     private static func visibleRange(
         _ visible: CFRange,
         fallbackLocation: Int,
@@ -435,8 +458,9 @@ struct PaibanManager {
             constraint,
             nil
         )
-        let bufferedHeight = ceil(size.height) + 2
-        return min(max(1, bufferedHeight), max(1, fallback))
+        let measuredHeight = size.height.isFinite ? size.height : fallback
+        let bufferedHeight = ceil(measuredHeight) + 2
+        return max(1, bufferedHeight)
     }
 
 }

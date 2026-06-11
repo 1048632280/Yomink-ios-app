@@ -195,7 +195,7 @@ final class ReaderAutoReadController {
         } else {
             displayLink.preferredFramesPerSecond = 60
         }
-        displayLink.add(to: .main, forMode: .default)
+        displayLink.add(to: .main, forMode: .common)
         self.displayLink = displayLink
     }
 

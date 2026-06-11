@@ -1,6 +1,6 @@
 import UIKit
 
-struct ReaderFontManager {
+struct ReaderFontManager: Sendable {
     static let defaultFontSize: CGFloat = 20
     static let minimumFontSize: CGFloat = 8
     static let minimumStrokeWidth: CGFloat = -10

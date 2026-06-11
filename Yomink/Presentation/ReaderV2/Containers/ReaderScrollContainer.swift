@@ -8,8 +8,6 @@ struct ReaderScrollSection {
     var heights: [CGFloat]
     var pageModels: [ReaderPageModel]
     var fullProgresses: [Double]
-    var sourceItems: [NSAttributedString] = []
-    var displayRanges: [NSRange] = []
     var bookTitle: String = ""
 }
 
@@ -494,12 +492,6 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
         let section = sections[indexPath.section]
         cell.configure(
             attributedText: section.items[indexPath.row],
-            sourceAttributedText: section.sourceItems.indices.contains(indexPath.row)
-                ? section.sourceItems[indexPath.row]
-                : nil,
-            displayRange: section.displayRanges.indices.contains(indexPath.row)
-                ? section.displayRanges[indexPath.row]
-                : nil,
             pageModel: section.pageModels[indexPath.row],
             layout: layout,
             theme: theme,

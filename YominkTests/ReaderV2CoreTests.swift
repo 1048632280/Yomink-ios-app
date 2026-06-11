@@ -391,7 +391,8 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(fixed.pageHeights.first ?? 0, 360, accuracy: 0.0001)
         XCTAssertEqual(measured.pageHeights.count, measured.pageCount)
-        XCTAssertTrue(measured.pageHeights.allSatisfy { $0 > 0 && $0 <= 360 })
+        XCTAssertTrue(measured.pageHeights.allSatisfy { $0 > 0 })
+        XCTAssertGreaterThan(measured.pageHeights.first ?? 0, 90)
         XCTAssertLessThan(measured.pageHeights.first ?? 360, 360)
     }
 
@@ -535,7 +536,7 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
-    func testTextReadViewUsesOriginalDisplayRangeForVerticalPages() {
+    func testTextReadViewSupportsOriginalDisplayRangeForSelectablePageViews() {
         let manager = PaibanManager(layout: .phone, theme: .standard)
         let result = manager.divideText(
             readerV2LongText(repeating: 80),
@@ -1045,8 +1046,6 @@ final class ReaderV2CoreTests: XCTestCase {
 
         cell.configure(
             attributedText: NSAttributedString(string: "visible"),
-            sourceAttributedText: NSAttributedString(string: "prefix visible suffix"),
-            displayRange: NSRange(location: 7, length: 7),
             pageModel: model,
             layout: .phone,
             theme: .dark
@@ -1055,9 +1054,8 @@ final class ReaderV2CoreTests: XCTestCase {
         cell.layoutIfNeeded()
 
         XCTAssertEqual(cell.pageModel, Optional(model))
-        XCTAssertEqual(cell.textView.attributedText.string, "prefix visible suffix")
-        XCTAssertEqual(cell.textView.displayRange?.location, 7)
-        XCTAssertEqual(cell.textView.displayRange?.length, 7)
+        XCTAssertEqual(cell.textView.attributedText.string, "visible")
+        XCTAssertNil(cell.textView.displayRange)
     }
 
     func testReaderThemeManagerMapsSettingsAndInvalidatesPagination() {

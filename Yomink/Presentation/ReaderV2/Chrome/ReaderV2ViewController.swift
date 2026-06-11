@@ -512,12 +512,22 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         open(record: record, animated: false)
     }
 
-    private func recordForCurrentPage() -> ReaderRecord? {
+    private func recordForCurrentPage(
+        prefersContentRangeProgress: Bool = false
+    ) -> ReaderRecord? {
         guard let currentPageModel else {
             return pendingInitialRecord
         }
         guard currentPageModel.isNormal else {
             return nil
+        }
+        if prefersContentRangeProgress,
+           let progress = contentRangeProgress(for: currentPageModel) {
+            return ReaderRecord(
+                chapterIndex: currentPageModel.chapterIndex,
+                progress: progress,
+                chapterTitle: chapterTitle(at: currentPageModel.chapterIndex)
+            )
         }
         let progress = ReaderPageCalculator.pageProgress(
             pageCount: currentPageModel.pageCount,
@@ -532,6 +542,24 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             pageIndex: currentPageModel.pageIndex,
             pageCount: currentPageModel.pageCount,
             usesPageIndex: currentPageModel.usesPageIndex
+        )
+    }
+
+    private func contentRangeProgress(for pageModel: ReaderPageModel) -> Double? {
+        guard let result = paginationCache[pageModel.chapterIndex],
+              result.pages.indices.contains(pageModel.pageIndex) else {
+            return nil
+        }
+        let page = result.pages[pageModel.pageIndex]
+        let sourceLength = max(
+            page.sourceAttributedText.length,
+            page.displayRange.location + page.displayRange.length
+        )
+        guard sourceLength > 0 else {
+            return nil
+        }
+        return ReaderPageModel.clampedProgress(
+            Double(page.displayRange.location) / Double(sourceLength)
         )
     }
 
@@ -627,6 +655,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func selectableTextView(at location: CGPoint) -> TextReadView? {
+        guard !autoReadController.isReading else {
+            return nil
+        }
         if let pageContainer = activeContainer as? ReaderPageContainer {
             return pageContainer.selectableTextView(at: location, from: view)
         }
@@ -779,12 +810,15 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         lastPaginationSize = .zero
     }
 
-    private func currentPaginationSize() -> CGSize? {
+    private func currentPaginationSize(
+        for turnPageType: ReaderTurnPageType? = nil
+    ) -> CGSize? {
         guard view.bounds.width > 2,
               view.bounds.height > 2 else {
             return nil
         }
-        if activeTurnPageType == .verticalContinuous {
+        let turnPageType = turnPageType ?? activeTurnPageType
+        if turnPageType == .verticalContinuous {
             return CGSize(
                 width: max(1, view.bounds.width - layout.leftMargin - layout.rightMargin),
                 height: max(1, view.bounds.height)
@@ -896,15 +930,25 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         let chapterIndex = min(max(record.chapterIndex, 0), chapterProvider.chapterCount - 1)
         let result = try await divisionResult(forChapterAt: chapterIndex)
+        return pageModel(from: record, chapterIndex: chapterIndex, result: result)
+    }
+
+    private func pageModel(
+        from record: ReaderRecord,
+        chapterIndex: Int,
+        result: ReaderDivisionResult
+    ) -> ReaderPageModel {
         let canUseStoredPageIndex = record.usesPageIndex
             && record.pageCount == result.pageCount
             && record.pageIndex != nil
-        let pageIndex = ReaderPageCalculator.pageIndex(
-            pageCount: result.pageCount,
-            pageIndex: record.pageIndex ?? 0,
-            progress: record.progress,
-            usesPageIndex: canUseStoredPageIndex
-        )
+        let pageIndex = canUseStoredPageIndex
+            ? ReaderPageCalculator.pageIndex(
+                pageCount: result.pageCount,
+                pageIndex: record.pageIndex ?? 0,
+                progress: record.progress,
+                usesPageIndex: true
+            )
+            : self.pageIndex(containingProgress: record.progress, in: result)
         return ReaderPageModel(
             chapterCount: chapterProvider.chapterCount,
             chapterIndex: chapterIndex,
@@ -916,34 +960,105 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         )
     }
 
+    private func pageIndex(
+        containingProgress progress: Double,
+        in result: ReaderDivisionResult
+    ) -> Int {
+        guard result.pageCount > 0 else {
+            return 0
+        }
+        let clamped = ReaderPageModel.clampedProgress(progress)
+        guard clamped < 1 else {
+            return result.pageCount - 1
+        }
+        let sourceLength = result.pages.reduce(0) { partial, page in
+            max(
+                partial,
+                page.sourceAttributedText.length,
+                page.displayRange.location + page.displayRange.length
+            )
+        }
+        guard sourceLength > 0 else {
+            return ReaderPageCalculator.pageIndex(
+                pageCount: result.pageCount,
+                pageIndex: 0,
+                progress: clamped,
+                usesPageIndex: false
+            )
+        }
+        let targetLocation = min(
+            max(Int((Double(sourceLength) * clamped).rounded(.down)), 0),
+            max(sourceLength - 1, 0)
+        )
+        if let index = result.pages.firstIndex(where: { page in
+            targetLocation >= page.displayRange.location
+                && targetLocation < page.displayRange.location + page.displayRange.length
+        }) {
+            return index
+        }
+        return ReaderPageCalculator.pageIndex(
+            pageCount: result.pageCount,
+            pageIndex: 0,
+            progress: clamped,
+            usesPageIndex: false
+        )
+    }
+
     private func divisionResult(forChapterAt index: Int) async throws -> ReaderDivisionResult {
         if let cached = paginationCache[index] {
             return cached
-        }
-        guard let chapterProvider,
-              let chapter = chapterProvider.chapter(at: index) else {
-            throw ReaderChapterProviderError.missingChapter
         }
         guard let pageSize = currentPaginationSize() else {
             throw ReaderV2Error.layoutUnavailable
         }
 
-        let rawText = try await chapterProvider.textAsync(forChapterAt: index)
-        let text = ReaderTextFilter.readingFilteredText(
-            rules: filterRules,
-            to: rawText
-        ).displayText
-        let manager = PaibanManager(layout: layout, theme: theme)
-        let result = manager.divideText(
-            text,
-            chapterTitle: chapter.title,
-            chapterIndex: index,
+        let result = try await makeDivisionResult(
+            forChapterAt: index,
             pageSize: pageSize,
-            doubleColumn: false,
             returnsHeights: activeTurnPageType == .verticalContinuous
         )
         paginationCache[index] = result
         return result
+    }
+
+    private func makeDivisionResult(
+        forChapterAt index: Int,
+        pageSize: CGSize,
+        returnsHeights: Bool
+    ) async throws -> ReaderDivisionResult {
+        guard let chapterProvider,
+              let chapter = chapterProvider.chapter(at: index) else {
+            throw ReaderChapterProviderError.missingChapter
+        }
+        let currentFilterRules = filterRules
+        let currentLayout = layout
+        let currentTheme = theme
+        let chapterTitle = chapter.title
+        let task = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
+            let rawText = try chapterProvider.text(forChapterAt: index)
+            try Task.checkCancellation()
+            let text = ReaderTextFilter.readingFilteredText(
+                rules: currentFilterRules,
+                to: rawText
+            ).displayText
+            let manager = PaibanManager(layout: currentLayout, theme: currentTheme)
+            let result = manager.divideText(
+                text,
+                chapterTitle: chapterTitle,
+                chapterIndex: index,
+                pageSize: pageSize,
+                doubleColumn: false,
+                returnsHeights: returnsHeights
+            )
+            try Task.checkCancellation()
+            return result
+        }
+        return try await withTaskCancellationHandler {
+            try await task.value
+        } onCancel: {
+            task.cancel()
+        }
     }
 
     private func display(
@@ -980,7 +1095,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         if shouldStartAutoReadAfterOpen {
             shouldStartAutoReadAfterOpen = false
-            startAutoReadingIfPossible(showsPanel: true)
+            prepareCurrentVerticalContainerAndStartAutoRead()
         }
         if savesProgress {
             saveProgress(
@@ -1127,8 +1242,6 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     chapterProgress: pageModel.chapterProgress
                 )
             },
-            sourceItems: result.pages.map(\.sourceAttributedText),
-            displayRanges: result.pages.map(\.displayRange),
             bookTitle: book.title
         )
     }
@@ -1220,12 +1333,25 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         _ chapterIndex: Int,
         insertsAtBeginning: Bool
     ) {
+        let generation = openGeneration
+        guard let pageSize = currentPaginationSize(for: .verticalContinuous) else {
+            return
+        }
         preloadTasks[chapterIndex] = Task { [weak self] in
             do {
                 guard let self else {
                     return
                 }
-                _ = try await self.divisionResult(forChapterAt: chapterIndex)
+                let result = try await self.makeDivisionResult(
+                    forChapterAt: chapterIndex,
+                    pageSize: pageSize,
+                    returnsHeights: true
+                )
+                guard self.openGeneration == generation else {
+                    self.preloadTasks[chapterIndex] = nil
+                    return
+                }
+                self.paginationCache[chapterIndex] = result
                 let inserted = self.insertLoadedScrollChapter(
                     chapterIndex,
                     atBeginning: insertsAtBeginning
@@ -1251,6 +1377,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func preloadAround(chapterIndex: Int) {
+        let generation = openGeneration
+        guard let pageSize = currentPaginationSize() else {
+            return
+        }
+        let returnsHeights = activeTurnPageType == .verticalContinuous
         for index in [chapterIndex - 1, chapterIndex + 1] {
             guard chapters.indices.contains(index),
                   paginationCache[index] == nil,
@@ -1262,7 +1393,16 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     guard let self else {
                         return
                     }
-                    _ = try await self.divisionResult(forChapterAt: index)
+                    let result = try await self.makeDivisionResult(
+                        forChapterAt: index,
+                        pageSize: pageSize,
+                        returnsHeights: returnsHeights
+                    )
+                    guard self.openGeneration == generation else {
+                        self.preloadTasks[index] = nil
+                        return
+                    }
+                    self.paginationCache[index] = result
                     self.preloadTasks[index] = nil
                 } catch is CancellationError {
                     self?.preloadTasks[index] = nil
@@ -1978,47 +2118,159 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         setSettingsPanelVisible(false, animated: true)
         guard activeTurnPageType == .verticalContinuous else {
             autoReadEntryPageMode = readerSettings.normalized.pageMode
-            shouldStartAutoReadAfterOpen = true
-            guard let record = recordForCurrentPage() else {
-                configureContainer(for: .verticalContinuous)
-                startAutoReadingIfPossible(showsPanel: true)
+            guard let record = recordForCurrentPage(prefersContentRangeProgress: true) else {
                 return
             }
-            openTask?.cancel()
-            preloadTasks.values.forEach { $0.cancel() }
-            preloadTasks.removeAll()
-            paginationCache.removeAll()
-            loadedScrollChapterIndexes.removeAll()
-            configureContainer(for: .verticalContinuous)
-            open(
-                record: record,
-                animated: false,
-                showsLoading: false,
-                closesMenuOnSuccess: false
-            )
+            prepareVerticalContainerAndStartAutoRead(record: record)
             return
         }
         autoReadEntryPageMode = readerSettings.normalized.pageMode
-        startAutoReadingIfPossible(showsPanel: true)
+        prepareCurrentVerticalContainerAndStartAutoRead()
     }
 
-    private func startAutoReadingIfPossible(showsPanel: Bool = true) {
+    private func prepareVerticalContainerAndStartAutoRead(record: ReaderRecord) {
+        openGeneration += 1
+        let generation = openGeneration
+        openTask?.cancel()
+        preloadTasks.values.forEach { $0.cancel() }
+        preloadTasks.removeAll()
+        openTask = Task { [weak self] in
+            do {
+                guard let self,
+                      let chapterProvider = self.chapterProvider,
+                      chapterProvider.chapterCount > 0 else {
+                    throw ReaderV2Error.emptyBook
+                }
+                guard let pageSize = self.currentPaginationSize(for: .verticalContinuous) else {
+                    throw ReaderV2Error.layoutUnavailable
+                }
+
+                let chapterIndex = min(max(record.chapterIndex, 0), chapterProvider.chapterCount - 1)
+                let currentResult = try await self.makeDivisionResult(
+                    forChapterAt: chapterIndex,
+                    pageSize: pageSize,
+                    returnsHeights: true
+                )
+                let model = self.pageModel(
+                    from: record,
+                    chapterIndex: chapterIndex,
+                    result: currentResult
+                )
+                var preparedResults: [(chapterIndex: Int, result: ReaderDivisionResult)] = [
+                    (chapterIndex, currentResult)
+                ]
+                let nextChapterIndex = chapterIndex + 1
+                if self.chapters.indices.contains(nextChapterIndex),
+                   let nextResult = try? await self.makeDivisionResult(
+                       forChapterAt: nextChapterIndex,
+                       pageSize: pageSize,
+                       returnsHeights: true
+                   ) {
+                    preparedResults.append((nextChapterIndex, nextResult))
+                }
+
+                try Task.checkCancellation()
+                guard self.openGeneration == generation else {
+                    return
+                }
+
+                self.preloadTasks.values.forEach { $0.cancel() }
+                self.preloadTasks.removeAll()
+                self.paginationCache.removeAll()
+                self.loadedScrollChapterIndexes.removeAll()
+                self.configureContainer(for: .verticalContinuous)
+                for prepared in preparedResults {
+                    self.paginationCache[prepared.chapterIndex] = prepared.result
+                }
+                self.loadedScrollChapterIndexes = preparedResults.map { $0.chapterIndex }
+                try self.display(
+                    pageModel: model,
+                    direction: .forward,
+                    animated: false,
+                    savesProgress: true,
+                    recordsOpenHistory: true
+                )
+                self.startAutoReadingIfPossible(
+                    showsPanel: true,
+                    reloadsSections: false
+                )
+            } catch is CancellationError {
+            } catch {
+                guard let self,
+                      self.openGeneration == generation else {
+                    return
+                }
+                self.showError(error)
+            }
+        }
+    }
+
+    private func prepareCurrentVerticalContainerAndStartAutoRead() {
+        openGeneration += 1
+        let generation = openGeneration
+        openTask?.cancel()
+        openTask = Task { [weak self] in
+            guard let self else {
+                return
+            }
+            guard let currentPageModel = self.currentPageModel else {
+                return
+            }
+            if let pageSize = self.currentPaginationSize(for: .verticalContinuous) {
+                self.ensureScrollChapterLoaded(currentPageModel.chapterIndex)
+                let nextChapterIndex = (self.loadedScrollChapterIndexes.last ?? currentPageModel.chapterIndex) + 1
+                if self.chapters.indices.contains(nextChapterIndex),
+                   self.paginationCache[nextChapterIndex] == nil {
+                    if let preloadTask = self.preloadTasks[nextChapterIndex] {
+                        preloadTask.cancel()
+                        self.preloadTasks[nextChapterIndex] = nil
+                    }
+                    if let nextResult = try? await self.makeDivisionResult(
+                        forChapterAt: nextChapterIndex,
+                        pageSize: pageSize,
+                        returnsHeights: true
+                    ) {
+                        guard self.openGeneration == generation else {
+                            return
+                        }
+                        self.paginationCache[nextChapterIndex] = nextResult
+                        _ = self.insertLoadedScrollChapter(
+                            nextChapterIndex,
+                            atBeginning: false
+                        )
+                    }
+                }
+            }
+            guard self.openGeneration == generation else {
+                return
+            }
+            self.startAutoReadingIfPossible(showsPanel: true)
+        }
+    }
+
+    private func startAutoReadingIfPossible(
+        showsPanel: Bool = true,
+        reloadsSections: Bool = true
+    ) {
         clearTextSelection()
         guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
             shouldStartAutoReadAfterOpen = true
             return
         }
-        if let currentPageModel {
-            ensureScrollChapterLoaded(currentPageModel.chapterIndex)
+        if reloadsSections {
+            if let currentPageModel {
+                ensureScrollChapterLoaded(currentPageModel.chapterIndex)
+            }
+            let preservesScrollPosition = scrollContainer.tableView.numberOfSections > 0
+            scrollContainer.reload(
+                sections: scrollSections(),
+                layout: layout,
+                theme: theme,
+                widgetVisibility: readerSettings.normalized.widgetVisibility,
+                preservesVisualPosition: preservesScrollPosition
+            )
+            primeNextScrollChapterForAutoRead()
         }
-        let preservesScrollPosition = scrollContainer.tableView.numberOfSections > 0
-        scrollContainer.reload(
-            sections: scrollSections(),
-            layout: layout,
-            theme: theme,
-            widgetVisibility: readerSettings.normalized.widgetVisibility,
-            preservesVisualPosition: preservesScrollPosition
-        )
         autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
         autoReadController.start(
             scrollView: scrollContainer.tableView,
@@ -2027,6 +2279,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         setAutoReadPanelVisible(showsPanel, animated: showsPanel)
         updateMenuState()
         updateSystemAppearance()
+    }
+
+    private func primeNextScrollChapterForAutoRead() {
+        guard activeTurnPageType == .verticalContinuous else {
+            return
+        }
+        _ = loadNextScrollChapterIfNeeded()
     }
 
     private func stopAutoReading(
@@ -2061,7 +2320,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         if restoresEntryPageMode,
            let entryPageMode,
            entryPageMode != .scroll {
-            let record = recordForCurrentPage()
+            let record = recordForCurrentPage(prefersContentRangeProgress: true)
             openTask?.cancel()
             preloadTasks.values.forEach { $0.cancel() }
             preloadTasks.removeAll()
@@ -2129,7 +2388,6 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     }
 
     private func autoReadDidScroll() {
-        clearTextSelection()
         guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
             return
         }
