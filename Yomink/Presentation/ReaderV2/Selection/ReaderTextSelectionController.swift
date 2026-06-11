@@ -444,8 +444,7 @@ final class ReaderTextSelectionController: NSObject, UIGestureRecognizerDelegate
 
 @MainActor
 private final class ReaderSelectionMagnifierView: UIView {
-    private weak var sourceView: UIView?
-    private var sourcePoint = CGPoint.zero
+    private var snapshotImage: UIImage?
     private let magnification: CGFloat = 1.9
     private let lensInset: CGFloat = 4
 
@@ -468,8 +467,7 @@ private final class ReaderSelectionMagnifierView: UIView {
     }
 
     func update(sourceView: UIView, sourcePoint: CGPoint) {
-        self.sourceView = sourceView
-        self.sourcePoint = sourcePoint
+        snapshotImage = renderSnapshot(sourceView: sourceView, sourcePoint: sourcePoint)
         setNeedsDisplay()
     }
 
@@ -480,31 +478,59 @@ private final class ReaderSelectionMagnifierView: UIView {
     }
 
     override func draw(_ rect: CGRect) {
-        guard let sourceView,
-              let context = UIGraphicsGetCurrentContext() else {
+        guard let snapshotImage else {
             return
         }
 
         let lensRect = bounds.insetBy(dx: lensInset, dy: lensInset)
         let clipPath = UIBezierPath(ovalIn: lensRect)
-        UIColor.systemBackground.setFill()
-        clipPath.fill()
 
+        guard let context = UIGraphicsGetCurrentContext() else {
+            return
+        }
         context.saveGState()
         clipPath.addClip()
-        context.translateBy(
-            x: lensRect.midX - sourcePoint.x * magnification,
-            y: lensRect.midY - sourcePoint.y * magnification
-        )
-        context.scaleBy(x: magnification, y: magnification)
-        sourceView.drawHierarchy(in: sourceView.bounds, afterScreenUpdates: false)
+        snapshotImage.draw(in: bounds)
         context.restoreGState()
 
         UIColor.systemBackground.withAlphaComponent(0.95).setStroke()
         clipPath.lineWidth = 3
         clipPath.stroke()
-        UIColor.systemBlue.withAlphaComponent(0.28).setStroke()
+        UIColor.separator.withAlphaComponent(0.35).setStroke()
         clipPath.lineWidth = 1
         clipPath.stroke()
+    }
+
+    private func renderSnapshot(sourceView: UIView, sourcePoint: CGPoint) -> UIImage {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = UIScreen.main.scale
+        format.opaque = false
+
+        let renderer = UIGraphicsImageRenderer(size: bounds.size, format: format)
+        return renderer.image { rendererContext in
+            let lensRect = bounds.insetBy(dx: lensInset, dy: lensInset)
+            UIBezierPath(ovalIn: lensRect).addClip()
+            UIColor.systemBackground.setFill()
+            UIRectFill(lensRect)
+
+            let drawRect = CGRect(
+                x: lensRect.midX - sourcePoint.x * magnification,
+                y: lensRect.midY - sourcePoint.y * magnification,
+                width: sourceView.bounds.width * magnification,
+                height: sourceView.bounds.height * magnification
+            )
+            let rendered = sourceView.drawHierarchy(in: drawRect, afterScreenUpdates: false)
+            if !rendered {
+                let context = rendererContext.cgContext
+                context.saveGState()
+                context.translateBy(
+                    x: lensRect.midX - sourcePoint.x * magnification,
+                    y: lensRect.midY - sourcePoint.y * magnification
+                )
+                context.scaleBy(x: magnification, y: magnification)
+                sourceView.layer.render(in: context)
+                context.restoreGState()
+            }
+        }
     }
 }
