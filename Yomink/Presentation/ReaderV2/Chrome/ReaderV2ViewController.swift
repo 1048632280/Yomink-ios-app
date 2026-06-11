@@ -1838,6 +1838,18 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         setMenuVisible(false, animated: animated)
     }
 
+    private func readerOverlayContainsInteractiveContent(at location: CGPoint) -> Bool {
+        if menuView.isMenuVisible {
+            let menuLocation = menuView.convert(location, from: view)
+            if menuView.containsInteractiveContent(at: menuLocation) {
+                return true
+            }
+        }
+
+        return settingsPanelView.isPanelVisible
+            && settingsPanelView.frame.contains(location)
+    }
+
     private func autoReadButtonTapped() {
         if autoReadController.isReading {
             setAutoReadPanelVisible(!autoReadPanelView.isPanelVisible, animated: true)
@@ -2010,6 +2022,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
 
         if menuView.isMenuVisible || settingsPanelView.isPanelVisible {
+            if readerOverlayContainsInteractiveContent(at: location) {
+                return
+            }
             closeReaderMenuOverlays(animated: true)
             return
         }
@@ -2079,6 +2094,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 return false
             }
             touchedView = currentView.superview
+        }
+        let location = touch.location(in: view)
+        if readerOverlayContainsInteractiveContent(at: location) {
+            return false
         }
         return true
     }

@@ -88,7 +88,10 @@ final class ReaderSystemAppearanceController {
         if state.isAutoReading || state.isAutoReadPanelVisible {
             return true
         }
-        return !state.isMenuVisible && !state.isSettingsPanelVisible
+        if state.isSettingsPanelVisible {
+            return true
+        }
+        return !state.isMenuVisible
     }
 
     private func notifyStatusBarHiddenIfNeeded(forceValue: Bool?) {

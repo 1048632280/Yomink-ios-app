@@ -1129,6 +1129,11 @@ final class ReaderV2CoreTests: XCTestCase {
 
         menuView.moreButton.sendActions(for: .touchUpInside)
         XCTAssertTrue(menuView.isMoreMenuVisible)
+        menuView.moreButton.sendActions(for: .touchUpInside)
+        XCTAssertFalse(menuView.isMoreMenuVisible)
+        XCTAssertTrue(menuView.isMenuVisible)
+        menuView.moreButton.sendActions(for: .touchUpInside)
+        XCTAssertTrue(menuView.isMoreMenuVisible)
         menuView.moreBookDetailButton.sendActions(for: .touchUpInside)
         menuView.setMoreMenuVisible(true, animated: false)
         menuView.moreContentSearchButton.sendActions(for: .touchUpInside)
@@ -1213,7 +1218,18 @@ final class ReaderV2CoreTests: XCTestCase {
             isAutoReadPanelVisible: false,
             isAutoReading: false
         )
-        XCTAssertFalse(controller.prefersStatusBarHidden)
+        XCTAssertTrue(controller.prefersStatusBarHidden)
+
+        controller.update(
+            settings: settings,
+            theme: .standard,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: true,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertTrue(controller.prefersStatusBarHidden)
 
         controller.update(
             settings: settings,
@@ -1251,6 +1267,17 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertFalse(controller.prefersStatusBarHidden)
         XCTAssertEqual(controller.preferredStatusBarStyle, .lightContent)
+
+        controller.update(
+            settings: settings,
+            theme: .dark,
+            isViewVisible: true,
+            isMenuVisible: false,
+            isSettingsPanelVisible: true,
+            isAutoReadPanelVisible: false,
+            isAutoReading: false
+        )
+        XCTAssertFalse(controller.prefersStatusBarHidden)
 
         controller.update(
             settings: settings,
