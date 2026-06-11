@@ -390,9 +390,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             autoReadPanelView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             autoReadPanelView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             autoReadPanelView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            autoReadPanelView.topAnchor.constraint(
-                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
-                constant: -ReaderV2AutoReadPanelView.preferredContentHeight
+            autoReadPanelView.heightAnchor.constraint(
+                equalToConstant: ReaderV2AutoReadPanelView.preferredContentHeight
             )
         ])
         autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)

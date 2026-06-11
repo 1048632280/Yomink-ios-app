@@ -1519,9 +1519,10 @@ final class ReaderV2CoreTests: XCTestCase {
 
         panel.setSpeed(ReaderSettings.maximumAutoReadSpeed + 1)
         XCTAssertEqual(panel.speedSlider.value, Float(ReaderSettings.defaultAutoReadSpeed))
-        XCTAssertEqual(ReaderV2AutoReadPanelView.preferredContentHeight, 92)
-        XCTAssertNotNil(panel.speedSlider.minimumValueImage)
-        XCTAssertNotNil(panel.speedSlider.maximumValueImage)
+        XCTAssertEqual(ReaderV2AutoReadPanelView.preferredContentHeight, 190)
+        XCTAssertNil(panel.speedSlider.minimumValueImage)
+        XCTAssertNil(panel.speedSlider.maximumValueImage)
+        XCTAssertEqual(panel.exitButton.layer.cornerRadius, CGFloat(21))
 
         panel.speedSlider.value = 6
         panel.speedSlider.sendActions(for: .valueChanged)

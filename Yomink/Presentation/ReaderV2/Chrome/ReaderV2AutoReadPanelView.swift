@@ -2,11 +2,12 @@ import UIKit
 
 @MainActor
 final class ReaderV2AutoReadPanelView: UIView {
-    static let preferredContentHeight: CGFloat = 92
+    static let preferredContentHeight: CGFloat = 190
 
     let speedSlider = ReaderV2VoiceSlider()
     let exitButton = UIButton(type: .system)
 
+    private let stackView = UIStackView()
     private(set) var isPanelVisible = false
 
     var onSpeedChangeFinished: ((Double) -> Void)?
@@ -37,11 +38,9 @@ final class ReaderV2AutoReadPanelView: UIView {
 
     func apply(chromeTheme _: ReaderChromeTheme) {
         backgroundColor = MenuStyle.barBackgroundColor
-        speedSlider.minimumValueImage = autoReadIcon(named: "tortoise.fill", fallbackName: "tortoise")
-        speedSlider.maximumValueImage = autoReadIcon(named: "hare.fill", fallbackName: "hare")
         exitButton.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
         exitButton.setTitleColor(MenuStyle.secondaryTextColor, for: .highlighted)
-        exitButton.backgroundColor = .clear
+        exitButton.backgroundColor = MenuStyle.settingsControlBackgroundColor
     }
 
     func setPanelVisible(
@@ -90,24 +89,39 @@ final class ReaderV2AutoReadPanelView: UIView {
         speedSlider.translatesAutoresizingMaskIntoConstraints = false
 
         exitButton.setTitle(NSLocalizedString("reader.autoRead.exit", comment: ""), for: .normal)
-        exitButton.titleLabel?.font = .systemFont(ofSize: Layout.exitButtonFontSize)
-        exitButton.titleLabel?.adjustsFontForContentSizeCategory = false
+        exitButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
+        exitButton.titleLabel?.adjustsFontForContentSizeCategory = true
+        exitButton.layer.cornerRadius = Layout.autoReadExitButtonHeight / 2
+        exitButton.layer.masksToBounds = true
         exitButton.addTarget(self, action: #selector(exitTapped), for: .touchUpInside)
         exitButton.translatesAutoresizingMaskIntoConstraints = false
 
-        addSubview(speedSlider)
-        addSubview(exitButton)
+        let speedRow = UIStackView(arrangedSubviews: [
+            autoReadIcon(named: "tortoise.fill", fallbackName: "tortoise"),
+            speedSlider,
+            autoReadIcon(named: "hare.fill", fallbackName: "hare")
+        ])
+        speedRow.axis = .horizontal
+        speedRow.alignment = .center
+        speedRow.spacing = 14
+
+        stackView.axis = .vertical
+        stackView.alignment = .fill
+        stackView.spacing = 22
+        stackView.translatesAutoresizingMaskIntoConstraints = false
+        stackView.addArrangedSubview(speedRow)
+        stackView.addArrangedSubview(exitButton)
+        addSubview(stackView)
 
         NSLayoutConstraint.activate([
-            speedSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.sliderHorizontalInset),
-            speedSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.sliderHorizontalInset),
-            speedSlider.topAnchor.constraint(equalTo: topAnchor, constant: Layout.sliderTop),
-            speedSlider.heightAnchor.constraint(equalToConstant: Layout.sliderHeight),
-
-            exitButton.leadingAnchor.constraint(equalTo: leadingAnchor),
-            exitButton.trailingAnchor.constraint(equalTo: trailingAnchor),
-            exitButton.topAnchor.constraint(equalTo: topAnchor, constant: Layout.exitButtonTop),
-            exitButton.heightAnchor.constraint(equalToConstant: Layout.exitButtonHeight)
+            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.autoReadPanelHorizontalInset),
+            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.autoReadPanelHorizontalInset),
+            stackView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.autoReadPanelTopInset),
+            stackView.bottomAnchor.constraint(
+                lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor,
+                constant: -Layout.autoReadPanelBottomInset
+            ),
+            exitButton.heightAnchor.constraint(equalToConstant: Layout.autoReadExitButtonHeight)
         ])
 
         apply(chromeTheme: .standard)
@@ -116,14 +130,22 @@ final class ReaderV2AutoReadPanelView: UIView {
     private func autoReadIcon(
         named imageName: String,
         fallbackName: String
-    ) -> UIImage? {
-        let configuration = UIImage.SymbolConfiguration(
-            pointSize: Layout.iconSize,
+    ) -> UIImageView {
+        let imageView = UIImageView(image: UIImage(systemName: imageName) ?? UIImage(systemName: fallbackName))
+        imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: Layout.autoReadIconSize,
             weight: .regular
         )
-        let image = UIImage(systemName: imageName, withConfiguration: configuration)
-            ?? UIImage(systemName: fallbackName, withConfiguration: configuration)
-        return image?.withTintColor(MenuStyle.secondaryTextColor, renderingMode: .alwaysOriginal)
+        imageView.tintColor = MenuStyle.secondaryTextColor
+        imageView.contentMode = .scaleAspectFit
+        imageView.setContentHuggingPriority(.required, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            imageView.widthAnchor.constraint(equalToConstant: Layout.autoReadIconSize),
+            imageView.heightAnchor.constraint(equalToConstant: Layout.autoReadIconSize)
+        ])
+        return imageView
     }
 
     private func applyPanelPosition() {
@@ -149,18 +171,17 @@ final class ReaderV2AutoReadPanelView: UIView {
 
 private extension ReaderV2AutoReadPanelView {
     enum Layout {
-        static let sliderHorizontalInset: CGFloat = 54
-        static let sliderTop: CGFloat = 18
-        static let sliderHeight: CGFloat = 32
-        static let iconSize: CGFloat = 28
-        static let exitButtonTop: CGFloat = 52
-        static let exitButtonHeight: CGFloat = 40
-        static let exitButtonFontSize: CGFloat = 16
+        static let autoReadPanelHorizontalInset: CGFloat = 22
+        static let autoReadPanelTopInset: CGFloat = 28
+        static let autoReadPanelBottomInset: CGFloat = 18
+        static let autoReadIconSize: CGFloat = 24
+        static let autoReadExitButtonHeight: CGFloat = 42
     }
 
     enum MenuStyle {
-        static let barBackgroundColor = UIColor.black.withAlphaComponent(0.86)
+        static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
+        static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
     }
 }
