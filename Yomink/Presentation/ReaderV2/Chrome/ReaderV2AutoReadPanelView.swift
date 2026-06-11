@@ -2,17 +2,15 @@ import UIKit
 
 @MainActor
 final class ReaderV2AutoReadPanelView: UIView {
+    static let preferredContentHeight: CGFloat = 92
+
     let speedSlider = ReaderV2VoiceSlider()
     let exitButton = UIButton(type: .system)
 
-    private let stackView = UIStackView()
-    private var isInteractingInsidePanel = false
     private(set) var isPanelVisible = false
 
-    var onSpeedChange: ((Double) -> Void)?
     var onSpeedChangeFinished: ((Double) -> Void)?
     var onExit: (() -> Void)?
-    var onIdleTimeout: (() -> Void)?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -32,19 +30,18 @@ final class ReaderV2AutoReadPanelView: UIView {
     }
 
     func setSpeed(_ speed: Double) {
-        let normalized = min(
-            max(speed, ReaderSettings.minimumAutoReadSpeed),
-            ReaderSettings.maximumAutoReadSpeed
-        )
+        let normalized = ReaderSettings.normalizedAutoReadSpeed(speed)
         speedSlider.value = Float(normalized)
         speedSlider.accessibilityValue = "\(Int(normalized.rounded()))"
     }
 
     func apply(chromeTheme _: ReaderChromeTheme) {
         backgroundColor = MenuStyle.barBackgroundColor
+        speedSlider.minimumValueImage = autoReadIcon(named: "tortoise.fill", fallbackName: "tortoise")
+        speedSlider.maximumValueImage = autoReadIcon(named: "hare.fill", fallbackName: "hare")
         exitButton.setTitleColor(MenuStyle.primaryTextColor, for: .normal)
         exitButton.setTitleColor(MenuStyle.secondaryTextColor, for: .highlighted)
-        exitButton.backgroundColor = MenuStyle.settingsControlBackgroundColor
+        exitButton.backgroundColor = .clear
     }
 
     func setPanelVisible(
@@ -54,13 +51,6 @@ final class ReaderV2AutoReadPanelView: UIView {
         isPanelVisible = visible
         isHidden = false
         isUserInteractionEnabled = visible
-        if visible {
-            isInteractingInsidePanel = false
-            resetIdleTimer()
-        } else {
-            isInteractingInsidePanel = false
-            cancelIdleTimer()
-        }
         layoutIfNeeded()
 
         let changes = {
@@ -92,7 +82,6 @@ final class ReaderV2AutoReadPanelView: UIView {
         speedSlider.maximumValue = Float(ReaderSettings.maximumAutoReadSpeed)
         speedSlider.accessibilityLabel = NSLocalizedString("reader.autoRead.speed", comment: "")
         speedSlider.addTarget(self, action: #selector(speedChanged), for: .valueChanged)
-        speedSlider.addTarget(self, action: #selector(panelInteractionBegan), for: .touchDown)
         speedSlider.addTarget(
             self,
             action: #selector(speedChangeFinished),
@@ -101,45 +90,24 @@ final class ReaderV2AutoReadPanelView: UIView {
         speedSlider.translatesAutoresizingMaskIntoConstraints = false
 
         exitButton.setTitle(NSLocalizedString("reader.autoRead.exit", comment: ""), for: .normal)
-        exitButton.titleLabel?.font = .preferredFont(forTextStyle: .callout)
-        exitButton.titleLabel?.adjustsFontForContentSizeCategory = true
-        exitButton.layer.cornerRadius = Layout.autoReadExitButtonHeight / 2
-        exitButton.layer.masksToBounds = true
-        exitButton.addTarget(self, action: #selector(panelInteractionBegan), for: .touchDown)
-        exitButton.addTarget(
-            self,
-            action: #selector(panelInteractionEnded),
-            for: [.touchUpOutside, .touchCancel]
-        )
+        exitButton.titleLabel?.font = .systemFont(ofSize: Layout.exitButtonFontSize)
+        exitButton.titleLabel?.adjustsFontForContentSizeCategory = false
         exitButton.addTarget(self, action: #selector(exitTapped), for: .touchUpInside)
         exitButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let speedRow = UIStackView(arrangedSubviews: [
-            autoReadIcon(named: "tortoise.fill", fallbackName: "tortoise"),
-            speedSlider,
-            autoReadIcon(named: "hare.fill", fallbackName: "hare")
-        ])
-        speedRow.axis = .horizontal
-        speedRow.alignment = .center
-        speedRow.spacing = 14
-
-        stackView.axis = .vertical
-        stackView.alignment = .fill
-        stackView.spacing = 22
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        stackView.addArrangedSubview(speedRow)
-        stackView.addArrangedSubview(exitButton)
-        addSubview(stackView)
+        addSubview(speedSlider)
+        addSubview(exitButton)
 
         NSLayoutConstraint.activate([
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.autoReadPanelHorizontalInset),
-            stackView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.autoReadPanelHorizontalInset),
-            stackView.topAnchor.constraint(equalTo: topAnchor, constant: Layout.autoReadPanelTopInset),
-            stackView.bottomAnchor.constraint(
-                lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor,
-                constant: -Layout.autoReadPanelBottomInset
-            ),
-            exitButton.heightAnchor.constraint(equalToConstant: Layout.autoReadExitButtonHeight)
+            speedSlider.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Layout.sliderHorizontalInset),
+            speedSlider.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Layout.sliderHorizontalInset),
+            speedSlider.topAnchor.constraint(equalTo: topAnchor, constant: Layout.sliderTop),
+            speedSlider.heightAnchor.constraint(equalToConstant: Layout.sliderHeight),
+
+            exitButton.leadingAnchor.constraint(equalTo: leadingAnchor),
+            exitButton.trailingAnchor.constraint(equalTo: trailingAnchor),
+            exitButton.topAnchor.constraint(equalTo: topAnchor, constant: Layout.exitButtonTop),
+            exitButton.heightAnchor.constraint(equalToConstant: Layout.exitButtonHeight)
         ])
 
         apply(chromeTheme: .standard)
@@ -148,22 +116,14 @@ final class ReaderV2AutoReadPanelView: UIView {
     private func autoReadIcon(
         named imageName: String,
         fallbackName: String
-    ) -> UIImageView {
-        let imageView = UIImageView(image: UIImage(systemName: imageName) ?? UIImage(systemName: fallbackName))
-        imageView.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
-            pointSize: Layout.autoReadIconSize,
+    ) -> UIImage? {
+        let configuration = UIImage.SymbolConfiguration(
+            pointSize: Layout.iconSize,
             weight: .regular
         )
-        imageView.tintColor = MenuStyle.secondaryTextColor
-        imageView.contentMode = .scaleAspectFit
-        imageView.setContentHuggingPriority(.required, for: .horizontal)
-        imageView.setContentCompressionResistancePriority(.required, for: .horizontal)
-        imageView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            imageView.widthAnchor.constraint(equalToConstant: Layout.autoReadIconSize),
-            imageView.heightAnchor.constraint(equalToConstant: Layout.autoReadIconSize)
-        ])
-        return imageView
+        let image = UIImage(systemName: imageName, withConfiguration: configuration)
+            ?? UIImage(systemName: fallbackName, withConfiguration: configuration)
+        return image?.withTintColor(MenuStyle.secondaryTextColor, renderingMode: .alwaysOriginal)
     }
 
     private func applyPanelPosition() {
@@ -173,119 +133,34 @@ final class ReaderV2AutoReadPanelView: UIView {
             : CGAffineTransform(translationX: 0, y: hiddenOffset)
     }
 
-    private func resetIdleTimer() {
-        NSObject.cancelPreviousPerformRequests(
-            withTarget: self,
-            selector: #selector(idleTimerFired),
-            object: nil
-        )
-        guard isPanelVisible,
-              !isInteractingInsidePanel else {
-            return
-        }
-        perform(
-            #selector(idleTimerFired),
-            with: nil,
-            afterDelay: Layout.idleDismissDelay,
-            inModes: [.common]
-        )
-    }
-
-    private func cancelIdleTimer() {
-        NSObject.cancelPreviousPerformRequests(
-            withTarget: self,
-            selector: #selector(idleTimerFired),
-            object: nil
-        )
-    }
-
-    override func hitTest(
-        _ point: CGPoint,
-        with event: UIEvent?
-    ) -> UIView? {
-        let hitView = super.hitTest(point, with: event)
-        if hitView != nil,
-           isPanelVisible,
-           !isInteractingInsidePanel {
-            resetIdleTimer()
-        }
-        return hitView
-    }
-
-    override func touchesBegan(
-        _ touches: Set<UITouch>,
-        with event: UIEvent?
-    ) {
-        panelInteractionBegan()
-        super.touchesBegan(touches, with: event)
-    }
-
-    override func touchesEnded(
-        _ touches: Set<UITouch>,
-        with event: UIEvent?
-    ) {
-        panelInteractionEnded()
-        super.touchesEnded(touches, with: event)
-    }
-
-    override func touchesCancelled(
-        _ touches: Set<UITouch>,
-        with event: UIEvent?
-    ) {
-        panelInteractionEnded()
-        super.touchesCancelled(touches, with: event)
-    }
-
     @objc private func speedChanged() {
         let speed = Double(speedSlider.value)
         speedSlider.accessibilityValue = "\(Int(speed.rounded()))"
-        resetIdleTimer()
-        onSpeedChange?(speed)
     }
 
     @objc private func exitTapped() {
-        panelInteractionBegan()
         onExit?()
     }
 
-    @objc private func panelInteractionBegan() {
-        isInteractingInsidePanel = true
-        cancelIdleTimer()
-    }
-
-    @objc private func panelInteractionEnded() {
-        isInteractingInsidePanel = false
-        resetIdleTimer()
-    }
-
     @objc private func speedChangeFinished() {
-        panelInteractionEnded()
         onSpeedChangeFinished?(Double(speedSlider.value))
-    }
-
-    @objc private func idleTimerFired() {
-        guard isPanelVisible else {
-            return
-        }
-        onIdleTimeout?()
     }
 }
 
 private extension ReaderV2AutoReadPanelView {
     enum Layout {
-        static let autoReadPanelHeight: CGFloat = 190
-        static let autoReadPanelHorizontalInset: CGFloat = 22
-        static let autoReadPanelTopInset: CGFloat = 28
-        static let autoReadPanelBottomInset: CGFloat = 18
-        static let autoReadIconSize: CGFloat = 24
-        static let autoReadExitButtonHeight: CGFloat = 42
-        static let idleDismissDelay: TimeInterval = 10
+        static let sliderHorizontalInset: CGFloat = 54
+        static let sliderTop: CGFloat = 18
+        static let sliderHeight: CGFloat = 32
+        static let iconSize: CGFloat = 28
+        static let exitButtonTop: CGFloat = 52
+        static let exitButtonHeight: CGFloat = 40
+        static let exitButtonFontSize: CGFloat = 16
     }
 
     enum MenuStyle {
-        static let barBackgroundColor = UIColor(red: 0.165, green: 0.165, blue: 0.165, alpha: 1)
+        static let barBackgroundColor = UIColor.black.withAlphaComponent(0.86)
         static let primaryTextColor = UIColor(white: 0.82, alpha: 1)
         static let secondaryTextColor = UIColor(white: 0.58, alpha: 1)
-        static let settingsControlBackgroundColor = UIColor(red: 0.216, green: 0.216, blue: 0.216, alpha: 1)
     }
 }

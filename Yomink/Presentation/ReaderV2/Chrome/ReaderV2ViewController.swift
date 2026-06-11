@@ -257,7 +257,13 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 self?.loadNextScrollChapterIfNeeded()
             }
             scrollContainer.onScrollBegan = { [weak self] in
-                self?.clearTextSelection()
+                guard let self else {
+                    return
+                }
+                self.clearTextSelection()
+                if self.autoReadController.isReading {
+                    self.setAutoReadPanelVisible(false, animated: true)
+                }
             }
         }
 
@@ -373,24 +379,21 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
     private func configureAutoReadPanel() {
         autoReadPanelView.translatesAutoresizingMaskIntoConstraints = false
-        autoReadPanelView.onSpeedChange = { [weak self] speed in
-            self?.autoReadSpeedChanged(speed)
-        }
         autoReadPanelView.onSpeedChangeFinished = { [weak self] speed in
             self?.autoReadSpeedChangeFinished(speed)
         }
         autoReadPanelView.onExit = { [weak self] in
             self?.stopAutoReading(animated: true)
         }
-        autoReadPanelView.onIdleTimeout = { [weak self] in
-            self?.setAutoReadPanelVisible(false, animated: true)
-        }
         view.addSubview(autoReadPanelView)
         NSLayoutConstraint.activate([
             autoReadPanelView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             autoReadPanelView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             autoReadPanelView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            autoReadPanelView.heightAnchor.constraint(equalToConstant: 190)
+            autoReadPanelView.topAnchor.constraint(
+                equalTo: view.safeAreaLayoutGuide.bottomAnchor,
+                constant: -ReaderV2AutoReadPanelView.preferredContentHeight
+            )
         ])
         autoReadPanelView.setSpeed(readerSettings.normalized.autoReadSpeed)
         autoReadPanelView.apply(chromeTheme: chromeTheme)
@@ -450,7 +453,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         readerSettings = normalizedSettings
         refreshHomeIndicatorDeferralPreferences()
         if autoReadController.isReading,
-           normalizedSettings.pageMode != .scroll {
+           normalizedSettings.pageMode != previousSettings.pageMode {
             stopAutoReading(animated: false, restoresEntryPageMode: false)
         }
         let needsRepagination = ReaderThemeManager.needsRepagination(
@@ -458,7 +461,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             to: normalizedSettings
         )
         refreshSettingsProjection()
-        configureContainer(for: ReaderThemeManager.turnPageType(from: normalizedSettings))
+        let targetTurnPageType = autoReadController.isReading
+            ? ReaderTurnPageType.verticalContinuous
+            : ReaderThemeManager.turnPageType(from: normalizedSettings)
+        configureContainer(for: targetTurnPageType)
         updateSystemAppearance()
         updateMenuState()
         saveReaderSettings(normalizedSettings)
@@ -520,7 +526,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         return ReaderRecord(
             chapterIndex: currentPageModel.chapterIndex,
             progress: progress,
-            chapterTitle: chapterTitle(at: currentPageModel.chapterIndex)
+            chapterTitle: chapterTitle(at: currentPageModel.chapterIndex),
+            pageIndex: currentPageModel.pageIndex,
+            pageCount: currentPageModel.pageCount,
+            usesPageIndex: currentPageModel.usesPageIndex
         )
     }
 
@@ -885,11 +894,14 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         let chapterIndex = min(max(record.chapterIndex, 0), chapterProvider.chapterCount - 1)
         let result = try await divisionResult(forChapterAt: chapterIndex)
+        let canUseStoredPageIndex = record.usesPageIndex
+            && record.pageCount == result.pageCount
+            && record.pageIndex != nil
         let pageIndex = ReaderPageCalculator.pageIndex(
             pageCount: result.pageCount,
-            pageIndex: 0,
+            pageIndex: record.pageIndex ?? 0,
             progress: record.progress,
-            usesPageIndex: false
+            usesPageIndex: canUseStoredPageIndex
         )
         return ReaderPageModel(
             chapterCount: chapterProvider.chapterCount,
@@ -965,7 +977,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         if shouldStartAutoReadAfterOpen {
             shouldStartAutoReadAfterOpen = false
-            startAutoReadingIfPossible()
+            startAutoReadingIfPossible(showsPanel: true)
         }
         if savesProgress {
             saveProgress(
@@ -1111,6 +1123,8 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                     chapterProgress: pageModel.chapterProgress
                 )
             },
+            sourceItems: result.pages.map(\.sourceAttributedText),
+            displayRanges: result.pages.map(\.displayRange),
             bookTitle: book.title
         )
     }
@@ -2001,18 +2015,33 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         clearTextSelection()
         setMenuVisible(false, animated: true)
         setSettingsPanelVisible(false, animated: true)
-        autoReadEntryPageMode = readerSettings.normalized.pageMode
         guard activeTurnPageType == .verticalContinuous else {
+            autoReadEntryPageMode = readerSettings.normalized.pageMode
             shouldStartAutoReadAfterOpen = true
-            var settings = readerSettings
-            settings.pageMode = .scroll
-            applyReaderSettings(settings)
+            guard let record = recordForCurrentPage() else {
+                configureContainer(for: .verticalContinuous)
+                startAutoReadingIfPossible(showsPanel: true)
+                return
+            }
+            openTask?.cancel()
+            preloadTasks.values.forEach { $0.cancel() }
+            preloadTasks.removeAll()
+            paginationCache.removeAll()
+            loadedScrollChapterIndexes.removeAll()
+            configureContainer(for: .verticalContinuous)
+            open(
+                record: record,
+                animated: false,
+                showsLoading: false,
+                closesMenuOnSuccess: false
+            )
             return
         }
-        startAutoReadingIfPossible(showsPanel: false)
+        autoReadEntryPageMode = readerSettings.normalized.pageMode
+        startAutoReadingIfPossible(showsPanel: true)
     }
 
-    private func startAutoReadingIfPossible(showsPanel: Bool = false) {
+    private func startAutoReadingIfPossible(showsPanel: Bool = true) {
         clearTextSelection()
         guard let scrollContainer = activeContainer as? ReaderScrollContainer else {
             shouldStartAutoReadAfterOpen = true
@@ -2063,17 +2092,29 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         shouldStartAutoReadAfterOpen = false
         let entryPageMode = autoReadEntryPageMode
         autoReadEntryPageMode = nil
-        autoReadController.stop()
         setAutoReadPanelVisible(false, animated: animated)
+        autoReadController.stop()
         updateMenuState()
         updateSystemAppearance()
         saveProgressImmediately()
         if restoresEntryPageMode,
            let entryPageMode,
-           readerSettings.normalized.pageMode != entryPageMode {
-            var settings = readerSettings
-            settings.pageMode = entryPageMode
-            applyReaderSettings(settings)
+           entryPageMode != .scroll {
+            let record = recordForCurrentPage()
+            openTask?.cancel()
+            preloadTasks.values.forEach { $0.cancel() }
+            preloadTasks.removeAll()
+            paginationCache.removeAll()
+            loadedScrollChapterIndexes.removeAll()
+            configureContainer(for: ReaderThemeManager.turnPageType(from: readerSettings))
+            if let record {
+                open(
+                    record: record,
+                    animated: false,
+                    showsLoading: false,
+                    closesMenuOnSuccess: false
+                )
+            }
         }
     }
 
@@ -2137,14 +2178,12 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
     private func autoReadReachedLoadedContentEnd() -> Bool {
         guard let currentPageModel else {
-            finishAutoReading(animated: true)
             return false
         }
         let nextChapterIndex = (loadedScrollChapterIndexes.last ?? currentPageModel.chapterIndex) + 1
         if chapters.indices.contains(nextChapterIndex) {
             return loadNextScrollChapterIfNeeded(resumesAutoReadAfterLoad: true)
         }
-        finishAutoReading(animated: true)
         return false
     }
 
@@ -2287,7 +2326,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         if gestureRecognizer === autoReadTouchPauseGesture {
             let menuLocation = menuView.convert(location, from: view)
             guard autoReadController.isReading,
-                  !autoReadPanelView.frame.contains(location),
+                  !(autoReadPanelView.isPanelVisible && autoReadPanelView.frame.contains(location)),
                   !(settingsPanelView.isPanelVisible && settingsPanelView.frame.contains(location)),
                   !(menuView.isMenuVisible && menuView.containsInteractiveContent(at: menuLocation)) else {
                 return false

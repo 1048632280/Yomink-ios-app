@@ -587,7 +587,8 @@ struct GRDBLibraryRepository: LibraryRepository {
             guard let row = try Row.fetchOne(
                 db,
                 sql: """
-                SELECT bookId, chapterId, chapterOffset, globalProgress
+                SELECT bookId, chapterId, chapterOffset, globalProgress,
+                       pageIndex, pageCount, usesPageIndex, paginationSignature
                 FROM reading_progress
                 WHERE bookId = ?
                 """,
@@ -602,18 +603,28 @@ struct GRDBLibraryRepository: LibraryRepository {
     func saveReadingProgress(_ progress: ReadingProgress) async throws {
         let normalizedChapterOffset = max(progress.chapterOffset, 0)
         let normalizedGlobalProgress = min(max(progress.globalProgress, 0), 1)
+        let normalizedPageIndex = progress.pageIndex.map { max($0, 0) }
+        let normalizedPageCount = progress.pageCount.flatMap { $0 > 0 ? $0 : nil }
+        let normalizedUsesPageIndex = progress.usesPageIndex
+            && normalizedPageIndex != nil
+            && normalizedPageCount != nil
 
         try await database.writer.write { db in
             try db.execute(
                 sql: """
                 INSERT INTO reading_progress (
-                    bookId, chapterId, chapterOffset, globalProgress, updatedAt
+                    bookId, chapterId, chapterOffset, globalProgress,
+                    pageIndex, pageCount, usesPageIndex, paginationSignature, updatedAt
                 )
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(bookId) DO UPDATE SET
                     chapterId = excluded.chapterId,
                     chapterOffset = excluded.chapterOffset,
                     globalProgress = excluded.globalProgress,
+                    pageIndex = excluded.pageIndex,
+                    pageCount = excluded.pageCount,
+                    usesPageIndex = excluded.usesPageIndex,
+                    paginationSignature = excluded.paginationSignature,
                     updatedAt = excluded.updatedAt
                 """,
                 arguments: [
@@ -621,6 +632,10 @@ struct GRDBLibraryRepository: LibraryRepository {
                     progress.chapterID?.uuidString,
                     normalizedChapterOffset,
                     normalizedGlobalProgress,
+                    normalizedPageIndex,
+                    normalizedPageCount,
+                    normalizedUsesPageIndex ? 1 : 0,
+                    progress.paginationSignature,
                     DatabaseDateFormatter.string(from: Date())
                 ]
             )
@@ -902,6 +917,10 @@ struct GRDBLibraryRepository: LibraryRepository {
             chapterId: normalizedChapters.first?.id.uuidString,
             chapterOffset: 0,
             globalProgress: 0,
+            pageIndex: nil,
+            pageCount: nil,
+            usesPageIndex: false,
+            paginationSignature: nil,
             updatedAt: importedAt
         )
 

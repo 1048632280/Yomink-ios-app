@@ -125,6 +125,7 @@ extension ReadingProgress {
     init?(row: Row) {
         let bookIDString: String = row["bookId"]
         let chapterIDString: String? = row["chapterId"]
+        let usesPageIndexValue: Int? = row["usesPageIndex"]
 
         guard let bookID = UUID(uuidString: bookIDString) else {
             return nil
@@ -134,7 +135,11 @@ extension ReadingProgress {
             bookID: bookID,
             chapterID: chapterIDString.flatMap(UUID.init(uuidString:)),
             chapterOffset: row["chapterOffset"],
-            globalProgress: row["globalProgress"]
+            globalProgress: row["globalProgress"],
+            pageIndex: row["pageIndex"],
+            pageCount: row["pageCount"],
+            usesPageIndex: (usesPageIndexValue ?? 0) == 1,
+            paginationSignature: row["paginationSignature"]
         )
     }
 }

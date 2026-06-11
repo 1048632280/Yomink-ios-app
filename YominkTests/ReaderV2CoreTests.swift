@@ -144,6 +144,9 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(progress?.chapterID, fixture.chapters[1].id)
         XCTAssertEqual(progress?.chapterOffset, 66)
         XCTAssertEqual(progress?.globalProgress ?? 0, Double(166) / Double(300), accuracy: 0.0001)
+        XCTAssertEqual(progress?.pageIndex, 3)
+        XCTAssertEqual(progress?.pageCount, 10)
+        XCTAssertEqual(progress?.usesPageIndex, true)
     }
 
     func testReaderLayoutContentRectUsesFlippedCoreTextMargins() {
@@ -996,7 +999,9 @@ final class ReaderV2CoreTests: XCTestCase {
         let model = readerV2PageModel(pageIndex: 0, pageCount: 1)
 
         cell.configure(
-            attributedText: NSAttributedString(string: "纵向页面"),
+            attributedText: NSAttributedString(string: "visible"),
+            sourceAttributedText: NSAttributedString(string: "prefix visible suffix"),
+            displayRange: NSRange(location: 7, length: 7),
             pageModel: model,
             layout: .phone,
             theme: .dark
@@ -1005,6 +1010,9 @@ final class ReaderV2CoreTests: XCTestCase {
         cell.layoutIfNeeded()
 
         XCTAssertEqual(cell.pageModel, Optional(model))
+        XCTAssertEqual(cell.textView.attributedText.string, "prefix visible suffix")
+        XCTAssertEqual(cell.textView.displayRange?.location, 7)
+        XCTAssertEqual(cell.textView.displayRange?.length, 7)
     }
 
     func testReaderThemeManagerMapsSettingsAndInvalidatesPagination() {
@@ -1378,11 +1386,11 @@ final class ReaderV2CoreTests: XCTestCase {
             saveCount += 1
         }
 
-        controller.start(scrollView: scrollView, speed: 120)
+        controller.start(scrollView: scrollView, speed: 5)
         XCTAssertTrue(controller.isReading)
-        XCTAssertTrue(controller.hasDisplayLink)
+        XCTAssertFalse(controller.hasDisplayLink)
 
-        controller.advance(by: 0.5)
+        controller.advance()
         XCTAssertGreaterThan(scrollView.contentOffset.y, 0)
 
         controller.pauseForBackground()
@@ -1402,17 +1410,21 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
-    func testReaderAutoReadSpeedRangeStaysPointBased() {
-        XCTAssertEqual(ReaderSettings.minimumAutoReadSpeed, 20)
-        XCTAssertEqual(ReaderSettings.maximumAutoReadSpeed, 180)
-        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(1), 20)
-        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(400), 180)
+    func testReaderAutoReadSpeedRangeUsesOriginalGradeConfig() {
+        let expectedMaximum = UIScreen.main.scale < 3 ? 11.0 : 14.0
+
+        XCTAssertEqual(ReaderSettings.minimumAutoReadSpeed, 1)
+        XCTAssertEqual(ReaderSettings.defaultAutoReadSpeed, 5)
+        XCTAssertEqual(ReaderSettings.maximumAutoReadSpeed, expectedMaximum)
+        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(0.5), CGFloat(5))
+        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(expectedMaximum + 1), CGFloat(5))
+        XCTAssertEqual(ReaderAutoReadController.normalizedSpeed(6.75), CGFloat(6.75))
     }
 
     @MainActor
-    func testReaderAutoReadControllerStopsAtContentEnd() {
+    func testReaderAutoReadControllerStaysReadingAtContentEndWithoutContinuation() {
         let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
-        scrollView.contentSize = CGSize(width: 100, height: 100)
+        scrollView.contentSize = CGSize(width: 100, height: 95)
         let controller = ReaderAutoReadController()
         var reachedEndCount = 0
         controller.onReachedEnd = {
@@ -1420,18 +1432,18 @@ final class ReaderV2CoreTests: XCTestCase {
             return false
         }
 
-        controller.start(scrollView: scrollView, speed: 120)
-        controller.advance(by: 0.5)
+        controller.start(scrollView: scrollView, speed: 5)
+        controller.advance()
 
         XCTAssertEqual(reachedEndCount, 1)
-        XCTAssertFalse(controller.isReading)
-        XCTAssertFalse(controller.hasDisplayLink)
+        XCTAssertTrue(controller.isReading)
+        XCTAssertFalse(controller.isPausedForContentLoad)
     }
 
     @MainActor
     func testReaderAutoReadControllerPausesAtLoadedEndWhenContinuationStarts() {
         let scrollView = UIScrollView(frame: CGRect(x: 0, y: 0, width: 100, height: 100))
-        scrollView.contentSize = CGSize(width: 100, height: 100)
+        scrollView.contentSize = CGSize(width: 100, height: 95)
         let controller = ReaderAutoReadController()
         var reachedEndCount = 0
         controller.onReachedEnd = {
@@ -1439,8 +1451,8 @@ final class ReaderV2CoreTests: XCTestCase {
             return true
         }
 
-        controller.start(scrollView: scrollView, speed: 120)
-        controller.advance(by: 0.5)
+        controller.start(scrollView: scrollView, speed: 5)
+        controller.advance()
 
         XCTAssertEqual(reachedEndCount, 1)
         XCTAssertTrue(controller.isReading)
@@ -1456,21 +1468,26 @@ final class ReaderV2CoreTests: XCTestCase {
     @MainActor
     func testReaderV2AutoReadPanelEmitsSpeedAndExit() {
         let panel = ReaderV2AutoReadPanelView()
-        var emittedSpeed: Double?
+        var finishedSpeed: Double?
         var exitCount = 0
-        panel.onSpeedChange = { speed in
-            emittedSpeed = speed
+        panel.onSpeedChangeFinished = { speed in
+            finishedSpeed = speed
         }
         panel.onExit = {
             exitCount += 1
         }
 
-        panel.setSpeed(400)
-        XCTAssertEqual(panel.speedSlider.value, Float(ReaderSettings.maximumAutoReadSpeed))
+        panel.setSpeed(ReaderSettings.maximumAutoReadSpeed + 1)
+        XCTAssertEqual(panel.speedSlider.value, Float(ReaderSettings.defaultAutoReadSpeed))
+        XCTAssertEqual(ReaderV2AutoReadPanelView.preferredContentHeight, 92)
+        XCTAssertNotNil(panel.speedSlider.minimumValueImage)
+        XCTAssertNotNil(panel.speedSlider.maximumValueImage)
 
-        panel.speedSlider.value = 96
+        panel.speedSlider.value = 6
         panel.speedSlider.sendActions(for: .valueChanged)
-        XCTAssertEqual(emittedSpeed ?? 0, 96, accuracy: 0.01)
+        XCTAssertNil(finishedSpeed)
+        panel.speedSlider.sendActions(for: .touchUpInside)
+        XCTAssertEqual(finishedSpeed ?? 0, 6, accuracy: 0.01)
 
         panel.exitButton.sendActions(for: .touchUpInside)
         XCTAssertEqual(exitCount, 1)

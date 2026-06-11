@@ -25,7 +25,11 @@ struct ReaderProgressBridge: Sendable {
         return ReaderRecord(
             chapterIndex: index,
             progress: chapterProgress,
-            chapterTitle: chapter.title
+            chapterTitle: chapter.title,
+            pageIndex: progress.pageIndex,
+            pageCount: progress.pageCount,
+            usesPageIndex: progress.usesPageIndex,
+            paginationSignature: progress.paginationSignature
         )
     }
 
@@ -76,7 +80,11 @@ struct ReaderProgressBridge: Sendable {
             bookID: book.id,
             chapterID: chapter.id,
             chapterOffset: Int64(offset),
-            globalProgress: globalProgress
+            globalProgress: globalProgress,
+            pageIndex: pageModel.pageIndex,
+            pageCount: pageModel.pageCount,
+            usesPageIndex: pageModel.usesPageIndex,
+            paginationSignature: nil
         )
     }
 

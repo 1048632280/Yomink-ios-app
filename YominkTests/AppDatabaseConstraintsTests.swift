@@ -194,6 +194,126 @@ final class AppDatabaseConstraintsTests: XCTestCase {
         XCTAssertEqual(progress?.chapterOffset, 0)
         XCTAssertEqual(progress?.globalProgress, 1)
     }
+
+    func testReadingProgressPageSnapshotIsPersistedAsOffsetSupplement() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let bookID = UUID()
+        let chapterID = UUID()
+
+        _ = try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: bookID,
+                title: "Progress Snapshot",
+                author: nil,
+                intro: nil,
+                fileName: "progress-snapshot.txt",
+                fileSize: 10,
+                encoding: "utf-8",
+                wordCount: 2,
+                contentHash: "hash-\(UUID().uuidString)",
+                chapters: [
+                    ImportedChapterDraft(
+                        id: chapterID,
+                        title: "Chapter",
+                        startOffset: 0,
+                        endOffset: 10,
+                        sortOrder: 0,
+                        source: .pseudo
+                    )
+                ],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "Books/\(bookID.uuidString.lowercased())/content.txt"
+            )
+        )
+
+        try await repository.saveReadingProgress(
+            ReadingProgress(
+                bookID: bookID,
+                chapterID: chapterID,
+                chapterOffset: 6,
+                globalProgress: 0.6,
+                pageIndex: 3,
+                pageCount: 9,
+                usesPageIndex: true,
+                paginationSignature: "layout-a"
+            )
+        )
+
+        let progress = try await repository.fetchReadingProgress(bookID: bookID)
+        XCTAssertEqual(progress?.chapterOffset, 6)
+        XCTAssertEqual(progress?.globalProgress, 0.6)
+        XCTAssertEqual(progress?.pageIndex, 3)
+        XCTAssertEqual(progress?.pageCount, 9)
+        XCTAssertEqual(progress?.usesPageIndex, true)
+        XCTAssertEqual(progress?.paginationSignature, "layout-a")
+    }
+
+    func testReadingProgressPageSnapshotTriggerRejectsInvalidValuesAfterMigration() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let bookID = UUID()
+        let chapterID = UUID()
+
+        _ = try await repository.insertImportedBook(
+            ImportedBookDraft(
+                id: bookID,
+                title: "Progress Snapshot Trigger",
+                author: nil,
+                intro: nil,
+                fileName: "progress-snapshot-trigger.txt",
+                fileSize: 10,
+                encoding: "utf-8",
+                wordCount: 2,
+                contentHash: "hash-\(UUID().uuidString)",
+                chapters: [
+                    ImportedChapterDraft(
+                        id: chapterID,
+                        title: "Chapter",
+                        startOffset: 0,
+                        endOffset: 10,
+                        sortOrder: 0,
+                        source: .pseudo
+                    )
+                ],
+                importedAt: Date(timeIntervalSince1970: 0),
+                importSourceDisplayPath: nil,
+                sourcePath: "Books/\(bookID.uuidString.lowercased())/content.txt"
+            )
+        )
+
+        try await repository.saveReadingProgress(
+            ReadingProgress(
+                bookID: bookID,
+                chapterID: chapterID,
+                chapterOffset: 1,
+                globalProgress: 0.1,
+                pageIndex: 0,
+                pageCount: 2,
+                usesPageIndex: true
+            )
+        )
+
+        do {
+            try await database.writer.write { db in
+                try db.execute(
+                    sql: """
+                    UPDATE reading_progress
+                    SET pageIndex = NULL, usesPageIndex = 1
+                    WHERE bookId = ?
+                    """,
+                    arguments: [bookID.uuidString]
+                )
+            }
+            XCTFail("Invalid reading progress page snapshot should fail")
+        } catch {
+            let progress = try await repository.fetchReadingProgress(bookID: bookID)
+            XCTAssertEqual(progress?.pageIndex, 0)
+            XCTAssertEqual(progress?.pageCount, 2)
+            XCTAssertEqual(progress?.usesPageIndex, true)
+        }
+    }
 }
 
 final class DomainModelBoundsTests: XCTestCase {
@@ -275,6 +395,27 @@ final class DomainModelBoundsTests: XCTestCase {
         XCTAssertEqual(chapter.endOffset, 50)
         XCTAssertEqual(chapter.sortOrder, 0)
         XCTAssertEqual(bookmark.offset, 0)
+
+        var pageProgress = ReadingProgress(
+            bookID: bookID,
+            chapterID: nil,
+            chapterOffset: 0,
+            globalProgress: 0,
+            pageIndex: -3,
+            pageCount: 0,
+            usesPageIndex: true
+        )
+
+        XCTAssertEqual(pageProgress.pageIndex, 0)
+        XCTAssertNil(pageProgress.pageCount)
+        XCTAssertFalse(pageProgress.usesPageIndex)
+
+        pageProgress.pageCount = 4
+        pageProgress.usesPageIndex = true
+        XCTAssertTrue(pageProgress.usesPageIndex)
+
+        pageProgress.pageIndex = nil
+        XCTAssertFalse(pageProgress.usesPageIndex)
     }
 
     func testImportedDraftBoundsAreNormalized() {

@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 
 struct ReaderSettings: Codable, Equatable, Sendable {
     enum PageMode: String, Codable, CaseIterable, Sendable {
@@ -266,8 +267,11 @@ struct ReaderSettings: Codable, Equatable, Sendable {
     static let storageKey = "reader.settings"
     static let minimumFontSize = 14.0
     static let maximumFontSize = 28.0
-    static let minimumAutoReadSpeed = 20.0
-    static let maximumAutoReadSpeed = 180.0
+    static let minimumAutoReadSpeed = 1.0
+    static let defaultAutoReadSpeed = 5.0
+    static var maximumAutoReadSpeed: Double {
+        UIScreen.main.scale < 3 ? 11.0 : 14.0
+    }
     static let touchAreaCount = 9
     static let defaultTouchAreaMap: [TouchAreaAction] = [
         .previousPage, .menu, .nextPage,
@@ -297,7 +301,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             layoutPreset: .standard,
             customLayoutValues: nil,
             fontSize: 18,
-            autoReadSpeed: 80,
+            autoReadSpeed: Self.defaultAutoReadSpeed,
             touchAreaMap: Self.defaultTouchAreaMap,
             keepScreenAwake: false,
             autoHideHomeIndicator: true,
@@ -313,7 +317,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         layoutPreset: LayoutPreset = .standard,
         customLayoutValues: LayoutValues? = nil,
         fontSize: Double = 18,
-        autoReadSpeed: Double = 80,
+        autoReadSpeed: Double = Self.defaultAutoReadSpeed,
         touchAreaMap: [TouchAreaAction] = Self.defaultTouchAreaMap,
         keepScreenAwake: Bool = false,
         autoHideHomeIndicator: Bool = true,
@@ -343,7 +347,8 @@ struct ReaderSettings: Codable, Equatable, Sendable {
         customLayoutValues = (try? container.decodeIfPresent(LayoutValues.self, forKey: .customLayoutValues))?
             .normalized
         fontSize = (try? container.decodeIfPresent(Double.self, forKey: .fontSize)) ?? 18
-        autoReadSpeed = (try? container.decodeIfPresent(Double.self, forKey: .autoReadSpeed)) ?? 80
+        autoReadSpeed = (try? container.decodeIfPresent(Double.self, forKey: .autoReadSpeed))
+            ?? Self.defaultAutoReadSpeed
         touchAreaMap = (try? container.decodeIfPresent([TouchAreaAction].self, forKey: .touchAreaMap))
             ?? Self.defaultTouchAreaMap
         keepScreenAwake = (try? container.decodeIfPresent(Bool.self, forKey: .keepScreenAwake)) ?? false
@@ -359,10 +364,7 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             max(settings.fontSize, Self.minimumFontSize),
             Self.maximumFontSize
         )
-        settings.autoReadSpeed = min(
-            max(settings.autoReadSpeed, Self.minimumAutoReadSpeed),
-            Self.maximumAutoReadSpeed
-        )
+        settings.autoReadSpeed = Self.normalizedAutoReadSpeed(settings.autoReadSpeed)
         settings.customLayoutValues = settings.customLayoutValues?.normalized
         if settings.layoutPreset == .custom,
            settings.customLayoutValues == nil {
@@ -375,5 +377,14 @@ struct ReaderSettings: Codable, Equatable, Sendable {
             settings.touchAreaMap[Self.touchAreaCount / 2] = .menu
         }
         return settings
+    }
+
+    static func normalizedAutoReadSpeed(_ speed: Double) -> Double {
+        guard speed.isFinite,
+              speed >= minimumAutoReadSpeed,
+              speed <= maximumAutoReadSpeed else {
+            return defaultAutoReadSpeed
+        }
+        return speed
     }
 }

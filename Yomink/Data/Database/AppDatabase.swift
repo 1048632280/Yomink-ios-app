@@ -475,6 +475,74 @@ final class AppDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v7_add_reading_progress_page_snapshot") { db in
+            try db.execute(sql: """
+            ALTER TABLE reading_progress
+            ADD COLUMN pageIndex INTEGER
+            """)
+
+            try db.execute(sql: """
+            ALTER TABLE reading_progress
+            ADD COLUMN pageCount INTEGER
+            """)
+
+            try db.execute(sql: """
+            ALTER TABLE reading_progress
+            ADD COLUMN usesPageIndex INTEGER NOT NULL DEFAULT 0
+            """)
+
+            try db.execute(sql: """
+            ALTER TABLE reading_progress
+            ADD COLUMN paginationSignature TEXT
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_progress
+            SET pageIndex = NULL
+            WHERE pageIndex IS NOT NULL
+                AND pageIndex < 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_progress
+            SET pageCount = NULL
+            WHERE pageCount IS NOT NULL
+                AND pageCount <= 0
+            """)
+
+            try db.execute(sql: """
+            UPDATE reading_progress
+            SET usesPageIndex = 0
+            WHERE usesPageIndex NOT IN (0, 1)
+                OR pageIndex IS NULL
+                OR pageCount IS NULL
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER reading_progress_page_snapshot_insert
+            BEFORE INSERT ON reading_progress
+            WHEN (NEW.pageIndex IS NOT NULL AND NEW.pageIndex < 0)
+                OR (NEW.pageCount IS NOT NULL AND NEW.pageCount <= 0)
+                OR NEW.usesPageIndex NOT IN (0, 1)
+                OR (NEW.usesPageIndex = 1 AND (NEW.pageIndex IS NULL OR NEW.pageCount IS NULL))
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid reading progress page snapshot');
+            END
+            """)
+
+            try db.execute(sql: """
+            CREATE TRIGGER reading_progress_page_snapshot_update
+            BEFORE UPDATE OF pageIndex, pageCount, usesPageIndex ON reading_progress
+            WHEN (NEW.pageIndex IS NOT NULL AND NEW.pageIndex < 0)
+                OR (NEW.pageCount IS NOT NULL AND NEW.pageCount <= 0)
+                OR NEW.usesPageIndex NOT IN (0, 1)
+                OR (NEW.usesPageIndex = 1 AND (NEW.pageIndex IS NULL OR NEW.pageCount IS NULL))
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid reading progress page snapshot');
+            END
+            """)
+        }
+
         return migrator
     }
 

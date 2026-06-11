@@ -67,8 +67,8 @@ final class ReaderScrollPageCell: UITableViewCell {
 
     func configure(
         attributedText: NSAttributedString,
-        sourceAttributedText _: NSAttributedString? = nil,
-        displayRange _: NSRange? = nil,
+        sourceAttributedText: NSAttributedString? = nil,
+        displayRange: NSRange? = nil,
         pageModel: ReaderPageModel,
         layout: ReaderLayout,
         theme: ReaderTheme,
@@ -86,7 +86,10 @@ final class ReaderScrollPageCell: UITableViewCell {
         textView.layout = layout
         textView.contentColor = theme.contentColor
         textView.contentRectOverride = textView.bounds
-        textView.setAttributedText(attributedText)
+        textView.setAttributedText(
+            sourceAttributedText ?? attributedText,
+            displayRange: displayRange
+        )
         setNeedsLayout()
     }
 

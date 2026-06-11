@@ -8,6 +8,8 @@ struct ReaderScrollSection {
     var heights: [CGFloat]
     var pageModels: [ReaderPageModel]
     var fullProgresses: [Double]
+    var sourceItems: [NSAttributedString] = []
+    var displayRanges: [NSRange] = []
     var bookTitle: String = ""
 }
 
@@ -487,6 +489,12 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
         let section = sections[indexPath.section]
         cell.configure(
             attributedText: section.items[indexPath.row],
+            sourceAttributedText: section.sourceItems.indices.contains(indexPath.row)
+                ? section.sourceItems[indexPath.row]
+                : nil,
+            displayRange: section.displayRanges.indices.contains(indexPath.row)
+                ? section.displayRanges[indexPath.row]
+                : nil,
             pageModel: section.pageModels[indexPath.row],
             layout: layout,
             theme: theme,
@@ -520,21 +528,19 @@ extension ReaderScrollContainer: UITableViewDataSource, UITableViewDelegate {
         maybeLoadMoreForAutoRead()
     }
 
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+    func scrollViewWillBeginDragging(_: UIScrollView) {
         onScrollBegan?()
     }
 
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        if !decelerate {
-            notifyVisiblePageIfNeeded()
-        }
-    }
-
-    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) {
+    func scrollViewDidEndDragging(_: UIScrollView, willDecelerate _: Bool) {
         notifyVisiblePageIfNeeded()
     }
 
-    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+    func scrollViewDidEndDecelerating(_: UIScrollView) {
+        notifyVisiblePageIfNeeded()
+    }
+
+    func scrollViewDidEndScrollingAnimation(_: UIScrollView) {
         isProgrammaticScroll = false
         notifyVisiblePageIfNeeded()
     }

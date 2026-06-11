@@ -8,5 +8,9 @@ struct ReadingProgressRecord: Codable, FetchableRecord, PersistableRecord {
     let chapterId: String?
     let chapterOffset: Int64
     let globalProgress: Double
+    let pageIndex: Int?
+    let pageCount: Int?
+    let usesPageIndex: Bool
+    let paginationSignature: String?
     let updatedAt: String
 }

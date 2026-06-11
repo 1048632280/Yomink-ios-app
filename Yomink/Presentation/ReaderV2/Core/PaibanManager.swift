@@ -268,7 +268,8 @@ struct PaibanManager {
             )
             let height = returnsHeights
                 ? Self.suggestedHeight(
-                    for: pageAttributedText,
+                    for: attributedText,
+                    range: range,
                     fittingWidth: pageRect.width,
                     fallback: pageRect.height
                 )
@@ -404,10 +405,22 @@ struct PaibanManager {
 
     private static func suggestedHeight(
         for attributedText: NSAttributedString,
+        range: NSRange? = nil,
         fittingWidth: CGFloat,
         fallback: CGFloat
     ) -> CGFloat {
         guard attributedText.length > 0 else {
+            return max(1, fallback)
+        }
+        let frameRange: CFRange
+        if let range {
+            let start = min(max(range.location, 0), attributedText.length)
+            let end = min(max(range.location + range.length, start), attributedText.length)
+            frameRange = CFRange(location: start, length: max(end - start, 0))
+        } else {
+            frameRange = CFRange(location: 0, length: attributedText.length)
+        }
+        guard frameRange.length > 0 else {
             return max(1, fallback)
         }
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
@@ -417,7 +430,7 @@ struct PaibanManager {
         )
         let size = CTFramesetterSuggestFrameSizeWithConstraints(
             framesetter,
-            CFRange(location: 0, length: attributedText.length),
+            frameRange,
             nil,
             constraint,
             nil
