@@ -1163,8 +1163,21 @@ final class ReaderV2CoreTests: XCTestCase {
 
         menuView.setMenuVisible(true, animated: false)
         XCTAssertTrue(menuView.isMenuVisible)
+        XCTAssertTrue(menuView.isTopBarVisible)
         XCTAssertFalse(menuView.isHidden)
         XCTAssertTrue(menuView.isUserInteractionEnabled)
+        menuView.layoutIfNeeded()
+        let moreButtonPoint = menuView.moreButton.convert(
+            CGPoint(x: menuView.moreButton.bounds.midX, y: menuView.moreButton.bounds.midY),
+            to: menuView
+        )
+        XCTAssertTrue(menuView.containsMoreMenuOrButton(at: moreButtonPoint))
+
+        menuView.setBarsVisible(top: false, bottom: true, floatingActions: false, animated: false)
+        XCTAssertTrue(menuView.isMenuVisible)
+        XCTAssertFalse(menuView.isTopBarVisible)
+        menuView.setMenuVisible(true, animated: false)
+        XCTAssertTrue(menuView.isTopBarVisible)
 
         menuView.closeButton.sendActions(for: .touchUpInside)
         menuView.catalogButton.sendActions(for: .touchUpInside)
@@ -1238,7 +1251,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .standard,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: false,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1250,7 +1263,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .standard,
             isViewVisible: true,
-            isMenuVisible: true,
+            isTopBarVisible: true,
             isSettingsPanelVisible: false,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1261,7 +1274,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .standard,
             isViewVisible: true,
-            isMenuVisible: true,
+            isTopBarVisible: true,
             isSettingsPanelVisible: true,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1272,7 +1285,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .standard,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: true,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1283,7 +1296,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .dark,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: false,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1295,7 +1308,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .dark,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: false,
             isAutoReadPanelVisible: true,
             isAutoReading: false
@@ -1308,7 +1321,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .dark,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: false,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1320,7 +1333,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .dark,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: true,
             isAutoReadPanelVisible: false,
             isAutoReading: false
@@ -1331,7 +1344,7 @@ final class ReaderV2CoreTests: XCTestCase {
             settings: settings,
             theme: .dark,
             isViewVisible: true,
-            isMenuVisible: false,
+            isTopBarVisible: false,
             isSettingsPanelVisible: false,
             isAutoReadPanelVisible: false,
             isAutoReading: true

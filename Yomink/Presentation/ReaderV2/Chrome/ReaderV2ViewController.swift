@@ -1386,7 +1386,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             settings: readerSettings,
             theme: theme,
             isViewVisible: isViewVisible,
-            isMenuVisible: menuView.isMenuVisible,
+            isTopBarVisible: menuView.isTopBarVisible,
             isSettingsPanelVisible: settingsPanelView.isPanelVisible,
             isAutoReadPanelVisible: autoReadPanelView.isPanelVisible,
             isAutoReading: autoReadController.isReading
@@ -1989,18 +1989,6 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         setMenuVisible(false, animated: animated)
     }
 
-    private func readerOverlayContainsInteractiveContent(at location: CGPoint) -> Bool {
-        if menuView.isMenuVisible {
-            let menuLocation = menuView.convert(location, from: view)
-            if menuView.containsInteractiveContent(at: menuLocation) {
-                return true
-            }
-        }
-
-        return settingsPanelView.isPanelVisible
-            && settingsPanelView.frame.contains(location)
-    }
-
     private func autoReadButtonTapped() {
         if autoReadController.isReading {
             setAutoReadPanelVisible(!autoReadPanelView.isPanelVisible, animated: true)
@@ -2195,15 +2183,44 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             return
         }
 
-        if menuView.isMenuVisible || settingsPanelView.isPanelVisible {
-            if readerOverlayContainsInteractiveContent(at: location) {
-                return
-            }
-            closeReaderMenuOverlays(animated: true)
+        if handleReaderOverlayTap(at: location) {
             return
         }
 
         handleReadingAreaTapAction(tapAction(at: location))
+    }
+
+    private func handleReaderOverlayTap(at location: CGPoint) -> Bool {
+        if settingsPanelView.isPanelVisible {
+            if !settingsPanelView.frame.contains(location) {
+                closeReaderMenuOverlays(animated: true)
+            }
+            return true
+        }
+
+        guard menuView.isMenuVisible else {
+            return false
+        }
+
+        let menuLocation = menuView.convert(location, from: view)
+        let containsMoreMenuOrButton = menuView.containsMoreMenuOrButton(at: menuLocation)
+        if menuView.isMoreMenuVisible {
+            if !containsMoreMenuOrButton {
+                menuView.setMoreMenuVisible(false, animated: true)
+            }
+            return true
+        }
+
+        if containsMoreMenuOrButton {
+            return true
+        }
+
+        if menuView.containsInteractiveContent(at: menuLocation) {
+            return true
+        }
+
+        closeReaderMenuOverlays(animated: true)
+        return true
     }
 
     private func handleReadingAreaTapAction(_ action: ReaderSettings.TouchAreaAction) {
@@ -2268,9 +2285,11 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
         let location = touch.location(in: view)
         if gestureRecognizer === autoReadTouchPauseGesture {
+            let menuLocation = menuView.convert(location, from: view)
             guard autoReadController.isReading,
                   !autoReadPanelView.frame.contains(location),
-                  !readerOverlayContainsInteractiveContent(at: location) else {
+                  !(settingsPanelView.isPanelVisible && settingsPanelView.frame.contains(location)),
+                  !(menuView.isMenuVisible && menuView.containsInteractiveContent(at: menuLocation)) else {
                 return false
             }
         }
@@ -2285,9 +2304,6 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 return false
             }
             touchedView = currentView.superview
-        }
-        if readerOverlayContainsInteractiveContent(at: location) {
-            return false
         }
         return true
     }
@@ -2319,6 +2335,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             floatingActions: false,
             animated: true
         )
+        updateSystemAppearance()
         open(
             record: record,
             animated: false,

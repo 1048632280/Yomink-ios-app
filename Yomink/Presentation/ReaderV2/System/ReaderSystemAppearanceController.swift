@@ -4,7 +4,7 @@ struct ReaderSystemAppearanceState {
     var settings: ReaderSettings
     var theme: ReaderTheme
     var isViewVisible: Bool
-    var isMenuVisible: Bool
+    var isTopBarVisible: Bool
     var isSettingsPanelVisible: Bool
     var isAutoReadPanelVisible: Bool
     var isAutoReading: Bool
@@ -13,7 +13,7 @@ struct ReaderSystemAppearanceState {
         settings: .default,
         theme: .standard,
         isViewVisible: false,
-        isMenuVisible: false,
+        isTopBarVisible: false,
         isSettingsPanelVisible: false,
         isAutoReadPanelVisible: false,
         isAutoReading: false
@@ -47,7 +47,7 @@ final class ReaderSystemAppearanceController {
         settings: ReaderSettings,
         theme: ReaderTheme,
         isViewVisible: Bool,
-        isMenuVisible: Bool,
+        isTopBarVisible: Bool,
         isSettingsPanelVisible: Bool,
         isAutoReadPanelVisible: Bool,
         isAutoReading: Bool
@@ -56,7 +56,7 @@ final class ReaderSystemAppearanceController {
             settings: settings.normalized,
             theme: theme,
             isViewVisible: isViewVisible,
-            isMenuVisible: isMenuVisible,
+            isTopBarVisible: isTopBarVisible,
             isSettingsPanelVisible: isSettingsPanelVisible,
             isAutoReadPanelVisible: isAutoReadPanelVisible,
             isAutoReading: isAutoReading
@@ -91,7 +91,7 @@ final class ReaderSystemAppearanceController {
         if state.isSettingsPanelVisible {
             return true
         }
-        return !state.isMenuVisible
+        return !state.isTopBarVisible
     }
 
     private func notifyStatusBarHiddenIfNeeded(forceValue: Bool?) {

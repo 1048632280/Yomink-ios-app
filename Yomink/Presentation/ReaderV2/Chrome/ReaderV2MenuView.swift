@@ -36,7 +36,7 @@ final class ReaderV2MenuView: UIView {
 
     private(set) var isMenuVisible = false
     private(set) var isMoreMenuVisible = false
-    private var isTopBarVisible = false
+    private(set) var isTopBarVisible = false
     private var isBottomBarVisible = false
     private var isFloatingActionStackVisible = false
 
@@ -363,6 +363,15 @@ final class ReaderV2MenuView: UIView {
         return (isTopBarVisible && topBar.frame.contains(point))
             || (isBottomBarVisible && bottomBar.frame.contains(point))
             || (isFloatingActionStackVisible && floatingActionStack.frame.contains(point))
+            || (isMoreMenuVisible && moreMenuContainer.frame.contains(point))
+    }
+
+    func containsMoreMenuOrButton(at point: CGPoint) -> Bool {
+        guard isMenuVisible else {
+            return false
+        }
+        let moreButtonFrame = moreButton.convert(moreButton.bounds, to: self)
+        return moreButtonFrame.contains(point)
             || (isMoreMenuVisible && moreMenuContainer.frame.contains(point))
     }
 
