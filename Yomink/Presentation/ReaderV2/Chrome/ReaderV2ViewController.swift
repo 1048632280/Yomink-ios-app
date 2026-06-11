@@ -949,8 +949,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                 usesPageIndex: true
             )
             : self.pageIndex(containingProgress: record.progress, in: result)
+        let chapterCount = chapterProvider?.chapterCount ?? chapters.count
         return ReaderPageModel(
-            chapterCount: chapterProvider.chapterCount,
+            chapterCount: chapterCount,
             chapterIndex: chapterIndex,
             pageCount: result.pageCount,
             pageIndex: pageIndex,
