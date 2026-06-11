@@ -149,7 +149,7 @@ final class ReaderAutoReadController {
 
     private static func maxOffsetY(for scrollView: UIScrollView) -> CGFloat {
         let pageHeight = autoReadPageHeight(for: scrollView)
-        max(
+        return max(
             minOffsetY(for: scrollView),
             scrollView.contentSize.height - pageHeight
         )
