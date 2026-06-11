@@ -278,20 +278,21 @@ final class ReaderTextSelectionController: NSObject, UIGestureRecognizerDelegate
         }
 
         let hostPoint = hostView.convert(point, from: coordinateView)
-        let textPoint = selectedTextView.convert(hostPoint, from: hostView)
+        let sourceView = magnifierSourceView(for: selectedTextView)
+        let sourcePoint = sourceView.convert(hostPoint, from: hostView)
         switch state {
         case .began:
             hideMenu(animated: true)
             showMagnifier(
-                sourceView: selectedTextView,
-                sourcePoint: clampedSourcePoint(textPoint, in: selectedTextView),
+                sourceView: sourceView,
+                sourcePoint: sourcePoint,
                 hostView: hostView,
                 anchorPoint: hostPoint
             )
         case .changed:
             showMagnifier(
-                sourceView: selectedTextView,
-                sourcePoint: clampedSourcePoint(textPoint, in: selectedTextView),
+                sourceView: sourceView,
+                sourcePoint: sourcePoint,
                 hostView: hostView,
                 anchorPoint: hostPoint
             )
@@ -303,6 +304,10 @@ final class ReaderTextSelectionController: NSObject, UIGestureRecognizerDelegate
         default:
             break
         }
+    }
+
+    private func magnifierSourceView(for textView: TextReadView) -> UIView {
+        textView.superview ?? textView
     }
 
     @objc private func externalDragRecognized(_ recognizer: ReaderImmediatePanGestureRecognizer) {
@@ -362,7 +367,11 @@ final class ReaderTextSelectionController: NSObject, UIGestureRecognizerDelegate
             hostView.addSubview(magnifier)
         }
         magnifierView = magnifier
-        magnifier.update(sourceView: sourceView, sourcePoint: sourcePoint)
+        magnifier.update(
+            sourceView: sourceView,
+            sourcePoint: sourcePoint,
+            hiddenView: overlayView
+        )
 
         let x = min(
             max(anchorPoint.x, magnifier.bounds.width / 2 + 12),
@@ -376,13 +385,6 @@ final class ReaderTextSelectionController: NSObject, UIGestureRecognizerDelegate
     private func hideMagnifier() {
         magnifierView?.removeFromSuperview()
         magnifierView = nil
-    }
-
-    private func clampedSourcePoint(_ point: CGPoint, in sourceView: UIView) -> CGPoint {
-        CGPoint(
-            x: min(max(point.x, sourceView.bounds.minX), sourceView.bounds.maxX),
-            y: min(max(point.y, sourceView.bounds.minY), sourceView.bounds.maxY)
-        )
     }
 
     func gestureRecognizer(
@@ -466,8 +468,17 @@ private final class ReaderSelectionMagnifierView: UIView {
         fatalError("init(coder:) has not been implemented")
     }
 
-    func update(sourceView: UIView, sourcePoint: CGPoint) {
+    func update(
+        sourceView: UIView,
+        sourcePoint: CGPoint,
+        hiddenView: UIView?
+    ) {
+        let wasHidden = hiddenView?.isHidden
+        hiddenView?.isHidden = true
         snapshotImage = renderSnapshot(sourceView: sourceView, sourcePoint: sourcePoint)
+        if let wasHidden = wasHidden {
+            hiddenView?.isHidden = wasHidden
+        }
         setNeedsDisplay()
     }
 
@@ -510,27 +521,39 @@ private final class ReaderSelectionMagnifierView: UIView {
         return renderer.image { rendererContext in
             let lensRect = bounds.insetBy(dx: lensInset, dy: lensInset)
             UIBezierPath(ovalIn: lensRect).addClip()
-            UIColor.systemBackground.setFill()
-            UIRectFill(lensRect)
 
-            let drawRect = CGRect(
-                x: lensRect.midX - sourcePoint.x * magnification,
-                y: lensRect.midY - sourcePoint.y * magnification,
-                width: sourceView.bounds.width * magnification,
-                height: sourceView.bounds.height * magnification
+            let clampedPoint = clampedSourcePoint(
+                sourcePoint,
+                in: sourceView.bounds,
+                lensRect: lensRect
             )
-            let rendered = sourceView.drawHierarchy(in: drawRect, afterScreenUpdates: false)
-            if !rendered {
-                let context = rendererContext.cgContext
-                context.saveGState()
-                context.translateBy(
-                    x: lensRect.midX - sourcePoint.x * magnification,
-                    y: lensRect.midY - sourcePoint.y * magnification
-                )
-                context.scaleBy(x: magnification, y: magnification)
-                sourceView.layer.render(in: context)
-                context.restoreGState()
-            }
+            let context = rendererContext.cgContext
+            context.saveGState()
+            context.translateBy(
+                x: lensRect.midX - clampedPoint.x * magnification,
+                y: lensRect.midY - clampedPoint.y * magnification
+            )
+            context.scaleBy(x: magnification, y: magnification)
+            sourceView.layer.render(in: context)
+            context.restoreGState()
         }
+    }
+
+    private func clampedSourcePoint(
+        _ point: CGPoint,
+        in bounds: CGRect,
+        lensRect: CGRect
+    ) -> CGPoint {
+        let radiusX = lensRect.width / (2 * magnification)
+        let radiusY = lensRect.height / (2 * magnification)
+        let safeBounds = bounds.insetBy(dx: radiusX, dy: radiusY)
+
+        let clampBounds = safeBounds.width > 0 && safeBounds.height > 0
+            ? safeBounds
+            : bounds
+        return CGPoint(
+            x: min(max(point.x, clampBounds.minX), clampBounds.maxX),
+            y: min(max(point.y, clampBounds.minY), clampBounds.maxY)
+        )
     }
 }
