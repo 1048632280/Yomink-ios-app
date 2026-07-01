@@ -3,6 +3,7 @@ import UIKit
 
 final class TextReadView: TextReadViewBase {
     override func draw(_ rect: CGRect) {
+        ensureFrameForCurrentLayout()
         guard let frameRef,
               let context = UIGraphicsGetCurrentContext() else {
             return

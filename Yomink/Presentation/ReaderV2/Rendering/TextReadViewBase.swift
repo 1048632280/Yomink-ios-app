@@ -13,7 +13,15 @@ class TextReadViewBase: UIView {
     private(set) var frameRef: CTFrame?
     private(set) var highlightedRanges: [NSRange] = []
     private(set) var displayRange: NSRange?
+    private var frameBuildBounds = CGRect.null
+    private var frameBuildContentRect = CGRect.null
     var layout = ReaderLayout.notchedPhone {
+        didSet {
+            resetFrame()
+            setNeedsDisplay()
+        }
+    }
+    var usesBoundsAsContentRect = false {
         didSet {
             resetFrame()
             setNeedsDisplay()
@@ -74,6 +82,9 @@ class TextReadViewBase: UIView {
     }
 
     var activeContentRect: CGRect {
+        if usesBoundsAsContentRect {
+            return bounds
+        }
         contentRectOverride ?? layout.contentRect(in: bounds)
     }
 
@@ -235,6 +246,7 @@ class TextReadViewBase: UIView {
     }
 
     func textRects(for range: NSRange) -> [CGRect] {
+        ensureFrameForCurrentLayout()
         guard frameRef != nil,
               let range = clampedRange(range) else {
             return []
@@ -402,15 +414,26 @@ class TextReadViewBase: UIView {
               bounds.width > 0,
               bounds.height > 0 else {
             frameRef = nil
+            frameBuildBounds = .null
+            frameBuildContentRect = .null
             return
         }
 
         guard let frameRange = effectiveFrameRange() else {
             frameRef = nil
+            frameBuildBounds = .null
+            frameBuildContentRect = .null
             return
         }
 
-        let contentRect = contentRectOverride ?? layout.contentRect(in: bounds)
+        let contentRect = activeContentRect
+        guard contentRect.width > 0,
+              contentRect.height > 0 else {
+            frameRef = nil
+            frameBuildBounds = .null
+            frameBuildContentRect = .null
+            return
+        }
         let path = CGMutablePath()
         path.addRect(contentRect)
         let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
@@ -420,6 +443,18 @@ class TextReadViewBase: UIView {
             path,
             nil
         )
+        frameBuildBounds = bounds
+        frameBuildContentRect = contentRect
+    }
+
+    func ensureFrameForCurrentLayout() {
+        let contentRect = activeContentRect
+        guard frameRef == nil
+            || frameBuildBounds != bounds
+            || frameBuildContentRect != contentRect else {
+            return
+        }
+        resetFrame()
     }
 
     private func effectiveFrameRange() -> NSRange? {

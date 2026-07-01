@@ -615,7 +615,8 @@ final class ReaderV2CoreTests: XCTestCase {
         cell.setNeedsLayout()
         cell.layoutIfNeeded()
 
-        XCTAssertEqual(cell.textView.contentRectOverride, Optional(cell.textView.bounds))
+        XCTAssertNil(cell.textView.contentRectOverride)
+        XCTAssertEqual(cell.textView.activeContentRect, cell.textView.bounds)
         XCTAssertNotNil(cell.textView.frameRef)
     }
 
