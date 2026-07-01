@@ -11,6 +11,13 @@ final class ReaderScrollPageCell: UITableViewCell {
     private var theme = ReaderTheme.standard
     private var textLeadingConstraint: NSLayoutConstraint?
     private var textTrailingConstraint: NSLayoutConstraint?
+    private var currentTextContentRect: CGRect? {
+        guard textView.bounds.width > 0,
+              textView.bounds.height > 0 else {
+            return nil
+        }
+        return textView.bounds
+    }
 
     override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         super.init(style: style, reuseIdentifier: reuseIdentifier)
@@ -56,13 +63,14 @@ final class ReaderScrollPageCell: UITableViewCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         pageModel = nil
+        textView.contentRectOverride = nil
         textView.setAttributedText(NSAttributedString(string: ""))
         textView.setHighlightedRanges([])
     }
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        textView.contentRectOverride = textView.bounds
+        textView.contentRectOverride = currentTextContentRect
     }
 
     func configure(
@@ -83,7 +91,7 @@ final class ReaderScrollPageCell: UITableViewCell {
         textTrailingConstraint?.constant = -layout.rightMargin
         textView.layout = layout
         textView.contentColor = theme.contentColor
-        textView.contentRectOverride = textView.bounds
+        textView.contentRectOverride = currentTextContentRect
         textView.setAttributedText(attributedText)
         setNeedsLayout()
     }

@@ -562,6 +562,30 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testReaderScrollPageCellRebuildsFrameAfterDeferredLayout() {
+        let text = readerV2LongText(repeating: 3)
+        let cell = ReaderScrollPageCell(style: .default, reuseIdentifier: nil)
+
+        cell.configure(
+            attributedText: NSAttributedString(string: text),
+            pageModel: readerV2PageModel(pageIndex: 0, pageCount: 1),
+            layout: .phone,
+            theme: .standard
+        )
+
+        XCTAssertNil(cell.textView.contentRectOverride)
+        XCTAssertNil(cell.textView.frameRef)
+
+        cell.frame = CGRect(x: 0, y: 0, width: 320, height: 420)
+        cell.contentView.frame = cell.bounds
+        cell.setNeedsLayout()
+        cell.layoutIfNeeded()
+
+        XCTAssertEqual(cell.textView.contentRectOverride, Optional(cell.textView.bounds))
+        XCTAssertNotNil(cell.textView.frameRef)
+    }
+
+    @MainActor
     func testTextReadViewClampsHighlightRanges() {
         let view = TextReadView(frame: CGRect(x: 0, y: 0, width: 320, height: 480))
         view.setAttributedText(NSAttributedString(string: "abcdef"))

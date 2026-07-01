@@ -51,6 +51,7 @@ class TextReadViewBase: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         resetFrame()
+        setNeedsDisplay()
     }
 
     func setAttributedText(
