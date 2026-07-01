@@ -264,7 +264,8 @@ struct PaibanManager {
 
             let pageAttributedText = Self.pageAttributedText(
                 from: attributedText,
-                range: range
+                range: range,
+                normalizesTrailingParagraphSpacing: returnsHeights
             )
             let height = returnsHeights
                 ? Self.suggestedHeight(
@@ -333,28 +334,38 @@ struct PaibanManager {
 
     private static func pageAttributedText(
         from attributedText: NSAttributedString,
-        range: NSRange
+        range: NSRange,
+        normalizesTrailingParagraphSpacing: Bool
     ) -> NSAttributedString {
         let pageAttributedText = NSMutableAttributedString(
             attributedString: attributedText.attributedSubstring(from: range)
         )
-        guard range.location > 0,
-              pageAttributedText.length > 0,
-              !isNewParagraphStart(at: range.location, in: attributedText.string) else {
+        guard pageAttributedText.length > 0 else {
             return pageAttributedText
         }
 
+        if isParagraphContinuation(at: range.location, in: attributedText.string) {
+            normalizeLeadingParagraphIndent(in: pageAttributedText)
+        }
+
+        if normalizesTrailingParagraphSpacing {
+            normalizeTrailingParagraphSpacing(in: pageAttributedText)
+        }
+
+        return pageAttributedText
+    }
+
+    private static func normalizeLeadingParagraphIndent(
+        in pageAttributedText: NSMutableAttributedString
+    ) {
         let paragraphRange = (pageAttributedText.string as NSString)
             .paragraphRange(for: NSRange(location: 0, length: 0))
-        guard paragraphRange.length > 0,
-              let paragraphStyle = pageAttributedText.attribute(
-                .paragraphStyle,
-                at: 0,
-                effectiveRange: nil
-              ) as? NSParagraphStyle else {
-            return pageAttributedText
+        guard let paragraphStyle = paragraphStyle(
+            in: pageAttributedText,
+            paragraphRange: paragraphRange
+        ) else {
+            return
         }
-
         let adjustedStyle = paragraphStyle.mutableCopy() as? NSMutableParagraphStyle
         adjustedStyle?.firstLineHeadIndent = 0
         if let adjustedStyle {
@@ -364,7 +375,50 @@ struct PaibanManager {
                 range: paragraphRange
             )
         }
-        return pageAttributedText
+    }
+
+    private static func normalizeTrailingParagraphSpacing(
+        in pageAttributedText: NSMutableAttributedString
+    ) {
+        let nsText = pageAttributedText.string as NSString
+        let lastLocation = max(pageAttributedText.length - 1, 0)
+        let paragraphRange = nsText.paragraphRange(
+            for: NSRange(location: lastLocation, length: 0)
+        )
+        guard let paragraphStyle = paragraphStyle(
+            in: pageAttributedText,
+            paragraphRange: paragraphRange
+        ) else {
+            return
+        }
+        let adjustedStyle = paragraphStyle.mutableCopy() as? NSMutableParagraphStyle
+        adjustedStyle?.paragraphSpacing = 0
+        if let adjustedStyle {
+            pageAttributedText.addAttribute(
+                .paragraphStyle,
+                value: adjustedStyle,
+                range: paragraphRange
+            )
+        }
+    }
+
+    private static func paragraphStyle(
+        in pageAttributedText: NSAttributedString,
+        paragraphRange: NSRange
+    ) -> NSParagraphStyle? {
+        guard pageAttributedText.length > 0,
+              paragraphRange.length > 0 else {
+            return nil
+        }
+        let styleLocation = min(
+            max(paragraphRange.location, 0),
+            pageAttributedText.length - 1
+        )
+        return pageAttributedText.attribute(
+            .paragraphStyle,
+            at: styleLocation,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
     }
 
     private static func isNewParagraphStart(
@@ -382,6 +436,18 @@ struct PaibanManager {
         return previous.rangeOfCharacter(from: .newlines) != nil
     }
 
+    private static func isParagraphContinuation(
+        at location: Int,
+        in text: String
+    ) -> Bool {
+        let nsText = text as NSString
+        guard location > 0,
+              location < nsText.length else {
+            return false
+        }
+        return !isNewParagraphStart(at: location, in: text)
+    }
+
     private static func trailingSpacing(
         after range: NSRange,
         in text: String,
@@ -392,9 +458,9 @@ struct PaibanManager {
         guard end < nsText.length else {
             return chapterBreakSpacing(layout: layout)
         }
-        return isNewParagraphStart(at: end, in: text)
-            ? max(0, layout.paragraphSpacing)
-            : max(0, layout.lineSpacing)
+        return isParagraphContinuation(at: end, in: text)
+            ? max(0, layout.lineSpacing)
+            : max(0, layout.paragraphSpacing)
     }
 
     private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {

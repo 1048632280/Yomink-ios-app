@@ -299,6 +299,43 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(originalParagraph?.firstLineHeadIndent ?? 0, 40, accuracy: 0.0001)
     }
 
+    func testPaibanManagerNormalizesScrollPageTailSpacingForContinuation() {
+        var layout = ReaderLayout.phone
+        layout.fontSize = 20
+        layout.headIndent = 2
+        layout.lineSpacing = 6
+        layout.paragraphSpacing = 30
+        let manager = PaibanManager(layout: layout, theme: .standard)
+        let text = Array(repeating: "word", count: 180).joined(separator: " ")
+        let result = manager.divideText(
+            text,
+            chapterTitle: "",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 180, height: 48),
+            returnsHeights: true
+        )
+
+        guard let firstPage = result.pages.first,
+              result.pages.count > 1 else {
+            XCTFail("Expected a continued paragraph split across pages")
+            return
+        }
+
+        let tailParagraph = firstPage.attributedText.attribute(
+            .paragraphStyle,
+            at: firstPage.attributedText.length - 1,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(tailParagraph?.paragraphSpacing ?? -1, 0, accuracy: 0.0001)
+
+        let continuationParagraph = result.pages[1].attributedText.attribute(
+            .paragraphStyle,
+            at: 0,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(continuationParagraph?.firstLineHeadIndent ?? -1, 0, accuracy: 0.0001)
+    }
+
     func testPaibanManagerPaginatesSingleChapterIntoContinuousRanges() {
         let manager = PaibanManager(layout: .phone, theme: .standard)
         let text = readerV2LongText(repeating: 90)
