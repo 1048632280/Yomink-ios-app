@@ -846,18 +846,40 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private func currentPaginationSize(
         for turnPageType: ReaderTurnPageType? = nil
     ) -> CGSize? {
-        guard view.bounds.width > 2,
-              view.bounds.height > 2 else {
+        Self.paginationSize(
+            in: view.bounds,
+            layout: layout,
+            turnPageType: turnPageType ?? activeTurnPageType,
+            usesPagedAutoReadStitching: usesPagedAutoReadStitching
+        )
+    }
+
+    private var usesPagedAutoReadStitching: Bool {
+        guard let autoReadEntryPageMode else {
+            return false
+        }
+        // 从翻页模式进入自动阅读时，纵向容器只拼接原翻页页块，不能用整屏高度重新分页。
+        return autoReadEntryPageMode != .scroll
+    }
+
+    static func paginationSize(
+        in bounds: CGRect,
+        layout: ReaderLayout,
+        turnPageType: ReaderTurnPageType,
+        usesPagedAutoReadStitching: Bool
+    ) -> CGSize? {
+        guard bounds.width > 2,
+              bounds.height > 2 else {
             return nil
         }
-        let turnPageType = turnPageType ?? activeTurnPageType
-        if turnPageType == .verticalContinuous {
+        if turnPageType == .verticalContinuous,
+           !usesPagedAutoReadStitching {
             return CGSize(
-                width: max(1, view.bounds.width - layout.leftMargin - layout.rightMargin),
-                height: max(1, view.bounds.height)
+                width: max(1, bounds.width - layout.leftMargin - layout.rightMargin),
+                height: max(1, bounds.height)
             )
         }
-        return layout.contentRect(in: view.bounds).size
+        return layout.contentRect(in: bounds).size
     }
 
     private func reopenIfPaginationSizeChanged() {
@@ -2341,6 +2363,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
                       self.openGeneration == generation else {
                     return
                 }
+                self.autoReadEntryPageMode = nil
                 self.showError(error)
             }
         }

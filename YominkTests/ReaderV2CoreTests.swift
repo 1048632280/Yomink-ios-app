@@ -430,6 +430,41 @@ final class ReaderV2CoreTests: XCTestCase {
         }
     }
 
+    func testAutoReadStitchingKeepsPagedBreaksInsteadOfFullHeightRepagination() {
+        let layout = ReaderLayout.notchedPhone
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let pagedSize = layout.contentRect(in: bounds).size
+        let fullHeightSize = CGSize(width: pagedSize.width, height: bounds.height)
+        let text = readerV2LongText(repeating: 120)
+        let manager = PaibanManager(layout: layout, theme: .standard)
+
+        let paged = manager.divideText(
+            text,
+            chapterTitle: "拼接",
+            chapterIndex: 0,
+            pageSize: pagedSize,
+            returnsHeights: true
+        )
+        let fullHeight = manager.divideText(
+            text,
+            chapterTitle: "拼接",
+            chapterIndex: 0,
+            pageSize: fullHeightSize,
+            returnsHeights: true
+        )
+
+        XCTAssertGreaterThan(paged.pageCount, fullHeight.pageCount)
+        XCTAssertGreaterThan(
+            fullHeight.pages.first?.displayRange.length ?? 0,
+            paged.pages.first?.displayRange.length ?? 0
+        )
+        XCTAssertEqual(
+            paged.pages.dropFirst().first?.displayRange.location,
+            (paged.pages.first?.displayRange.location ?? 0)
+                + (paged.pages.first?.displayRange.length ?? 0)
+        )
+    }
+
     func testPaibanManagerKeepsDoubleColumnAPIAsSingleColumnFallback() {
         let manager = PaibanManager(layout: .phone, theme: .standard)
         let text = readerV2LongText(repeating: 60)
@@ -1524,6 +1559,35 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertFalse(ReaderV2ViewController.homeIndicatorAutoHidden(for: settings))
         XCTAssertEqual(ReaderV2ViewController.screenEdgesDeferringSystemGestures(for: settings), [])
+    }
+
+    @MainActor
+    func testAutoReadFromPagedModeUsesPagedContentRectForVerticalStitching() {
+        let layout = ReaderLayout.notchedPhone
+        let bounds = CGRect(x: 0, y: 0, width: 390, height: 844)
+        let pagedSize = layout.contentRect(in: bounds).size
+
+        XCTAssertEqual(
+            ReaderV2ViewController.paginationSize(
+                in: bounds,
+                layout: layout,
+                turnPageType: .verticalContinuous,
+                usesPagedAutoReadStitching: true
+            ),
+            pagedSize
+        )
+        XCTAssertEqual(
+            ReaderV2ViewController.paginationSize(
+                in: bounds,
+                layout: layout,
+                turnPageType: .verticalContinuous,
+                usesPagedAutoReadStitching: false
+            ),
+            CGSize(
+                width: bounds.width - layout.leftMargin - layout.rightMargin,
+                height: bounds.height
+            )
+        )
     }
 
     @MainActor
