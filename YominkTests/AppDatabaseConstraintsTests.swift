@@ -718,6 +718,65 @@ final class BookSearchEscapingTests: XCTestCase {
         XCTAssertEqual(clearedUsage?.bookCount, 0)
     }
 
+    func testFavoriteScopeIsVirtualAndUsesFavoriteTimeForAddedSort() async throws {
+        let database = try AppDatabase.inMemory()
+        let repository = GRDBLibraryRepository(database: database)
+        let group = try await repository.createGroup(name: "Group")
+        let firstBook = try await insertBook(
+            title: "First Favorite",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+        let secondBook = try await insertBook(
+            title: "Second Favorite",
+            contentHash: "hash-\(UUID().uuidString)",
+            repository: repository
+        )
+
+        try await repository.moveBooks(ids: [firstBook.id], to: group.id)
+        _ = try await repository.setBookFavorite(id: firstBook.id, isFavorite: true)
+        _ = try await repository.setBookFavorite(id: secondBook.id, isFavorite: true)
+
+        try await database.writer.write { db in
+            try db.execute(
+                sql: "UPDATE books SET favoriteAt = ? WHERE id = ?",
+                arguments: [
+                    DatabaseDateFormatter.string(from: Date(timeIntervalSince1970: 10)),
+                    firstBook.id.uuidString
+                ]
+            )
+            try db.execute(
+                sql: "UPDATE books SET favoriteAt = ? WHERE id = ?",
+                arguments: [
+                    DatabaseDateFormatter.string(from: Date(timeIntervalSince1970: 20)),
+                    secondBook.id.uuidString
+                ]
+            )
+        }
+
+        let favoriteBooks = try await repository.fetchBooks(
+            scope: .favorites,
+            sortOrder: .importedAt
+        )
+        let groupedBooks = try await repository.fetchBooks(
+            scope: .group(group.id),
+            sortOrder: .importedAt
+        )
+
+        XCTAssertEqual(favoriteBooks.map(\.id), [secondBook.id, firstBook.id])
+        XCTAssertEqual(groupedBooks.map(\.id), [firstBook.id])
+        XCTAssertEqual(favoriteBooks.first { $0.id == firstBook.id }?.groupID, group.id)
+
+        let updatedSecondBook = try await repository.setBookFavorite(id: secondBook.id, isFavorite: false)
+        let favoriteBooksAfterCancel = try await repository.fetchBooks(
+            scope: .favorites,
+            sortOrder: .importedAt
+        )
+
+        XCTAssertNil(updatedSecondBook.favoriteAt)
+        XCTAssertEqual(favoriteBooksAfterCancel.map(\.id), [firstBook.id])
+    }
+
     private func insertBook(
         title: String,
         contentHash: String,

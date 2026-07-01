@@ -12,9 +12,11 @@ extension Book {
         let idString: String = row["id"]
         let importedAtString: String = row["importedAt"]
         let lastReadAtString: String? = row["lastReadAt"]
+        let favoriteAtString: String? = row["favoriteAt"]
         let groupIDString: String? = row["groupId"]
         let progressPercentage: Double = row["progressPercentage"] ?? 0
         let lastReadAt = lastReadAtString.flatMap(DatabaseDateFormatter.date(from:))
+        let favoriteAt = favoriteAtString.flatMap(DatabaseDateFormatter.date(from:))
         let groupID = groupIDString.flatMap(UUID.init(uuidString:))
         guard
             let id = UUID(uuidString: idString),
@@ -25,6 +27,9 @@ extension Book {
         }
         if lastReadAtString != nil, lastReadAt == nil {
             Self.rowLogger.warning("Dropped invalid lastReadAt for book row: id=\(idString, privacy: .public)")
+        }
+        if favoriteAtString != nil, favoriteAt == nil {
+            Self.rowLogger.warning("Dropped invalid favoriteAt for book row: id=\(idString, privacy: .public)")
         }
         if groupIDString != nil, groupID == nil {
             Self.rowLogger.warning("Dropped invalid groupId for book row: id=\(idString, privacy: .public)")
@@ -41,6 +46,7 @@ extension Book {
             wordCount: row["wordCount"],
             importedAt: importedAt,
             lastReadAt: lastReadAt,
+            favoriteAt: favoriteAt,
             groupID: groupID,
             progressPercentage: min(max(progressPercentage, 0), 1),
             contentHash: row["contentHash"],

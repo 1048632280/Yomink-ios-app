@@ -75,6 +75,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
     private var openTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var settingsSaveTask: Task<Void, Never>?
+    private var favoriteTask: Task<Void, Never>?
     private var bookmarkTask: Task<Void, Never>?
     private var preloadTasks: [Int: Task<Void, Never>] = [:]
 
@@ -103,6 +104,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         openTask?.cancel()
         saveTask?.cancel()
         settingsSaveTask?.cancel()
+        favoriteTask?.cancel()
         bookmarkTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
         NotificationCenter.default.removeObserver(self)
@@ -305,6 +307,9 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         menuView.onCatalog = { [weak self] in
             self?.showContents()
+        }
+        menuView.onFavorite = { [weak self] in
+            self?.toggleFavorite()
         }
         menuView.onBookmark = { [weak self] in
             self?.toggleBookmark()
@@ -814,6 +819,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         loadTask?.cancel()
         openTask?.cancel()
         saveTask?.cancel()
+        favoriteTask?.cancel()
         bookmarkTask?.cancel()
         preloadTasks.values.forEach { $0.cancel() }
         preloadTasks.removeAll()
@@ -826,6 +832,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         bookmarks = []
         currentBookmark = nil
         filterRules = []
+        favoriteTask = nil
         bookmarkTask = nil
         paginationCache.removeAll()
         loadedScrollChapterIndexes.removeAll()
@@ -1670,6 +1677,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
         }
         menuView.updateAutoRead(isReading: autoReadController.isReading)
         menuView.updateDarkMode(isDark: readerSettings.theme == .dark)
+        updateFavoriteState()
         updateBookmarkState()
     }
 
@@ -1740,6 +1748,10 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             ),
             pageIndex: estimatedPageIndex
         )
+    }
+
+    private func updateFavoriteState() {
+        menuView.updateFavorite(isFavorite: book.isFavorite)
     }
 
     private func updateBookmarkState() {
@@ -2031,6 +2043,55 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
             removeBookmark(currentBookmark)
         } else {
             createBookmark(progress: progress, chapter: chapters[currentPageModel.chapterIndex])
+        }
+    }
+
+    private func toggleFavorite() {
+        favoriteTask?.cancel()
+
+        let previousBook = book
+        let shouldFavorite = !book.isFavorite
+        if shouldFavorite {
+            book.favoriteAt = Date()
+        } else {
+            book.favoriteAt = nil
+        }
+        menuView.setFavoriteButtonEnabled(false)
+        updateFavoriteState()
+
+        let repository = repository
+        let bookID = book.id
+        favoriteTask = Task { [weak self] in
+            do {
+                let updatedBook = try await repository.setBookFavorite(
+                    id: bookID,
+                    isFavorite: shouldFavorite
+                )
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.book = updatedBook
+                    self.menuView.setFavoriteButtonEnabled(true)
+                    self.updateFavoriteState()
+                }
+            } catch is CancellationError {
+                await MainActor.run {
+                    self?.menuView.setFavoriteButtonEnabled(true)
+                    self?.updateFavoriteState()
+                }
+            } catch {
+                readerV2Logger.error("ReaderV2 favorite update failed: \(error.localizedDescription, privacy: .public)")
+                await MainActor.run {
+                    guard let self else {
+                        return
+                    }
+                    self.book = previousBook
+                    self.menuView.setFavoriteButtonEnabled(true)
+                    self.updateFavoriteState()
+                    self.showError(error)
+                }
+            }
         }
     }
 

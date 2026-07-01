@@ -31,6 +31,9 @@ struct GRDBLibraryRepository: LibraryRepository {
             case .all:
                 whereClause = nil
                 arguments = []
+            case .favorites:
+                whereClause = "books.favoriteAt IS NOT NULL"
+                arguments = []
             case .ungrouped:
                 whereClause = "books.groupId IS NULL"
                 arguments = []
@@ -50,7 +53,11 @@ struct GRDBLibraryRepository: LibraryRepository {
 
             let rows = try Row.fetchAll(
                 db,
-                sql: BookQuery.booksSQL(where: whereClause, sortOrder: sortOrder),
+                sql: BookQuery.booksSQL(
+                    where: whereClause,
+                    sortOrder: sortOrder,
+                    usesFavoriteDateForImportedAt: scope == .favorites
+                ),
                 arguments: arguments
             )
             return rows.compactMap(Book.init(row:))
@@ -348,6 +355,36 @@ struct GRDBLibraryRepository: LibraryRepository {
                     ]
                 )
             }
+        }
+    }
+
+    func setBookFavorite(id: UUID, isFavorite: Bool) async throws -> Book {
+        let favoriteAt = isFavorite ? DatabaseDateFormatter.string(from: Date()) : nil
+
+        return try await database.writer.write { db in
+            try db.execute(
+                sql: """
+                UPDATE books
+                SET favoriteAt = ?
+                WHERE id = ?
+                """,
+                arguments: [
+                    favoriteAt,
+                    id.uuidString
+                ]
+            )
+
+            guard let row = try Row.fetchOne(
+                db,
+                sql: BookQuery.booksSQL(where: "books.id = ?"),
+                arguments: [id.uuidString]
+            ),
+                let book = Book(row: row)
+            else {
+                throw Self.bookNotFoundError()
+            }
+
+            return book
         }
     }
 
@@ -929,10 +966,10 @@ struct GRDBLibraryRepository: LibraryRepository {
                 sql: """
                 INSERT INTO books (
                     id, title, author, intro, fileName, fileSize, encoding, wordCount,
-                    importedAt, lastReadAt, groupId, contentHash, importSourceDisplayPath,
+                    importedAt, lastReadAt, favoriteAt, groupId, contentHash, importSourceDisplayPath,
                     sourceBookmark, sourcePath
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?, ?, NULL, ?)
                 ON CONFLICT(contentHash) DO NOTHING
                 """,
                 arguments: [
@@ -994,6 +1031,7 @@ struct GRDBLibraryRepository: LibraryRepository {
                 wordCount: normalizedWordCount,
                 importedAt: draft.importedAt,
                 lastReadAt: nil,
+                favoriteAt: nil,
                 groupID: draft.groupID,
                 progressPercentage: 0,
                 contentHash: draft.contentHash,

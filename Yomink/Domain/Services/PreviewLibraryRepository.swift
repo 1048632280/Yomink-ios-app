@@ -31,6 +31,8 @@ struct PreviewLibraryRepository: LibraryRepository {
         switch scope {
         case .all, .ungrouped:
             return books
+        case .favorites:
+            return []
         case .group:
             return []
         case let .tag(id):
@@ -113,6 +115,28 @@ struct PreviewLibraryRepository: LibraryRepository {
     func reorderGroups(ids: [UUID]) async throws {}
 
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws {}
+
+    func setBookFavorite(id: UUID, isFavorite: Bool) async throws -> Book {
+        var book = try await fetchBooks(scope: .all, sortOrder: .lastReadAt)
+            .first { $0.id == id } ?? Book(
+                id: id,
+                title: NSLocalizedString("library.untitledBook", comment: ""),
+                author: nil,
+                intro: nil,
+                fileName: "sample.txt",
+                fileSize: 0,
+                encoding: "utf-8",
+                wordCount: 0,
+                importedAt: Date(),
+                lastReadAt: nil,
+                groupID: nil,
+                progressPercentage: 0,
+                contentHash: nil,
+                sourcePath: "Books/\(id.uuidString.lowercased())/content.txt"
+            )
+        book.favoriteAt = isFavorite ? Date() : nil
+        return book
+    }
 
     func updateBookDetails(
         id: UUID,

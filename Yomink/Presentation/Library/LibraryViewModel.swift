@@ -27,6 +27,10 @@ final class LibraryViewModel: ObservableObject {
         isSelectionMode
     }
 
+    var hasFavoriteBooks: Bool {
+        allBooks.contains(where: \.isFavorite)
+    }
+
     var selectionCountText: String {
         String(
             format: NSLocalizedString("library.selection.count", comment: ""),
@@ -309,6 +313,22 @@ final class LibraryViewModel: ObservableObject {
                 exitSelection()
             } catch {
                 showError(error, title: "library.move.error.title")
+            }
+        }
+    }
+
+    func setBookFavorite(
+        id: UUID,
+        isFavorite: Bool,
+        repository: any LibraryRepository,
+        scope: LibraryScope
+    ) {
+        Task {
+            do {
+                _ = try await repository.setBookFavorite(id: id, isFavorite: isFavorite)
+                await loadBooks(repository: repository, scope: scope)
+            } catch {
+                showError(error, title: "library.favorite.error.title")
             }
         }
     }

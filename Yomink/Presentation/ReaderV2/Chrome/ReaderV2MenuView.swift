@@ -3,6 +3,7 @@ import UIKit
 @MainActor
 final class ReaderV2MenuView: UIView {
     let closeButton = UIButton(type: .system)
+    let favoriteButton = UIButton(type: .system)
     let bookmarkButton = UIButton(type: .system)
     let moreButton = UIButton(type: .system)
     let previousChapterButton = UIButton(type: .system)
@@ -42,6 +43,7 @@ final class ReaderV2MenuView: UIView {
 
     var onClose: (() -> Void)?
     var onCatalog: (() -> Void)?
+    var onFavorite: (() -> Void)?
     var onBookmark: (() -> Void)?
     var onSettings: (() -> Void)?
     var onPreviousChapter: (() -> Void)?
@@ -147,6 +149,20 @@ final class ReaderV2MenuView: UIView {
         darkModeButton.setImage(UIImage(systemName: imageName), for: .normal)
     }
 
+    func updateFavorite(isFavorite: Bool) {
+        let imageName = isFavorite ? "star.fill" : "star"
+        favoriteButton.setImage(UIImage(systemName: imageName), for: .normal)
+        favoriteButton.accessibilityLabel = NSLocalizedString(
+            isFavorite ? "reader.favorite.remove" : "reader.favorite.add",
+            comment: ""
+        )
+    }
+
+    func setFavoriteButtonEnabled(_ isEnabled: Bool) {
+        favoriteButton.isEnabled = isEnabled
+        favoriteButton.alpha = isEnabled ? 1 : 0.45
+    }
+
     func updateBookmark(isBookmarked: Bool) {
         let imageName = isBookmarked ? "bookmark.fill" : "bookmark"
         bookmarkButton.setImage(UIImage(systemName: imageName), for: .normal)
@@ -185,6 +201,7 @@ final class ReaderV2MenuView: UIView {
 
         [
             closeButton,
+            favoriteButton,
             bookmarkButton,
             moreButton
         ].forEach { button in
@@ -416,6 +433,10 @@ final class ReaderV2MenuView: UIView {
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
 
         updateBookmark(isBookmarked: false)
+        updateFavorite(isFavorite: false)
+        favoriteButton.addTarget(self, action: #selector(favoriteTapped), for: .touchUpInside)
+        favoriteButton.translatesAutoresizingMaskIntoConstraints = false
+
         bookmarkButton.addTarget(self, action: #selector(bookmarkTapped), for: .touchUpInside)
         bookmarkButton.translatesAutoresizingMaskIntoConstraints = false
 
@@ -424,7 +445,7 @@ final class ReaderV2MenuView: UIView {
         moreButton.addTarget(self, action: #selector(moreTapped), for: .touchUpInside)
         moreButton.translatesAutoresizingMaskIntoConstraints = false
 
-        let actionStack = UIStackView(arrangedSubviews: [bookmarkButton, moreButton])
+        let actionStack = UIStackView(arrangedSubviews: [favoriteButton, bookmarkButton, moreButton])
         actionStack.axis = .horizontal
         actionStack.alignment = .center
         actionStack.spacing = 4
@@ -458,6 +479,8 @@ final class ReaderV2MenuView: UIView {
             actionStack.trailingAnchor.constraint(equalTo: safeAreaLayoutGuide.trailingAnchor, constant: -12),
             actionStack.centerYAnchor.constraint(equalTo: closeButton.centerYAnchor),
 
+            favoriteButton.widthAnchor.constraint(equalToConstant: 44),
+            favoriteButton.heightAnchor.constraint(equalToConstant: 36),
             bookmarkButton.widthAnchor.constraint(equalToConstant: 44),
             bookmarkButton.heightAnchor.constraint(equalToConstant: 36),
             moreButton.widthAnchor.constraint(equalToConstant: 44),
@@ -930,6 +953,11 @@ final class ReaderV2MenuView: UIView {
     @objc private func catalogTapped() {
         setMoreMenuVisible(false, animated: true)
         onCatalog?()
+    }
+
+    @objc private func favoriteTapped() {
+        setMoreMenuVisible(false, animated: true)
+        onFavorite?()
     }
 
     @objc private func bookmarkTapped() {

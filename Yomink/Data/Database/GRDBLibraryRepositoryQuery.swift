@@ -11,6 +11,7 @@ enum BookQuery {
     static func booksSQL(
         where whereClause: String? = nil,
         sortOrder: LibrarySettings.SortOrder? = nil,
+        usesFavoriteDateForImportedAt: Bool = false,
         limit: Int? = nil
     ) -> String {
         var sql = """
@@ -24,7 +25,7 @@ enum BookQuery {
             sql += "\nWHERE \(whereClause)"
         }
         if let sortOrder = sortOrder {
-            sql += "\n\(orderClause(for: sortOrder))"
+            sql += "\n\(orderClause(for: sortOrder, usesFavoriteDateForImportedAt: usesFavoriteDateForImportedAt))"
         }
         if let limit = limit {
             sql += "\nLIMIT \(limit)"
@@ -32,12 +33,16 @@ enum BookQuery {
         return sql
     }
 
-    private static func orderClause(for sortOrder: LibrarySettings.SortOrder) -> String {
+    private static func orderClause(
+        for sortOrder: LibrarySettings.SortOrder,
+        usesFavoriteDateForImportedAt: Bool
+    ) -> String {
+        let importedAtColumn = usesFavoriteDateForImportedAt ? "books.favoriteAt" : "books.importedAt"
         switch sortOrder {
         case .lastReadAt:
-            return "ORDER BY books.lastReadAt DESC, books.importedAt DESC"
+            return "ORDER BY books.lastReadAt DESC, \(importedAtColumn) DESC"
         case .importedAt:
-            return "ORDER BY books.importedAt DESC"
+            return "ORDER BY \(importedAtColumn) DESC"
         }
     }
 }

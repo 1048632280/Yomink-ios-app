@@ -14,6 +14,7 @@ struct BookRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
     let wordCount: Int
     let importedAt: String
     let lastReadAt: String?
+    let favoriteAt: String?
     let groupId: String?
     let contentHash: String?
     let importSourceDisplayPath: String?

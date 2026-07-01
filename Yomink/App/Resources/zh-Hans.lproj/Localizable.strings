@@ -9,6 +9,7 @@
 "library.sort.menu" = "排序";
 "library.sort.lastReadAt" = "最近阅读";
 "library.sort.importedAt" = "导入时间";
+"library.sort.favoriteAt" = "收藏时间";
 "library.selection.title" = "多选";
 "library.selection.exit" = "退出多选";
 "library.selection.count" = "已选 %d 本";
@@ -24,6 +25,11 @@
 "library.move.error.title" = "移动失败";
 "library.delete.error.title" = "删除失败";
 "library.export.error.title" = "导出失败";
+"library.favorite.error.title" = "收藏操作失败";
+"library.favorite.cancel" = "取消收藏";
+"library.favorite.addedAt" = "收藏时间";
+"library.bookDetail.view" = "查看详情";
+"library.bookDetail.wordCount" = "字数";
 "library.error.bookNotFound" = "找不到这本书";
 "library.grid.progress" = "已读%@";
 "library.untitledBook" = "未命名书籍";
@@ -103,6 +109,7 @@
 
 "sidebar.groups.section" = "书架分组";
 "sidebar.groupWithCount" = "%@(%d本)";
+"sidebar.favorites" = "收藏";
 "sidebar.ungrouped" = "未分组";
 "sidebar.manageGroups" = "管理分组";
 "sidebar.untitledGroup" = "未命名分组";
@@ -168,6 +175,8 @@
 "reader.close" = "返回书架";
 "reader.bookmark.add" = "添加书签";
 "reader.bookmark.remove" = "取消书签";
+"reader.favorite.add" = "收藏本书";
+"reader.favorite.remove" = "取消收藏";
 "reader.previousPage" = "上一页";
 "reader.nextPage" = "下一页";
 "reader.previousChapter" = "上一章";

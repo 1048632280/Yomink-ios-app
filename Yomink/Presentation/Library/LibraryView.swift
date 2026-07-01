@@ -22,6 +22,7 @@ struct LibraryView: View {
     @State private var pendingSharedOpenURL: URL?
     @State private var pendingSharedImportConfirmation: SharedImportConfirmation?
     @State private var sharedImportCleanupURL: URL?
+    @State private var favoriteDetailBook: Book?
 
     init() {
         Self.configureNavigationBarAppearance()
@@ -190,6 +191,12 @@ struct LibraryView: View {
                     }
                 )
             }
+            .sheet(item: $favoriteDetailBook) { book in
+                FavoriteBookDetailSheet(
+                    book: book,
+                    groups: viewModel.groups
+                )
+            }
             .onChange(of: isImportPickerPresented) { isPresented in
                 guard case let .ready(services) = environment.bootstrapState else {
                     return
@@ -276,8 +283,11 @@ struct LibraryView: View {
             .onChange(of: activeRoute) { route in
                 handleActiveRouteChange(route)
             }
+            .onChange(of: viewModel.allBooks) { _ in
+                normalizeFavoriteScopeIfNeeded()
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
-                if viewModel.isSelecting {
+                if viewModel.isSelecting && !isFavoritesScope {
                     selectionActionBar
                 }
             }
@@ -356,6 +366,10 @@ struct LibraryView: View {
             return groupID
         }
         return nil
+    }
+
+    private var isFavoritesScope: Bool {
+        selectedScope == .favorites
     }
 
     @ViewBuilder
@@ -658,38 +672,62 @@ struct LibraryView: View {
 
     private var bookListView: some View {
         List(viewModel.books) { book in
-            BookShelfItemButton(
-                isSelected: viewModel.selectedBookIDs.contains(book.id),
-                content: {
-                    BookRowView(
-                        book: book,
-                        isSelecting: viewModel.isSelecting,
-                        isSelected: viewModel.selectedBookIDs.contains(book.id)
-                    )
-                },
-                action: {
-                    handleBookTap(book)
-                },
-                longPressAction: {
-                    viewModel.beginSelection(with: book.id)
+            if isFavoritesScope {
+                BookShelfItemButton(
+                    isSelected: false,
+                    content: {
+                        BookRowView(
+                            book: book,
+                            isSelecting: false,
+                            isSelected: false
+                        )
+                    },
+                    action: {
+                        handleBookTap(book)
+                    }
+                )
+                .contextMenu {
+                    favoriteBookContextMenu(for: book)
                 }
-            )
-            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                Button(role: .destructive) {
-                    requestDeleteBooks([book.id])
-                } label: {
-                    Label {
-                        Text("library.delete")
-                    } icon: {
-                        Image(systemName: "trash")
+                .buttonStyle(.plain)
+                .listRowBackground(Color(.systemGray6))
+                .listRowInsets(
+                    EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                )
+            } else {
+                BookShelfItemButton(
+                    isSelected: viewModel.selectedBookIDs.contains(book.id),
+                    content: {
+                        BookRowView(
+                            book: book,
+                            isSelecting: viewModel.isSelecting,
+                            isSelected: viewModel.selectedBookIDs.contains(book.id)
+                        )
+                    },
+                    action: {
+                        handleBookTap(book)
+                    },
+                    longPressAction: {
+                        viewModel.beginSelection(with: book.id)
+                    }
+                )
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        requestDeleteBooks([book.id])
+                    } label: {
+                        Label {
+                            Text("library.delete")
+                        } icon: {
+                            Image(systemName: "trash")
+                        }
                     }
                 }
+                .buttonStyle(.plain)
+                .listRowBackground(Color(.systemGray6))
+                .listRowInsets(
+                    EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
+                )
             }
-            .buttonStyle(.plain)
-            .listRowBackground(Color(.systemGray6))
-            .listRowInsets(
-                EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0)
-            )
         }
         .listStyle(.plain)
         .background(Color(.systemGray6))
@@ -704,26 +742,46 @@ struct LibraryView: View {
                 spacing: BookGridStyle.rowSpacing
             ) {
                 ForEach(viewModel.books) { book in
-                    BookShelfItemButton(
-                        isSelected: viewModel.selectedBookIDs.contains(book.id),
-                        content: {
-                            BookGridItemView(
-                                book: book,
-                                isSelecting: viewModel.isSelecting,
-                                isSelected: viewModel.selectedBookIDs.contains(book.id)
-                            )
-                        },
-                        action: {
-                            handleBookTap(book)
-                        },
-                        longPressAction: {
-                            viewModel.beginSelection(with: book.id)
+                    if isFavoritesScope {
+                        BookShelfItemButton(
+                            isSelected: false,
+                            content: {
+                                BookGridItemView(
+                                    book: book,
+                                    isSelecting: false,
+                                    isSelected: false
+                                )
+                            },
+                            action: {
+                                handleBookTap(book)
+                            }
+                        )
+                        .contextMenu {
+                            favoriteBookContextMenu(for: book)
                         }
-                    )
-                    .buttonStyle(.plain)
+                        .buttonStyle(.plain)
+                    } else {
+                        BookShelfItemButton(
+                            isSelected: viewModel.selectedBookIDs.contains(book.id),
+                            content: {
+                                BookGridItemView(
+                                    book: book,
+                                    isSelecting: viewModel.isSelecting,
+                                    isSelected: viewModel.selectedBookIDs.contains(book.id)
+                                )
+                            },
+                            action: {
+                                handleBookTap(book)
+                            },
+                            longPressAction: {
+                                viewModel.beginSelection(with: book.id)
+                            }
+                        )
+                        .buttonStyle(.plain)
+                    }
                 }
             }
-            .padding(.bottom, viewModel.isSelecting ? 80 : 0)
+            .padding(.bottom, viewModel.isSelecting && !isFavoritesScope ? 80 : 0)
             .padding(.horizontal, 20)
             .padding(.vertical, 24)
         }
@@ -1106,8 +1164,17 @@ struct LibraryView: View {
         }
     }
 
+    private func normalizeFavoriteScopeIfNeeded() {
+        guard selectedScope == .favorites,
+              !viewModel.hasFavoriteBooks else {
+            return
+        }
+        selectedScope = .ungrouped
+        reloadBooks(for: .ungrouped)
+    }
+
     private func handleBookTap(_ book: Book) {
-        if viewModel.isSelecting {
+        if viewModel.isSelecting && !isFavoritesScope {
             viewModel.toggleSelection(for: book.id)
         } else {
             activeReaderBook = book
@@ -1124,6 +1191,53 @@ struct LibraryView: View {
             repository: repository,
             scope: selectedScope
         )
+    }
+
+    @ViewBuilder
+    private func favoriteBookContextMenu(for book: Book) -> some View {
+        Button {
+            favoriteDetailBook = book
+        } label: {
+            Label {
+                Text("library.bookDetail.view")
+            } icon: {
+                Image(systemName: "info.circle")
+            }
+        }
+
+        Button(role: .destructive) {
+            cancelFavorite(book)
+        } label: {
+            Label {
+                Text("library.favorite.cancel")
+            } icon: {
+                Image(systemName: "star.slash")
+            }
+        }
+    }
+
+    private func cancelFavorite(_ book: Book) {
+        guard let repository = currentRepository else {
+            return
+        }
+
+        let scopeAfterChange: LibraryScope = selectedScope == .favorites
+            && viewModel.books.filter(\.isFavorite).count <= 1
+            ? .ungrouped
+            : selectedScope
+
+        Task {
+            do {
+                _ = try await repository.setBookFavorite(id: book.id, isFavorite: false)
+                selectedScope = scopeAfterChange
+                await viewModel.loadBooks(
+                    repository: repository,
+                    scope: scopeAfterChange
+                )
+            } catch {
+                viewModel.showError(error, title: "library.favorite.error.title")
+            }
+        }
     }
 
     private func requestDeleteBooks(_ ids: Set<UUID>) {
@@ -1404,3 +1518,110 @@ struct LibraryView_Previews: PreviewProvider {
     }
 }
 #endif
+
+private struct FavoriteBookDetailSheet: View {
+    let book: Book
+    let groups: [BookGroup]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                Section {
+                    detailRow(titleKey: "reader.bookDetail.name", value: book.title)
+                    detailRow(titleKey: "reader.bookDetail.author", value: authorText)
+                    detailRow(titleKey: "storage.book.group", value: groupName)
+                }
+
+                Section {
+                    detailRow(titleKey: "library.bookDetail.wordCount", value: wordCountText)
+                    detailRow(titleKey: "storage.book.progress", value: progressText)
+                    detailRow(titleKey: "storage.book.importedAt", value: Self.dateFormatter.string(from: book.importedAt))
+                    if let favoriteAt = book.favoriteAt {
+                        detailRow(
+                            titleKey: "library.favorite.addedAt",
+                            value: Self.dateFormatter.string(from: favoriteAt)
+                        )
+                    }
+                    detailRow(titleKey: "storage.book.lastReadAt", value: lastReadText)
+                }
+
+                if let intro = normalizedIntro {
+                    Section {
+                        Text(verbatim: intro)
+                            .font(.body)
+                            .foregroundColor(.primary)
+                    } header: {
+                        Text("reader.bookDetail.intro")
+                    }
+                }
+            }
+            .listStyle(.insetGrouped)
+            .navigationTitle("reader.bookDetail.title")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("common.done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .navigationViewStyle(.stack)
+    }
+
+    private func detailRow(titleKey: LocalizedStringKey, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(titleKey)
+                .foregroundColor(.secondary)
+            Spacer(minLength: 12)
+            Text(verbatim: value)
+                .multilineTextAlignment(.trailing)
+                .foregroundColor(.primary)
+        }
+        .font(.body)
+    }
+
+    private var authorText: String {
+        let author = book.author?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return author.isEmpty ? NSLocalizedString("reader.bookDetail.unknownAuthor", comment: "") : author
+    }
+
+    private var groupName: String {
+        guard let groupID = book.groupID else {
+            return NSLocalizedString("sidebar.ungrouped", comment: "")
+        }
+        return groups.first { $0.id == groupID }?.name
+            ?? NSLocalizedString("sidebar.untitledGroup", comment: "")
+    }
+
+    private var wordCountText: String {
+        String(
+            format: NSLocalizedString("reader.bookDetail.wordCount", comment: ""),
+            book.wordCount
+        )
+    }
+
+    private var progressText: String {
+        ReadingProgressFormatter.percentString(from: book.progressPercentage)
+    }
+
+    private var lastReadText: String {
+        guard let lastReadAt = book.lastReadAt else {
+            return NSLocalizedString("storage.book.neverRead", comment: "")
+        }
+        return Self.dateFormatter.string(from: lastReadAt)
+    }
+
+    private var normalizedIntro: String? {
+        let intro = book.intro?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return intro.isEmpty ? nil : intro
+    }
+
+    private static let dateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+}

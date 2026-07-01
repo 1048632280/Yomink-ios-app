@@ -38,6 +38,7 @@ protocol LibraryRepository: Sendable {
     func deleteGroup(id: UUID) async throws
     func reorderGroups(ids: [UUID]) async throws
     func moveBooks(ids: Set<UUID>, to groupID: UUID?) async throws
+    func setBookFavorite(id: UUID, isFavorite: Bool) async throws -> Book
     func updateBookDetails(
         id: UUID,
         title: String,

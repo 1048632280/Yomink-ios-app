@@ -46,6 +46,18 @@ struct LibrarySidebarView: View {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         groupHeader
 
+                        if favoriteBookCount > 0 {
+                            Button {
+                                onSelectScope(.favorites)
+                            } label: {
+                                SidebarItemRow(
+                                    verbatimTitle: favoriteTitle,
+                                    isSelected: selectedScope == .favorites
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+
                         Button {
                             onSelectScope(.ungrouped)
                         } label: {
@@ -106,7 +118,7 @@ struct LibrarySidebarView: View {
                 toggleSortOrder()
             } label: {
                 SidebarItemRow(
-                    localizedTitle: librarySettings.sortOrder.sidebarTitle
+                    localizedTitle: sortOrderSidebarTitle
                 )
             }
             .buttonStyle(.plain)
@@ -139,11 +151,31 @@ struct LibrarySidebarView: View {
             .frame(height: SidebarStyle.groupHeaderHeight)
     }
 
+    private var sortOrderSidebarTitle: LocalizedStringKey {
+        if selectedScope == .favorites,
+           librarySettings.sortOrder == .importedAt {
+            return "library.sort.favoriteAt"
+        }
+        return librarySettings.sortOrder.sidebarTitle
+    }
+
     private func groupTitle(_ group: BookGroup) -> String {
         String(
             format: NSLocalizedString("sidebar.groupWithCount", comment: ""),
             group.name,
             books.filter { $0.groupID == group.id }.count
+        )
+    }
+
+    private var favoriteBookCount: Int {
+        books.filter(\.isFavorite).count
+    }
+
+    private var favoriteTitle: String {
+        String(
+            format: NSLocalizedString("sidebar.groupWithCount", comment: ""),
+            NSLocalizedString("sidebar.favorites", comment: ""),
+            favoriteBookCount
         )
     }
 

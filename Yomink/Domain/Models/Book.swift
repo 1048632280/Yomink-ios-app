@@ -19,6 +19,7 @@ struct Book: Identifiable, Equatable, Sendable {
     }
     var importedAt: Date
     var lastReadAt: Date?
+    var favoriteAt: Date?
     var groupID: UUID?
     var progressPercentage: Double {
         didSet {
@@ -27,6 +28,9 @@ struct Book: Identifiable, Equatable, Sendable {
     }
     var contentHash: String?
     var sourcePath: String
+    var isFavorite: Bool {
+        favoriteAt != nil
+    }
 
     init(
         id: UUID,
@@ -39,6 +43,7 @@ struct Book: Identifiable, Equatable, Sendable {
         wordCount: Int,
         importedAt: Date,
         lastReadAt: Date?,
+        favoriteAt: Date? = nil,
         groupID: UUID?,
         progressPercentage: Double,
         contentHash: String?,
@@ -54,6 +59,7 @@ struct Book: Identifiable, Equatable, Sendable {
         self.wordCount = max(wordCount, 0)
         self.importedAt = importedAt
         self.lastReadAt = lastReadAt
+        self.favoriteAt = favoriteAt
         self.groupID = groupID
         self.progressPercentage = Self.normalizedProgress(progressPercentage)
         self.contentHash = contentHash
@@ -94,6 +100,7 @@ struct BookTagUsage: Identifiable, Equatable, Sendable {
 
 enum LibraryScope: Equatable, Sendable {
     case all
+    case favorites
     case ungrouped
     case group(UUID)
     case tag(UUID)
@@ -102,6 +109,8 @@ enum LibraryScope: Equatable, Sendable {
         switch self {
         case .all:
             return "all"
+        case .favorites:
+            return "favorites"
         case .ungrouped:
             return "ungrouped"
         case let .group(id):

@@ -7,13 +7,13 @@ struct BookShelfItemButton<Content: View>: View {
     @State private var suppressNextTap = false
     private let content: () -> Content
     private let action: () -> Void
-    private let longPressAction: () -> Void
+    private let longPressAction: (() -> Void)?
 
     init(
         isSelected: Bool,
         @ViewBuilder content: @escaping () -> Content,
         action: @escaping () -> Void,
-        longPressAction: @escaping () -> Void
+        longPressAction: (() -> Void)? = nil
     ) {
         self.isSelected = isSelected
         self.content = content
@@ -22,6 +22,21 @@ struct BookShelfItemButton<Content: View>: View {
     }
 
     var body: some View {
+        if let longPressAction {
+            tappableContent
+                .onLongPressGesture(minimumDuration: 0.18) {
+                    suppressNextTap = true
+                    longPressAction()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        suppressNextTap = false
+                    }
+                }
+        } else {
+            tappableContent
+        }
+    }
+
+    private var tappableContent: some View {
         content()
             .contentShape(Rectangle())
             .onTapGesture {
@@ -30,13 +45,6 @@ struct BookShelfItemButton<Content: View>: View {
                     return
                 }
                 action()
-            }
-            .onLongPressGesture(minimumDuration: 0.18) {
-                suppressNextTap = true
-                longPressAction()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    suppressNextTap = false
-                }
             }
             .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

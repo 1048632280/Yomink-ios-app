@@ -543,6 +543,18 @@ final class AppDatabase: @unchecked Sendable {
             """)
         }
 
+        migrator.registerMigration("v8_add_book_favorites") { db in
+            try db.execute(sql: """
+            ALTER TABLE books
+            ADD COLUMN favoriteAt TEXT
+            """)
+
+            try db.execute(sql: """
+            CREATE INDEX books_favoriteAt_index
+            ON books(favoriteAt)
+            """)
+        }
+
         return migrator
     }
 
