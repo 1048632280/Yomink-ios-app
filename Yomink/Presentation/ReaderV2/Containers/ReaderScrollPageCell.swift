@@ -91,7 +91,7 @@ final class ReaderScrollPageCell: UITableViewCell {
         textTrailingConstraint?.constant = -layout.rightMargin
         textView.layout = layout
         textView.contentColor = theme.contentColor
-        textView.contentRectOverride = currentTextContentRect
+        textView.contentRectOverride = nil
         textView.setAttributedText(attributedText)
         setNeedsLayout()
     }

@@ -1,4 +1,5 @@
 import XCTest
+import CoreText
 import UIKit
 @testable import Yomink
 
@@ -394,6 +395,39 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertTrue(measured.pageHeights.allSatisfy { $0 > 0 })
         XCTAssertGreaterThan(measured.pageHeights.first ?? 0, 90)
         XCTAssertLessThan(measured.pageHeights.first ?? 360, 360)
+    }
+
+    @MainActor
+    func testPaibanManagerMeasuredVerticalHeightsFitRenderedText() {
+        let manager = PaibanManager(layout: .phone, theme: .standard)
+        let result = manager.divideText(
+            readerV2LongText(repeating: 30),
+            chapterTitle: "高度验证",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 180, height: 260),
+            returnsHeights: true
+        )
+
+        XCTAssertFalse(result.pages.isEmpty)
+        for page in result.pages.prefix(6) {
+            let view = TextReadView(
+                frame: CGRect(x: 0, y: 0, width: 180, height: page.usedHeight)
+            )
+            view.contentRectOverride = view.bounds
+            view.setAttributedText(page.attributedText)
+            view.layoutIfNeeded()
+
+            guard let frame = view.frameRef else {
+                XCTFail("Expected text frame for measured scroll page")
+                continue
+            }
+            let visible = CTFrameGetVisibleStringRange(frame)
+            XCTAssertEqual(visible.location, 0)
+            XCTAssertGreaterThanOrEqual(
+                visible.location + visible.length,
+                page.attributedText.length
+            )
+        }
     }
 
     func testPaibanManagerKeepsDoubleColumnAPIAsSingleColumnFallback() {
