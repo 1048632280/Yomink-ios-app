@@ -85,7 +85,7 @@ class TextReadViewBase: UIView {
         if usesBoundsAsContentRect {
             return bounds
         }
-        contentRectOverride ?? layout.contentRect(in: bounds)
+        return contentRectOverride ?? layout.contentRect(in: bounds)
     }
 
     func characterIndex(at point: CGPoint) -> Int? {
