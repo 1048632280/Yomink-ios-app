@@ -532,61 +532,7 @@ struct PaibanManager {
             fallback: fallback
         )
         let measuredHeight = max(suggestedHeight, frameHeight)
-        let bufferedHeight = ceil(measuredHeight) + 8
-        return max(
-            1,
-            Self.heightCoveringVisibleRange(
-                framesetter: framesetter,
-                frameRange: frameRange,
-                fittingWidth: fittingWidth,
-                initialHeight: bufferedHeight,
-                fallback: fallback
-            )
-        )
-    }
-
-    private static func heightCoveringVisibleRange(
-        framesetter: CTFramesetter,
-        frameRange: CFRange,
-        fittingWidth: CGFloat,
-        initialHeight: CGFloat,
-        fallback: CGFloat
-    ) -> CGFloat {
-        let targetEnd = frameRange.location + frameRange.length
-        let maxHeight = max(initialHeight, fallback)
-        let step = max(8, fallback / 24)
-        var height = max(1, initialHeight)
-
-        while height <= maxHeight {
-            let path = CGMutablePath()
-            path.addRect(
-                CGRect(
-                    x: 0,
-                    y: 0,
-                    width: max(1, fittingWidth),
-                    height: max(1, height)
-                )
-            )
-            let frame = CTFramesetterCreateFrame(
-                framesetter,
-                frameRange,
-                path,
-                nil
-            )
-            let visible = CTFrameGetVisibleStringRange(frame)
-            if visible.location <= frameRange.location,
-               visible.location + visible.length >= targetEnd {
-                return ceil(height) + 2
-            }
-
-            let nextHeight = min(maxHeight, height + step)
-            guard nextHeight > height else {
-                break
-            }
-            height = nextHeight
-        }
-
-        return ceil(maxHeight) + 2
+        return max(1, ceil(measuredHeight))
     }
 
     private static func measuredLineHeight(

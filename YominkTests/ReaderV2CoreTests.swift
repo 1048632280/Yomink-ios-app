@@ -327,6 +327,20 @@ final class ReaderV2CoreTests: XCTestCase {
             effectiveRange: nil
         ) as? NSParagraphStyle
         XCTAssertEqual(tailParagraph?.paragraphSpacing ?? -1, 0, accuracy: 0.0001)
+        let textHeight = readerV2MeasuredTextHeight(
+            firstPage.attributedText,
+            fittingWidth: 180,
+            fallback: 48
+        )
+        XCTAssertEqual(
+            firstPage.usedHeight,
+            ceil(textHeight) + layout.lineSpacing,
+            accuracy: 0.0001
+        )
+        XCTAssertLessThan(
+            firstPage.usedHeight - ceil(textHeight),
+            layout.paragraphSpacing
+        )
 
         let continuationParagraph = result.pages[1].attributedText.attribute(
             .paragraphStyle,
@@ -1821,6 +1835,82 @@ final class ReaderV2CoreTests: XCTestCase {
             count: count
         )
         .joined(separator: "\n")
+    }
+
+    private func readerV2MeasuredTextHeight(
+        _ attributedText: NSAttributedString,
+        fittingWidth: CGFloat,
+        fallback: CGFloat
+    ) -> CGFloat {
+        guard attributedText.length > 0 else {
+            return max(1, fallback)
+        }
+        let frameRange = CFRange(location: 0, length: attributedText.length)
+        let framesetter = CTFramesetterCreateWithAttributedString(attributedText)
+        let size = CTFramesetterSuggestFrameSizeWithConstraints(
+            framesetter,
+            frameRange,
+            nil,
+            CGSize(width: max(1, fittingWidth), height: CGFloat.greatestFiniteMagnitude),
+            nil
+        )
+        let suggestedHeight = size.height.isFinite ? size.height : fallback
+        return max(
+            suggestedHeight,
+            readerV2MeasuredLineHeight(
+                framesetter: framesetter,
+                frameRange: frameRange,
+                fittingWidth: fittingWidth,
+                fallback: fallback
+            )
+        )
+    }
+
+    private func readerV2MeasuredLineHeight(
+        framesetter: CTFramesetter,
+        frameRange: CFRange,
+        fittingWidth: CGFloat,
+        fallback: CGFloat
+    ) -> CGFloat {
+        let path = CGMutablePath()
+        path.addRect(
+            CGRect(
+                x: 0,
+                y: 0,
+                width: max(1, fittingWidth),
+                height: max(fallback * 2, 1_000)
+            )
+        )
+        let frame = CTFramesetterCreateFrame(framesetter, frameRange, path, nil)
+        let lines = CTFrameGetLines(frame)
+        let lineCount = CFArrayGetCount(lines)
+        guard lineCount > 0 else {
+            return fallback
+        }
+
+        var origins = Array(repeating: CGPoint.zero, count: lineCount)
+        CTFrameGetLineOrigins(frame, CFRange(location: 0, length: 0), &origins)
+        var minY = CGFloat.greatestFiniteMagnitude
+        var maxY = -CGFloat.greatestFiniteMagnitude
+        for index in 0..<lineCount {
+            let line = unsafeBitCast(
+                CFArrayGetValueAtIndex(lines, index),
+                to: CTLine.self
+            )
+            var ascent: CGFloat = 0
+            var descent: CGFloat = 0
+            var leading: CGFloat = 0
+            CTLineGetTypographicBounds(line, &ascent, &descent, &leading)
+            let baselineY = origins[index].y
+            minY = min(minY, baselineY - descent)
+            maxY = max(maxY, baselineY + ascent + leading)
+        }
+        guard minY.isFinite,
+              maxY.isFinite,
+              maxY >= minY else {
+            return fallback
+        }
+        return max(1, maxY - minY)
     }
 
     private func readerV2PageModel(
