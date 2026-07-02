@@ -255,14 +255,9 @@ struct PaibanManager {
                 nil
             )
             let visible = CTFrameGetVisibleStringRange(frame)
-            let visibleRange = Self.visibleRange(
+            let range = Self.visibleRange(
                 visible,
                 fallbackLocation: location,
-                textLength: attributedText.length,
-                fullText: attributedText.string
-            )
-            let range = Self.includingTrailingParagraphSeparator(
-                in: visibleRange,
                 textLength: attributedText.length,
                 fullText: attributedText.string
             )
@@ -279,7 +274,7 @@ struct PaibanManager {
                     fallback: pageRect.height
                 ) + Self.trailingSpacing(
                     after: range,
-                    in: attributedText,
+                    in: attributedText.string,
                     layout: layout
                 )
                 : pageRect.height
@@ -437,7 +432,8 @@ struct PaibanManager {
         guard location <= nsText.length else {
             return false
         }
-        return isNewline(at: location - 1, in: nsText)
+        let previous = nsText.substring(with: NSRange(location: location - 1, length: 1))
+        return previous.rangeOfCharacter(from: .newlines) != nil
     }
 
     private static func isParagraphContinuation(
@@ -449,31 +445,22 @@ struct PaibanManager {
               location < nsText.length else {
             return false
         }
-        return !isNewline(at: location - 1, in: nsText)
-            && !isNewline(at: location, in: nsText)
+        return !isNewParagraphStart(at: location, in: text)
     }
 
     private static func trailingSpacing(
         after range: NSRange,
-        in attributedText: NSAttributedString,
+        in text: String,
         layout: ReaderLayout
     ) -> CGFloat {
-        let text = attributedText.string
         let end = range.location + range.length
         let nsText = text as NSString
         guard end < nsText.length else {
             return chapterBreakSpacing(layout: layout)
         }
-        let styleLocation = min(max(end - 1, 0), max(attributedText.length - 1, 0))
-        let paragraphStyle = attributedText.attribute(
-            .paragraphStyle,
-            at: styleLocation,
-            effectiveRange: nil
-        ) as? NSParagraphStyle
-        if isParagraphContinuation(at: end, in: text) {
-            return max(0, paragraphStyle?.lineSpacing ?? layout.lineSpacing)
-        }
-        return max(0, paragraphStyle?.paragraphSpacing ?? layout.paragraphSpacing)
+        return isParagraphContinuation(at: end, in: text)
+            ? max(0, layout.lineSpacing)
+            : max(0, layout.paragraphSpacing)
     }
 
     private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {
@@ -503,38 +490,6 @@ struct PaibanManager {
             location: fallbackLocation,
             length: min(max(composed.length, 1), textLength - fallbackLocation)
         )
-    }
-
-    private static func includingTrailingParagraphSeparator(
-        in range: NSRange,
-        textLength: Int,
-        fullText: String
-    ) -> NSRange {
-        let end = range.location + range.length
-        let nsText = fullText as NSString
-        guard range.length > 0,
-              end < textLength,
-              isNewline(at: end, in: nsText) else {
-            return range
-        }
-        let composed = nsText.rangeOfComposedCharacterSequence(at: end)
-        let separatorLength = max(composed.length, 1)
-        return NSRange(
-            location: range.location,
-            length: min(textLength - range.location, range.length + separatorLength)
-        )
-    }
-
-    private static func isNewline(
-        at location: Int,
-        in nsText: NSString
-    ) -> Bool {
-        guard location >= 0,
-              location < nsText.length else {
-            return false
-        }
-        let character = nsText.substring(with: NSRange(location: location, length: 1))
-        return character.rangeOfCharacter(from: .newlines) != nil
     }
 
     private static func suggestedHeight(
