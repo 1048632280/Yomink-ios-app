@@ -350,6 +350,64 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(continuationParagraph?.firstLineHeadIndent ?? -1, 0, accuracy: 0.0001)
     }
 
+    func testPaibanManagerUsesParagraphSpacingForScrollParagraphBoundary() {
+        var layout = ReaderLayout.phone
+        layout.fontSize = 20
+        layout.headIndent = 2
+        layout.lineSpacing = 4
+        layout.paragraphSpacing = 32
+        let manager = PaibanManager(layout: layout, theme: .standard)
+        let text = [
+            "第一段短句。",
+            "第二段短句。",
+            "第三段短句。"
+        ].joined(separator: "\n")
+        let result = manager.divideText(
+            text,
+            chapterTitle: "",
+            chapterIndex: 0,
+            pageSize: CGSize(width: 260, height: 32),
+            returnsHeights: true
+        )
+        let source = result.pages.first?.sourceAttributedText.string ?? ""
+        let nsSource = source as NSString
+
+        guard let boundaryPageIndex = result.pages.firstIndex(where: { page in
+            let end = page.displayRange.location + page.displayRange.length
+            guard end > page.displayRange.location,
+                  end < nsSource.length else {
+                return false
+            }
+            return nsSource.substring(with: NSRange(location: end - 1, length: 1)) == "\n"
+        }) else {
+            XCTFail("Expected a scroll page ending at a paragraph separator")
+            return
+        }
+        let boundaryPage = result.pages[boundaryPageIndex]
+
+        let tailParagraph = boundaryPage.attributedText.attribute(
+            .paragraphStyle,
+            at: boundaryPage.attributedText.length - 1,
+            effectiveRange: nil
+        ) as? NSParagraphStyle
+        XCTAssertEqual(tailParagraph?.paragraphSpacing ?? -1, 0, accuracy: 0.0001)
+        let textHeight = readerV2MeasuredTextHeight(
+            boundaryPage.attributedText,
+            fittingWidth: 260,
+            fallback: 32
+        )
+        XCTAssertEqual(
+            boundaryPage.usedHeight,
+            ceil(textHeight) + layout.paragraphSpacing,
+            accuracy: 0.0001
+        )
+        if result.pages.indices.contains(boundaryPageIndex + 1) {
+            XCTAssertFalse(
+                result.pages[boundaryPageIndex + 1].attributedText.string.hasPrefix("\n")
+            )
+        }
+    }
+
     func testPaibanManagerPaginatesSingleChapterIntoContinuousRanges() {
         let manager = PaibanManager(layout: .phone, theme: .standard)
         let text = readerV2LongText(repeating: 90)
