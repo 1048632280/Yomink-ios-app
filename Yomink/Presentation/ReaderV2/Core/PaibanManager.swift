@@ -277,7 +277,6 @@ struct PaibanManager {
                 range: range,
                 continuesFromPrevious: stitchingContext.continuesFromPrevious,
                 normalizesTrailingParagraphSpacing: returnsHeights
-                    && (stitchingContext.continuesToNext || !stitchingContext.hasFollowingText)
             )
             let height = returnsHeights
                 ? Self.suggestedHeight(
@@ -468,7 +467,9 @@ struct PaibanManager {
         guard stitchingContext.hasFollowingText else {
             return chapterBreakSpacing(layout: layout)
         }
-        return stitchingContext.continuesToNext ? max(0, layout.lineSpacing) : 0
+        return stitchingContext.continuesToNext
+            ? max(0, layout.lineSpacing)
+            : max(0, layout.paragraphSpacing)
     }
 
     private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {

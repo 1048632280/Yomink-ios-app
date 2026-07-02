@@ -350,7 +350,7 @@ final class ReaderV2CoreTests: XCTestCase {
         XCTAssertEqual(continuationParagraph?.firstLineHeadIndent ?? -1, 0, accuracy: 0.0001)
     }
 
-    func testPaibanManagerKeepsParagraphSpacingForScrollParagraphBoundary() {
+    func testPaibanManagerUsesParagraphSpacingForScrollParagraphBoundary() {
         var layout = ReaderLayout.phone
         layout.fontSize = 20
         layout.headIndent = 2
@@ -395,7 +395,7 @@ final class ReaderV2CoreTests: XCTestCase {
         ) as? NSParagraphStyle
         XCTAssertEqual(
             tailParagraph?.paragraphSpacing ?? -1,
-            layout.paragraphSpacing,
+            0,
             accuracy: 0.0001
         )
         let textHeight = readerV2MeasuredTextHeight(
@@ -405,7 +405,7 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertEqual(
             boundaryPage.usedHeight,
-            ceil(textHeight),
+            ceil(textHeight) + layout.paragraphSpacing,
             accuracy: 0.0001
         )
     }
