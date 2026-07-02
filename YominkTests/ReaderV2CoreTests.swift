@@ -405,7 +405,7 @@ final class ReaderV2CoreTests: XCTestCase {
         )
         XCTAssertEqual(
             boundaryPage.usedHeight,
-            ceil(textHeight) + layout.paragraphSpacing,
+            ceil(textHeight) + layout.paragraphSpacing * 1.65,
             accuracy: 0.0001
         )
     }

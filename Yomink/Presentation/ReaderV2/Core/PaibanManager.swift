@@ -469,7 +469,7 @@ struct PaibanManager {
         }
         return stitchingContext.continuesToNext
             ? max(0, layout.lineSpacing)
-            : max(0, layout.paragraphSpacing)
+            : max(0, layout.paragraphSpacing * 1.65)
     }
 
     private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {
