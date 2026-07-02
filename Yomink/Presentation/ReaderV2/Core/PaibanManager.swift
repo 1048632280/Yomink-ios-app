@@ -48,6 +48,12 @@ struct ReaderDivisionResult: @unchecked Sendable {
 }
 
 struct PaibanManager {
+    private struct PageStitchingContext {
+        let continuesFromPrevious: Bool
+        let continuesToNext: Bool
+        let hasFollowingText: Bool
+    }
+
     var layout: ReaderLayout
     var theme: ReaderTheme
     var fontManager: ReaderFontManager
@@ -261,11 +267,17 @@ struct PaibanManager {
                 textLength: attributedText.length,
                 fullText: attributedText.string
             )
+            let stitchingContext = Self.pageStitchingContext(
+                for: range,
+                in: attributedText.string
+            )
 
             let pageAttributedText = Self.pageAttributedText(
                 from: attributedText,
                 range: range,
+                continuesFromPrevious: stitchingContext.continuesFromPrevious,
                 normalizesTrailingParagraphSpacing: returnsHeights
+                    && (stitchingContext.continuesToNext || !stitchingContext.hasFollowingText)
             )
             let height = returnsHeights
                 ? Self.suggestedHeight(
@@ -273,8 +285,7 @@ struct PaibanManager {
                     fittingWidth: pageRect.width,
                     fallback: pageRect.height
                 ) + Self.trailingSpacing(
-                    after: range,
-                    in: attributedText.string,
+                    for: stitchingContext,
                     layout: layout
                 )
                 : pageRect.height
@@ -335,6 +346,7 @@ struct PaibanManager {
     private static func pageAttributedText(
         from attributedText: NSAttributedString,
         range: NSRange,
+        continuesFromPrevious: Bool,
         normalizesTrailingParagraphSpacing: Bool
     ) -> NSAttributedString {
         let pageAttributedText = NSMutableAttributedString(
@@ -344,7 +356,7 @@ struct PaibanManager {
             return pageAttributedText
         }
 
-        if isParagraphContinuation(at: range.location, in: attributedText.string) {
+        if continuesFromPrevious {
             normalizeLeadingParagraphIndent(in: pageAttributedText)
         }
 
@@ -421,19 +433,19 @@ struct PaibanManager {
         ) as? NSParagraphStyle
     }
 
-    private static func isNewParagraphStart(
-        at location: Int,
+    private static func pageStitchingContext(
+        for range: NSRange,
         in text: String
-    ) -> Bool {
-        guard location > 0 else {
-            return true
-        }
+    ) -> PageStitchingContext {
+        let end = range.location + range.length
         let nsText = text as NSString
-        guard location <= nsText.length else {
-            return false
-        }
-        let previous = nsText.substring(with: NSRange(location: location - 1, length: 1))
-        return previous.rangeOfCharacter(from: .newlines) != nil
+        let hasFollowingText = end < nsText.length
+        return PageStitchingContext(
+            continuesFromPrevious: isParagraphContinuation(at: range.location, in: text),
+            continuesToNext: hasFollowingText
+                && isParagraphContinuation(at: end, in: text),
+            hasFollowingText: hasFollowingText
+        )
     }
 
     private static func isParagraphContinuation(
@@ -445,22 +457,18 @@ struct PaibanManager {
               location < nsText.length else {
             return false
         }
-        return !isNewParagraphStart(at: location, in: text)
+        return !isNewline(at: location - 1, in: nsText)
+            && !isNewline(at: location, in: nsText)
     }
 
     private static func trailingSpacing(
-        after range: NSRange,
-        in text: String,
+        for stitchingContext: PageStitchingContext,
         layout: ReaderLayout
     ) -> CGFloat {
-        let end = range.location + range.length
-        let nsText = text as NSString
-        guard end < nsText.length else {
+        guard stitchingContext.hasFollowingText else {
             return chapterBreakSpacing(layout: layout)
         }
-        return isParagraphContinuation(at: end, in: text)
-            ? max(0, layout.lineSpacing)
-            : max(0, layout.paragraphSpacing)
+        return stitchingContext.continuesToNext ? max(0, layout.lineSpacing) : 0
     }
 
     private static func chapterBreakSpacing(layout: ReaderLayout) -> CGFloat {
@@ -490,6 +498,18 @@ struct PaibanManager {
             location: fallbackLocation,
             length: min(max(composed.length, 1), textLength - fallbackLocation)
         )
+    }
+
+    private static func isNewline(
+        at location: Int,
+        in nsText: NSString
+    ) -> Bool {
+        guard location >= 0,
+              location < nsText.length else {
+            return false
+        }
+        let character = nsText.substring(with: NSRange(location: location, length: 1))
+        return character.rangeOfCharacter(from: .newlines) != nil
     }
 
     private static func suggestedHeight(
