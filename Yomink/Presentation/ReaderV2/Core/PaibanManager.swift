@@ -49,8 +49,6 @@ struct ReaderDivisionResult: @unchecked Sendable {
 
 struct PaibanManager {
     private struct PageStitchingContext {
-        let renderRange: NSRange
-        let displayRange: NSRange
         let continuesFromPrevious: Bool
         let continuesToNext: Bool
         let hasFollowingText: Bool
@@ -263,21 +261,20 @@ struct PaibanManager {
                 nil
             )
             let visible = CTFrameGetVisibleStringRange(frame)
-            let visibleRange = Self.visibleRange(
+            let range = Self.visibleRange(
                 visible,
                 fallbackLocation: location,
                 textLength: attributedText.length,
                 fullText: attributedText.string
             )
             let stitchingContext = Self.pageStitchingContext(
-                for: visibleRange,
-                in: attributedText.string,
-                consumesBoundarySeparator: returnsHeights
+                for: range,
+                in: attributedText.string
             )
 
             let pageAttributedText = Self.pageAttributedText(
                 from: attributedText,
-                range: stitchingContext.renderRange,
+                range: range,
                 continuesFromPrevious: stitchingContext.continuesFromPrevious,
                 normalizesTrailingParagraphSpacing: returnsHeights
             )
@@ -294,12 +291,12 @@ struct PaibanManager {
             pages.append(
                 ReaderDivisionPage(
                     attributedText: pageAttributedText,
-                    displayRange: stitchingContext.displayRange,
+                    displayRange: range,
                     usedHeight: height,
                     sourceAttributedText: attributedText
                 )
             )
-            location = stitchingContext.displayRange.location + stitchingContext.displayRange.length
+            location = range.location + range.length
         }
 
         return ReaderDivisionResult(
@@ -437,24 +434,12 @@ struct PaibanManager {
 
     private static func pageStitchingContext(
         for range: NSRange,
-        in text: String,
-        consumesBoundarySeparator: Bool
+        in text: String
     ) -> PageStitchingContext {
+        let end = range.location + range.length
         let nsText = text as NSString
-        var renderRange = range
-        let displayRange = consumesBoundarySeparator
-            ? includingTrailingParagraphSeparator(in: range, textLength: nsText.length, fullText: text)
-            : range
-        if consumesBoundarySeparator,
-           displayRange == range,
-           range.location + range.length < nsText.length {
-            renderRange = excludingTrailingParagraphSeparator(in: range, fullText: text)
-        }
-        let end = displayRange.location + displayRange.length
         let hasFollowingText = end < nsText.length
         return PageStitchingContext(
-            renderRange: renderRange,
-            displayRange: displayRange,
             continuesFromPrevious: isParagraphContinuation(at: range.location, in: text),
             continuesToNext: hasFollowingText
                 && isParagraphContinuation(at: end, in: text),
@@ -514,58 +499,6 @@ struct PaibanManager {
             location: fallbackLocation,
             length: min(max(composed.length, 1), textLength - fallbackLocation)
         )
-    }
-
-    private static func includingTrailingParagraphSeparator(
-        in range: NSRange,
-        textLength: Int,
-        fullText: String
-    ) -> NSRange {
-        let end = range.location + range.length
-        let nsText = fullText as NSString
-        guard range.length > 0,
-              end < textLength,
-              isNewline(at: end, in: nsText) else {
-            return range
-        }
-        let composed = nsText.rangeOfComposedCharacterSequence(at: end)
-        let separatorLength = max(composed.length, 1)
-        return NSRange(
-            location: range.location,
-            length: min(textLength - range.location, range.length + separatorLength)
-        )
-    }
-
-    private static func excludingTrailingParagraphSeparator(
-        in range: NSRange,
-        fullText: String
-    ) -> NSRange {
-        let end = range.location + range.length
-        let nsText = fullText as NSString
-        let separatorLength = trailingParagraphSeparatorLength(endingAt: end, in: nsText)
-        guard separatorLength > 0,
-              range.length > separatorLength else {
-            return range
-        }
-        return NSRange(location: range.location, length: range.length - separatorLength)
-    }
-
-    private static func trailingParagraphSeparatorLength(
-        endingAt end: Int,
-        in nsText: NSString
-    ) -> Int {
-        guard end > 0,
-              end <= nsText.length,
-              isNewline(at: end - 1, in: nsText) else {
-            return 0
-        }
-        if end > 1 {
-            let previousPair = nsText.substring(with: NSRange(location: end - 2, length: 2))
-            if previousPair == "\r\n" {
-                return 2
-            }
-        }
-        return 1
     }
 
     private static func isNewline(
