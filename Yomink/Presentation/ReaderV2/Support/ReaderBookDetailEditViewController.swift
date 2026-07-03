@@ -34,6 +34,7 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
+        navigationItem.backButtonTitle = NSLocalizedString("common.back", comment: "")
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: NSLocalizedString("common.save", comment: ""),
             style: .done,
@@ -209,9 +210,11 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
     }
 
     @objc private func tagsButtonTapped() {
+        let navigationActions = BookTagPickerNavigationActions()
         let picker = ReaderBookTagPickerHostView(
             repository: repository,
             initialSelectedTagIDs: selectedTagIDs,
+            navigationActions: navigationActions,
             onSelectionChanged: { [weak self] nextValue in
                 guard let self else {
                     return
@@ -223,7 +226,19 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
                 self?.loadAvailableTags()
             }
         )
-        let hostingController = UIHostingController(rootView: picker)
+        let hostingController = ReaderBookTagPickerHostingController(
+            rootView: picker,
+            navigationActions: navigationActions
+        )
+        hostingController.title = NSLocalizedString("tags.select.title", comment: "")
+        hostingController.navigationItem.backButtonTitle = NSLocalizedString("common.back", comment: "")
+        hostingController.navigationItem.largeTitleDisplayMode = .never
+        hostingController.navigationItem.rightBarButtonItem = UIBarButtonItem(
+            title: NSLocalizedString("common.new", comment: ""),
+            style: .plain,
+            target: navigationActions,
+            action: #selector(BookTagPickerNavigationActions.createTagButtonTapped)
+        )
         navigationController?.pushViewController(hostingController, animated: true)
     }
 
@@ -371,6 +386,7 @@ final class ReaderBookDetailEditViewController: UIViewController, UITextViewDele
 
 private struct ReaderBookTagPickerHostView: View {
     let repository: any LibraryRepository
+    let navigationActions: BookTagPickerNavigationActions
     let onSelectionChanged: (Set<UUID>) -> Void
     let onCatalogChanged: () -> Void
 
@@ -379,10 +395,12 @@ private struct ReaderBookTagPickerHostView: View {
     init(
         repository: any LibraryRepository,
         initialSelectedTagIDs: Set<UUID>,
+        navigationActions: BookTagPickerNavigationActions,
         onSelectionChanged: @escaping (Set<UUID>) -> Void,
         onCatalogChanged: @escaping () -> Void
     ) {
         self.repository = repository
+        self.navigationActions = navigationActions
         self.onSelectionChanged = onSelectionChanged
         self.onCatalogChanged = onCatalogChanged
         _selectedTagIDs = State(initialValue: initialSelectedTagIDs)
@@ -392,7 +410,9 @@ private struct ReaderBookTagPickerHostView: View {
         BookTagPickerPage(
             repository: repository,
             selectedTagIDs: $selectedTagIDs,
-            onCatalogChanged: onCatalogChanged
+            onCatalogChanged: onCatalogChanged,
+            navigationChrome: .system,
+            navigationActions: navigationActions
         )
         .onChange(of: selectedTagIDs) { nextValue in
             onSelectionChanged(nextValue)
@@ -403,3 +423,17 @@ private struct ReaderBookTagPickerHostView: View {
     }
 }
 
+@MainActor
+private final class ReaderBookTagPickerHostingController<Content: View>: UIHostingController<Content> {
+    private let navigationActions: BookTagPickerNavigationActions
+
+    init(rootView: Content, navigationActions: BookTagPickerNavigationActions) {
+        self.navigationActions = navigationActions
+        super.init(rootView: rootView)
+    }
+
+    @available(*, unavailable)
+    required dynamic init?(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}

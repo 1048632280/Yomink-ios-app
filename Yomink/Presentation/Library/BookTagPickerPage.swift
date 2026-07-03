@@ -2,6 +2,19 @@ import Foundation
 import SwiftUI
 import UIKit
 
+final class BookTagPickerNavigationActions: NSObject {
+    var beginCreatingTag: (() -> Void)?
+
+    @objc func createTagButtonTapped() {
+        beginCreatingTag?()
+    }
+}
+
+enum BookTagPickerNavigationChrome: Equatable {
+    case dedicated
+    case system
+}
+
 struct BookTagPickerPage: View {
     @Environment(\.dismiss) private var dismiss
 
@@ -9,6 +22,8 @@ struct BookTagPickerPage: View {
     @Binding var selectedTagIDs: Set<UUID>
     let onCatalogChanged: () -> Void
     let onSelectionFinished: (Set<UUID>) -> Void
+    let navigationChrome: BookTagPickerNavigationChrome
+    let navigationActions: BookTagPickerNavigationActions?
 
     @State private var tagUsages: [BookTagUsage] = []
     @State private var tagNameEditorPresented = false
@@ -19,15 +34,76 @@ struct BookTagPickerPage: View {
         repository: any LibraryRepository,
         selectedTagIDs: Binding<Set<UUID>>,
         onCatalogChanged: @escaping () -> Void = {},
-        onSelectionFinished: @escaping (Set<UUID>) -> Void = { _ in }
+        onSelectionFinished: @escaping (Set<UUID>) -> Void = { _ in },
+        navigationChrome: BookTagPickerNavigationChrome = .dedicated,
+        navigationActions: BookTagPickerNavigationActions? = nil
     ) {
         self.repository = repository
         _selectedTagIDs = selectedTagIDs
         self.onCatalogChanged = onCatalogChanged
         self.onSelectionFinished = onSelectionFinished
+        self.navigationChrome = navigationChrome
+        self.navigationActions = navigationActions
     }
 
     var body: some View {
+        Group {
+            if navigationChrome == .dedicated {
+                pageContent
+                    .navigationBarBackButtonHidden(true)
+                    .background(InteractivePopGestureRestorer())
+                    .navigationBarTitleDisplayMode(.inline)
+                    .navigationTitle("tags.select.title")
+                    .toolbar {
+                        ToolbarItem(placement: .navigationBarLeading) {
+                            BackTextButton {
+                                dismiss()
+                            }
+                        }
+
+                        ToolbarItem(placement: .navigationBarTrailing) {
+                            Button("common.new") {
+                                beginCreatingTag()
+                            }
+                        }
+                    }
+            } else {
+                pageContent
+                    .navigationBarBackButtonHidden(false)
+            }
+        }
+        .task {
+            await reloadTags()
+        }
+        .onAppear {
+            navigationActions?.beginCreatingTag = {
+                beginCreatingTag()
+            }
+        }
+        .onDisappear {
+            navigationActions?.beginCreatingTag = nil
+            onSelectionFinished(selectedTagIDs)
+        }
+        .alert(
+            "tags.error.title",
+            isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        errorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("common.ok", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            Text(errorMessage ?? "")
+        }
+    }
+
+    private var pageContent: some View {
         ZStack {
             Color(.systemGray6)
                 .ignoresSafeArea()
@@ -75,46 +151,6 @@ struct BookTagPickerPage: View {
                     cancelAction: cancelCreatingTag
                 )
             }
-        }
-        .navigationBarBackButtonHidden(true)
-        .background(InteractivePopGestureRestorer())
-        .navigationBarTitleDisplayMode(.inline)
-        .navigationTitle("tags.select.title")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                BackTextButton {
-                    dismiss()
-                }
-            }
-
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button("common.new") {
-                    beginCreatingTag()
-                }
-            }
-        }
-        .task {
-            await reloadTags()
-        }
-        .onDisappear {
-            onSelectionFinished(selectedTagIDs)
-        }
-        .alert(
-            "tags.error.title",
-            isPresented: Binding(
-                get: { errorMessage != nil },
-                set: { isPresented in
-                    if !isPresented {
-                        errorMessage = nil
-                    }
-                }
-            )
-        ) {
-            Button("common.ok", role: .cancel) {
-                errorMessage = nil
-            }
-        } message: {
-            Text(errorMessage ?? "")
         }
     }
 
@@ -316,4 +352,3 @@ struct NonBlockingLongPressRecognizer: UIViewRepresentable {
         }
     }
 }
-

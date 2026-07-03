@@ -47,6 +47,7 @@ final class ReaderBookDetailViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
+        navigationItem.backButtonTitle = NSLocalizedString("common.back", comment: "")
         configureCloseButtonIfNeeded()
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: NSLocalizedString("common.edit", comment: ""),
@@ -489,4 +490,3 @@ private final class ReaderTagBubbleLabel: UILabel {
         )
     }
 }
-

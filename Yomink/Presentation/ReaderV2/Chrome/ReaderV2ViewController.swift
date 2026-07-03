@@ -153,6 +153,7 @@ final class ReaderV2ViewController: UIViewController, UIGestureRecognizerDelegat
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        navigationItem.backButtonTitle = NSLocalizedString("common.back", comment: "")
         view.backgroundColor = theme.backgroundColor
         configureContainer(for: activeTurnPageType)
         configureMenu()
