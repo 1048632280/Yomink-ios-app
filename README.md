@@ -55,7 +55,6 @@ Yomink/
     Sidebars/       侧边栏入口
 YominkTests/        单元测试
 .github/workflows/  unsigned IPA 构建与测试工作流
-docs/               开发计划与重构记录
 ```
 
 ## 构建
@@ -108,11 +107,6 @@ xcodebuild test \
 - 不上传书籍、阅读记录、书签、搜索历史或设置。
 - 删除书籍时会同步清理本地数据库记录和正文副本。
 - 导出文件由系统分享面板交给用户选择的目标 App。
-
-## Contributors
-
-- 1048632280
-- Codex
 
 ## TODO
 

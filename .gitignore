@@ -13,3 +13,7 @@ build/
 
 # Generated reader stress fixtures
 YominkTests/Fixtures/ReaderV2/large-30mb.generated.txt
+
+# Local working notes and scratch artifacts
+docs/
+tmp/
