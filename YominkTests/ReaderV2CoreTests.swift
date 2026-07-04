@@ -1175,6 +1175,10 @@ final class ReaderV2CoreTests: XCTestCase {
             container.pageViewController,
             viewControllerAfter: firstController
         ) as? ReaderPageCurlBackViewController
+        let repeatedBackPage = container.pageViewController(
+            container.pageViewController,
+            viewControllerAfter: firstController
+        ) as? ReaderPageCurlBackViewController
         let next = backPage.flatMap {
             container.pageViewController(
                 container.pageViewController,
@@ -1184,6 +1188,7 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertNotNil(backPage?.mirroredImage)
         XCTAssertEqual(backPage?.mirroredImage?.imageOrientation, .upMirrored)
+        XCTAssertTrue(backPage === repeatedBackPage)
         XCTAssertEqual(next?.pageModel, Optional(secondModel))
     }
 

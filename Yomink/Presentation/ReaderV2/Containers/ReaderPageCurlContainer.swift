@@ -4,6 +4,8 @@ import UIKit
 final class ReaderPageCurlContainer: ReaderPageContainer {
     private var backPagePool: [ReaderPageCurlBackViewController] = []
     private var reservedBackPageIDs: Set<ObjectIdentifier> = []
+    private var preparedBackPages: [ObjectIdentifier: ReaderPageCurlBackViewController] = [:]
+    private var scheduledBackPagePreparationID: ObjectIdentifier?
     private let placeholderPageController = ReaderPageCurlPlaceholderViewController()
 
     override var turnPageType: ReaderTurnPageType {
@@ -23,6 +25,11 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        scheduleCurrentBackPagePreparation()
+    }
+
     override func display(
         pageModel: ReaderPageModel,
         pageController: ReaderPageViewController,
@@ -30,8 +37,13 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         animated: Bool
     ) {
         setCurrentPageModel(pageModel)
+        prunePreparedBackPages(keeping: [ObjectIdentifier(pageController)])
         if animated {
-            let backPage = mirroredBackPage(from: pageController)
+            let backPage = mirroredBackPage(
+                from: pageController,
+                reservesPage: true,
+                afterScreenUpdates: true
+            )
             pageViewController.setViewControllers(
                 [pageController, backPage],
                 direction: direction.pageViewControllerDirection,
@@ -39,6 +51,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
             ) { [weak self] _ in
                 self?.reservedBackPageIDs.removeAll()
                 self?.refreshPrioritizedReturnGesture()
+                self?.scheduleBackPagePreparation(for: pageController)
             }
         } else {
             pageViewController.setViewControllers(
@@ -47,6 +60,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
                 animated: animated
             )
             refreshPrioritizedReturnGesture()
+            scheduleBackPagePreparation(for: pageController)
         }
     }
 
@@ -64,6 +78,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
     ) {
         super.readerDidFinishPageTurn(in: pageViewController, transitionCompleted: completed)
         reservedBackPageIDs.removeAll()
+        scheduleCurrentBackPagePreparation()
     }
 
     override func readerSpineLocation(for orientation: UIInterfaceOrientation) -> UIPageViewController.SpineLocation {
@@ -77,7 +92,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         }
 
         if let contentPage = viewController as? ReaderPageViewController {
-            return mirroredBackPage(from: contentPage)
+            return backPage(for: contentPage)
         }
 
         guard let backPage = viewController as? ReaderPageCurlBackViewController,
@@ -87,28 +102,132 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         return pageController(adjacentTo: contentPage, delta: delta)
     }
 
-    private func mirroredBackPage(from contentPage: ReaderPageViewController) -> ReaderPageCurlBackViewController {
-        let backPage = idleBackPage()
+    private func backPage(for contentPage: ReaderPageViewController) -> ReaderPageCurlBackViewController {
+        let contentID = ObjectIdentifier(contentPage)
+        if let preparedPage = preparedBackPages[contentID],
+           preparedPage.mirroredImage != nil,
+           preparedPage.parent == nil,
+           preparedPage.view.superview == nil {
+            preparedPage.sourcePageController = contentPage
+            reservedBackPageIDs.insert(ObjectIdentifier(preparedPage))
+            return preparedPage
+        }
+
+        return mirroredBackPage(
+            from: contentPage,
+            reservesPage: true,
+            afterScreenUpdates: false
+        )
+    }
+
+    @discardableResult
+    private func mirroredBackPage(
+        from contentPage: ReaderPageViewController,
+        reservesPage: Bool,
+        afterScreenUpdates: Bool
+    ) -> ReaderPageCurlBackViewController {
+        let contentID = ObjectIdentifier(contentPage)
+        let backPage = idleBackPage(
+            reservesPage: reservesPage,
+            protectedContentID: contentID
+        )
         backPage.sourcePageController = contentPage
         contentPage.view.layoutIfNeeded()
-        backPage.mirror(from: contentPage.view)
+        backPage.mirror(
+            from: contentPage.view,
+            afterScreenUpdates: afterScreenUpdates
+        )
+        if backPage.mirroredImage != nil {
+            removePreparedBackPageReferences(to: backPage)
+            preparedBackPages[contentID] = backPage
+        }
         return backPage
     }
 
-    private func idleBackPage() -> ReaderPageCurlBackViewController {
+    private func idleBackPage(
+        reservesPage: Bool,
+        protectedContentID: ObjectIdentifier? = nil
+    ) -> ReaderPageCurlBackViewController {
+        let protectedBackPageIDs = protectedPreparedBackPageIDs(excluding: protectedContentID)
         if let page = backPagePool.first(where: {
-            !reservedBackPageIDs.contains(ObjectIdentifier($0))
+            let pageID = ObjectIdentifier($0)
+            return !reservedBackPageIDs.contains(pageID)
+                && !protectedBackPageIDs.contains(pageID)
                 && $0.parent == nil
                 && $0.view.superview == nil
         }) {
-            reservedBackPageIDs.insert(ObjectIdentifier(page))
+            if reservesPage {
+                reservedBackPageIDs.insert(ObjectIdentifier(page))
+            }
             return page
         }
 
         let page = ReaderPageCurlBackViewController()
         backPagePool.append(page)
-        reservedBackPageIDs.insert(ObjectIdentifier(page))
+        if reservesPage {
+            reservedBackPageIDs.insert(ObjectIdentifier(page))
+        }
         return page
+    }
+
+    private func scheduleCurrentBackPagePreparation() {
+        guard let contentPage = currentPageController() else {
+            return
+        }
+        scheduleBackPagePreparation(for: contentPage)
+    }
+
+    private func scheduleBackPagePreparation(for contentPage: ReaderPageViewController) {
+        let contentID = ObjectIdentifier(contentPage)
+        guard preparedBackPages[contentID]?.mirroredImage == nil else {
+            return
+        }
+
+        scheduledBackPagePreparationID = contentID
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.scheduledBackPagePreparationID == contentID,
+                  self.currentPageController() === contentPage else {
+                return
+            }
+            self.prepareBackPageIfPossible(for: contentPage)
+        }
+    }
+
+    private func prepareBackPageIfPossible(for contentPage: ReaderPageViewController) {
+        let contentID = ObjectIdentifier(contentPage)
+        guard contentPage.view.bounds.width > 0,
+              contentPage.view.bounds.height > 0 else {
+            return
+        }
+
+        prunePreparedBackPages(keeping: [contentID])
+        mirroredBackPage(
+            from: contentPage,
+            reservesPage: false,
+            afterScreenUpdates: false
+        )
+    }
+
+    private func prunePreparedBackPages(keeping contentIDs: Set<ObjectIdentifier>) {
+        preparedBackPages = preparedBackPages.filter { contentIDs.contains($0.key) }
+    }
+
+    private func removePreparedBackPageReferences(to page: ReaderPageCurlBackViewController) {
+        let pageID = ObjectIdentifier(page)
+        preparedBackPages = preparedBackPages.filter { ObjectIdentifier($0.value) != pageID }
+    }
+
+    private func protectedPreparedBackPageIDs(excluding contentID: ObjectIdentifier?) -> Set<ObjectIdentifier> {
+        Set(
+            preparedBackPages.compactMap { entry in
+                if let contentID = contentID,
+                   entry.key == contentID {
+                    return nil
+                }
+                return ObjectIdentifier(entry.value)
+            }
+        )
     }
 
     private func seedPlaceholderPage() {
@@ -149,7 +268,10 @@ final class ReaderPageCurlBackViewController: UIViewController {
         ])
     }
 
-    func mirror(from source: UIView) {
+    func mirror(
+        from source: UIView,
+        afterScreenUpdates: Bool = false
+    ) {
         loadViewIfNeeded()
         source.layoutIfNeeded()
         let bounds = source.bounds
@@ -165,7 +287,10 @@ final class ReaderPageCurlBackViewController: UIViewController {
         format.opaque = false
         let renderer = UIGraphicsImageRenderer(bounds: bounds, format: format)
         let image = renderer.image { context in
-            let didDraw = source.drawHierarchy(in: bounds, afterScreenUpdates: true)
+            let didDraw = source.drawHierarchy(
+                in: bounds,
+                afterScreenUpdates: afterScreenUpdates
+            )
             if !didDraw {
                 source.layer.render(in: context.cgContext)
             }
