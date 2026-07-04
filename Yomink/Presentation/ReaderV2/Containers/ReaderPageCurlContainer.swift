@@ -78,7 +78,12 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
     ) {
         super.readerDidFinishPageTurn(in: pageViewController, transitionCompleted: completed)
         reservedBackPageIDs.removeAll()
-        scheduleCurrentBackPagePreparation()
+        guard completed else {
+            scheduleCurrentBackPagePreparation()
+            return
+        }
+
+        settleCompletedPageTurn()
     }
 
     override func readerSpineLocation(for orientation: UIInterfaceOrientation) -> UIPageViewController.SpineLocation {
@@ -207,6 +212,30 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
             reservesPage: false,
             afterScreenUpdates: false
         )
+    }
+
+    private func settleCompletedPageTurn() {
+        guard let contentPage = currentPageController() else {
+            return
+        }
+
+        scheduledBackPagePreparationID = nil
+        DispatchQueue.main.async { [weak self] in
+            guard let self,
+                  self.currentPageController() === contentPage else {
+                return
+            }
+
+            self.pageViewController.setViewControllers(
+                [contentPage],
+                direction: .forward,
+                animated: false
+            )
+            self.reservedBackPageIDs.removeAll()
+            self.prunePreparedBackPages(keeping: [ObjectIdentifier(contentPage)])
+            self.refreshPrioritizedReturnGesture()
+            self.scheduleBackPagePreparation(for: contentPage)
+        }
     }
 
     private func prunePreparedBackPages(keeping contentIDs: Set<ObjectIdentifier>) {
