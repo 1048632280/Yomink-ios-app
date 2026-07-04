@@ -860,6 +860,8 @@ final class ReaderV2CoreTests: XCTestCase {
         controller.setHighlightedRanges([NSRange(location: 0, length: 8)])
 
         XCTAssertEqual(controller.backgroundView.displayedImageName, "theme_bg5")
+        XCTAssertTrue(controller.view.backgroundColor?.isEqual(ReaderTheme.standard.backgroundColor) ?? false)
+        XCTAssertTrue(controller.view.isOpaque)
         XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.standard.contentColor))
         XCTAssertEqual(controller.textView.highlightedRanges, [NSRange(location: 0, length: 8)])
 
@@ -871,6 +873,8 @@ final class ReaderV2CoreTests: XCTestCase {
         )
 
         XCTAssertNil(controller.backgroundView.displayedImageName)
+        XCTAssertTrue(controller.view.backgroundColor?.isEqual(ReaderTheme.dark.backgroundColor) ?? false)
+        XCTAssertTrue(controller.view.isOpaque)
         XCTAssertTrue(controller.textView.contentColor.isEqual(ReaderTheme.dark.contentColor))
     }
 
@@ -1064,12 +1068,16 @@ final class ReaderV2CoreTests: XCTestCase {
     func testReaderPageContainersExposeExpectedModes() {
         let pageContainer = ReaderPageContainer()
         pageContainer.loadViewIfNeeded()
+        pageContainer.apply(theme: .standard)
 
         XCTAssertEqual(pageContainer.turnPageType, .horizontalScroll)
         XCTAssertFalse(pageContainer.pageViewController.isDoubleSided)
+        XCTAssertTrue(pageContainer.view.isOpaque)
+        XCTAssertTrue(pageContainer.pageViewController.view.isOpaque)
 
         let curlContainer = ReaderPageCurlContainer()
         curlContainer.loadViewIfNeeded()
+        curlContainer.apply(theme: .standard)
 
         XCTAssertEqual(curlContainer.turnPageType, .pageCurl)
         XCTAssertTrue(curlContainer.pageViewController.isDoubleSided)
@@ -1188,6 +1196,8 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertNotNil(backPage?.mirroredImage)
         XCTAssertEqual(backPage?.mirroredImage?.imageOrientation, .upMirrored)
+        XCTAssertTrue(backPage?.view.backgroundColor?.isEqual(ReaderTheme.standard.backgroundColor) ?? false)
+        XCTAssertEqual(backPage?.view.isOpaque, true)
         XCTAssertTrue(backPage === repeatedBackPage)
         XCTAssertEqual(next?.pageModel, Optional(secondModel))
     }

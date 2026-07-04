@@ -16,7 +16,8 @@ final class ReaderPageViewController: UIViewController {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .clear
+        view.backgroundColor = theme.backgroundColor
+        view.isOpaque = true
         backgroundView.translatesAutoresizingMaskIntoConstraints = false
         textView.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(backgroundView)
@@ -151,6 +152,8 @@ final class ReaderPageViewController: UIViewController {
     }
 
     private func applyConfiguration() {
+        view.backgroundColor = theme.backgroundColor
+        view.isOpaque = true
         backgroundView.apply(theme: theme)
         textView.layout = layout
         textView.contentColor = theme.contentColor

@@ -6,6 +6,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
     private var reservedBackPageIDs: Set<ObjectIdentifier> = []
     private var preparedBackPages: [ObjectIdentifier: ReaderPageCurlBackViewController] = [:]
     private var scheduledBackPagePreparationID: ObjectIdentifier?
+    private var currentTheme = ReaderTheme.standard
     private let placeholderPageController = ReaderPageCurlPlaceholderViewController()
 
     override var turnPageType: ReaderTurnPageType {
@@ -28,6 +29,13 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         scheduleCurrentBackPagePreparation()
+    }
+
+    override func apply(theme: ReaderTheme) {
+        currentTheme = theme
+        super.apply(theme: theme)
+        placeholderPageController.apply(backgroundColor: theme.backgroundColor)
+        backPagePool.forEach { $0.apply(backgroundColor: theme.backgroundColor) }
     }
 
     override func display(
@@ -137,6 +145,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
             protectedContentID: contentID
         )
         backPage.sourcePageController = contentPage
+        backPage.apply(backgroundColor: currentTheme.backgroundColor)
         contentPage.view.layoutIfNeeded()
         backPage.mirror(
             from: contentPage.view,
@@ -270,24 +279,39 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
 
 @MainActor
 private final class ReaderPageCurlPlaceholderViewController: UIViewController {
+    private var pageBackgroundColor = ReaderTheme.standard.backgroundColor
+
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .clear
+        view.backgroundColor = pageBackgroundColor
+        view.isOpaque = true
+    }
+
+    func apply(backgroundColor: UIColor) {
+        pageBackgroundColor = backgroundColor
+        if isViewLoaded {
+            view.backgroundColor = backgroundColor
+            view.isOpaque = true
+        }
     }
 }
 
 @MainActor
 final class ReaderPageCurlBackViewController: UIViewController {
     private let imageView = UIImageView()
+    private var pageBackgroundColor = ReaderTheme.standard.backgroundColor
     weak var sourcePageController: ReaderPageViewController?
     private(set) var mirroredImage: UIImage?
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.backgroundColor = .clear
+        view.backgroundColor = pageBackgroundColor
+        view.isOpaque = true
         imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.backgroundColor = pageBackgroundColor
         imageView.contentMode = .scaleToFill
         imageView.clipsToBounds = true
+        imageView.isOpaque = true
         view.addSubview(imageView)
         NSLayoutConstraint.activate([
             imageView.topAnchor.constraint(equalTo: view.topAnchor),
@@ -295,6 +319,16 @@ final class ReaderPageCurlBackViewController: UIViewController {
             imageView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             imageView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
         ])
+    }
+
+    func apply(backgroundColor: UIColor) {
+        pageBackgroundColor = backgroundColor
+        if isViewLoaded {
+            view.backgroundColor = backgroundColor
+            view.isOpaque = true
+            imageView.backgroundColor = backgroundColor
+            imageView.isOpaque = true
+        }
     }
 
     func mirror(
@@ -313,9 +347,11 @@ final class ReaderPageCurlBackViewController: UIViewController {
 
         let format = UIGraphicsImageRendererFormat()
         format.scale = source.window?.screen.scale ?? UIScreen.main.scale
-        format.opaque = false
+        format.opaque = true
         let renderer = UIGraphicsImageRenderer(bounds: bounds, format: format)
         let image = renderer.image { context in
+            pageBackgroundColor.setFill()
+            context.fill(bounds)
             let didDraw = source.drawHierarchy(
                 in: bounds,
                 afterScreenUpdates: afterScreenUpdates

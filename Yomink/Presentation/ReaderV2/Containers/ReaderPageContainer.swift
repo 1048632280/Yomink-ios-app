@@ -67,7 +67,9 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
 
     func apply(theme: ReaderTheme) {
         view.backgroundColor = theme.backgroundColor
+        view.isOpaque = true
         pageViewController.view.backgroundColor = theme.backgroundColor
+        pageViewController.view.isOpaque = true
     }
 
     func selectableTextView(
