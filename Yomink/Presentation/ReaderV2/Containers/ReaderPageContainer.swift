@@ -56,15 +56,13 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         direction: ReaderPageTurnDirection,
         animated: Bool
     ) {
-        currentPageModel = pageModel
+        setCurrentPageModel(pageModel)
         pageViewController.setViewControllers(
             [pageController],
             direction: direction.pageViewControllerDirection,
             animated: animated
         )
-        if let prioritizedReturnGesture {
-            requirePageTurnGestures(toFailBefore: prioritizedReturnGesture)
-        }
+        refreshPrioritizedReturnGesture()
     }
 
     func apply(theme: ReaderTheme) {
@@ -76,7 +74,7 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         at location: CGPoint,
         from coordinateView: UIView
     ) -> TextReadView? {
-        guard let pageController = pageViewController.viewControllers?.first as? ReaderPageViewController else {
+        guard let pageController = currentPageController() else {
             return nil
         }
         let textLocation = pageController.textView.convert(location, from: coordinateView)
@@ -94,6 +92,45 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         return makePageController?(model)
     }
 
+    func currentPageController() -> ReaderPageViewController? {
+        contentPageController(in: pageViewController.viewControllers)
+    }
+
+    func contentPageController(in viewControllers: [UIViewController]?) -> ReaderPageViewController? {
+        viewControllers?.first { $0 is ReaderPageViewController } as? ReaderPageViewController
+    }
+
+    func setCurrentPageModel(_ pageModel: ReaderPageModel?) {
+        currentPageModel = pageModel
+    }
+
+    func readerViewControllerBefore(_ viewController: UIViewController) -> UIViewController? {
+        guard let pageController = viewController as? ReaderPageViewController else {
+            return nil
+        }
+        return self.pageController(adjacentTo: pageController, delta: -1)
+    }
+
+    func readerViewControllerAfter(_ viewController: UIViewController) -> UIViewController? {
+        guard let pageController = viewController as? ReaderPageViewController else {
+            return nil
+        }
+        return self.pageController(adjacentTo: pageController, delta: 1)
+    }
+
+    func readerDidFinishPageTurn(
+        in pageViewController: UIPageViewController,
+        transitionCompleted completed: Bool
+    ) {
+        guard completed,
+              let pageController = contentPageController(in: pageViewController.viewControllers),
+              let pageModel = pageController.pageModel else {
+            return
+        }
+        setCurrentPageModel(pageModel)
+        onPageTurnCompleted?(pageModel)
+    }
+
     func prioritizeReturnGesture(_ returnGesture: UIGestureRecognizer) {
         guard prioritizedReturnGesture !== returnGesture else {
             return
@@ -101,6 +138,12 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
 
         prioritizedReturnGesture = returnGesture
         requirePageTurnGestures(toFailBefore: returnGesture)
+    }
+
+    func refreshPrioritizedReturnGesture() {
+        if let prioritizedReturnGesture {
+            requirePageTurnGestures(toFailBefore: prioritizedReturnGesture)
+        }
     }
 
     private func requirePageTurnGestures(toFailBefore returnGesture: UIGestureRecognizer) {
@@ -127,20 +170,14 @@ extension ReaderPageContainer: UIPageViewControllerDataSource, UIPageViewControl
         _ pageViewController: UIPageViewController,
         viewControllerBefore viewController: UIViewController
     ) -> UIViewController? {
-        guard let pageController = viewController as? ReaderPageViewController else {
-            return nil
-        }
-        return self.pageController(adjacentTo: pageController, delta: -1)
+        readerViewControllerBefore(viewController)
     }
 
     func pageViewController(
         _ pageViewController: UIPageViewController,
         viewControllerAfter viewController: UIViewController
     ) -> UIViewController? {
-        guard let pageController = viewController as? ReaderPageViewController else {
-            return nil
-        }
-        return self.pageController(adjacentTo: pageController, delta: 1)
+        readerViewControllerAfter(viewController)
     }
 
     func pageViewController(
@@ -149,12 +186,6 @@ extension ReaderPageContainer: UIPageViewControllerDataSource, UIPageViewControl
         previousViewControllers: [UIViewController],
         transitionCompleted completed: Bool
     ) {
-        guard completed,
-              let pageController = pageViewController.viewControllers?.first as? ReaderPageViewController,
-              let pageModel = pageController.pageModel else {
-            return
-        }
-        currentPageModel = pageModel
-        onPageTurnCompleted?(pageModel)
+        readerDidFinishPageTurn(in: pageViewController, transitionCompleted: completed)
     }
 }

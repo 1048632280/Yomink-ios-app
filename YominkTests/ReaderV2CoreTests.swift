@@ -1136,6 +1136,110 @@ final class ReaderV2CoreTests: XCTestCase {
     }
 
     @MainActor
+    func testReaderPageCurlContainerAlternatesBackPageAndContentPage() {
+        let container = ReaderPageCurlContainer()
+        container.loadViewIfNeeded()
+        container.view.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        container.view.layoutIfNeeded()
+        let firstModel = readerV2PageModel(pageIndex: 0, pageCount: 2)
+        let secondModel = readerV2PageModel(pageIndex: 1, pageCount: 2)
+        let firstController = readerV2PageController(pageModel: firstModel)
+
+        container.makePageController = { [weak self] model in
+            self?.readerV2PageController(pageModel: model)
+        }
+        container.adjacentPageModel = { model, delta in
+            guard model.pageIndex == 0, delta == 1 else {
+                return nil
+            }
+            return secondModel
+        }
+
+        container.display(
+            pageModel: firstModel,
+            pageController: firstController,
+            direction: .forward,
+            animated: false
+        )
+        container.pageViewController.view.layoutIfNeeded()
+        firstController.view.frame = container.pageViewController.view.bounds
+        firstController.view.layoutIfNeeded()
+        let backPage = container.pageViewController(
+            container.pageViewController,
+            viewControllerAfter: firstController
+        ) as? ReaderPageCurlBackViewController
+        let next = backPage.flatMap {
+            container.pageViewController(
+                container.pageViewController,
+                viewControllerAfter: $0
+            ) as? ReaderPageViewController
+        }
+
+        XCTAssertNotNil(backPage?.mirroredImage)
+        XCTAssertEqual(backPage?.mirroredImage?.imageOrientation, .upMirrored)
+        XCTAssertEqual(next?.pageModel, Optional(secondModel))
+    }
+
+    @MainActor
+    func testReaderPageCurlContainerUsesBackPageSourceForReversePage() {
+        let container = ReaderPageCurlContainer()
+        container.loadViewIfNeeded()
+        container.view.frame = CGRect(x: 0, y: 0, width: 320, height: 480)
+        container.view.layoutIfNeeded()
+        let firstModel = readerV2PageModel(pageIndex: 0, pageCount: 2)
+        let secondModel = readerV2PageModel(pageIndex: 1, pageCount: 2)
+        let secondController = readerV2PageController(pageModel: secondModel)
+
+        container.makePageController = { [weak self] model in
+            self?.readerV2PageController(pageModel: model)
+        }
+        container.adjacentPageModel = { model, delta in
+            guard model.pageIndex == 1, delta == -1 else {
+                return nil
+            }
+            return firstModel
+        }
+
+        container.display(
+            pageModel: secondModel,
+            pageController: secondController,
+            direction: .forward,
+            animated: false
+        )
+        container.pageViewController.view.layoutIfNeeded()
+        secondController.view.frame = container.pageViewController.view.bounds
+        secondController.view.layoutIfNeeded()
+        let backPage = container.pageViewController(
+            container.pageViewController,
+            viewControllerBefore: secondController
+        ) as? ReaderPageCurlBackViewController
+        let previous = backPage.flatMap {
+            container.pageViewController(
+                container.pageViewController,
+                viewControllerBefore: $0
+            ) as? ReaderPageViewController
+        }
+
+        XCTAssertNotNil(backPage?.mirroredImage)
+        XCTAssertEqual(previous?.pageModel, Optional(firstModel))
+    }
+
+    @MainActor
+    func testReaderPageContainerFiltersCurlBackPageWhenFindingContentPage() {
+        let container = ReaderPageCurlContainer()
+        container.loadViewIfNeeded()
+        let model = readerV2PageModel(pageIndex: 1, pageCount: 2)
+        let pageController = readerV2PageController(pageModel: model)
+        let backPage = ReaderPageCurlBackViewController()
+        backPage.mirror(from: pageController.view)
+
+        XCTAssertEqual(
+            container.contentPageController(in: [backPage, pageController])?.pageModel,
+            Optional(model)
+        )
+    }
+
+    @MainActor
     func testReaderScrollContainerLoadsSectionsRowsAndHeights() {
         let container = ReaderScrollContainer()
         container.loadViewIfNeeded()
