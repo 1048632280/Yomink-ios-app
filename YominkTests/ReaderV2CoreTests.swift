@@ -1073,6 +1073,13 @@ final class ReaderV2CoreTests: XCTestCase {
 
         XCTAssertEqual(curlContainer.turnPageType, .pageCurl)
         XCTAssertTrue(curlContainer.pageViewController.isDoubleSided)
+        XCTAssertEqual(curlContainer.pageViewController.viewControllers?.count, 1)
+        XCTAssertNil(curlContainer.currentPageController())
+        XCTAssertTrue(
+            curlContainer.responds(
+                to: NSSelectorFromString("pageViewController:spineLocationForInterfaceOrientation:")
+            )
+        )
         XCTAssertEqual(
             curlContainer.pageViewController(
                 curlContainer.pageViewController,

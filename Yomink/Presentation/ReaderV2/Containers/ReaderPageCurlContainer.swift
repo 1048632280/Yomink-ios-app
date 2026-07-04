@@ -4,6 +4,7 @@ import UIKit
 final class ReaderPageCurlContainer: ReaderPageContainer {
     private var backPagePool: [ReaderPageCurlBackViewController] = []
     private var reservedBackPageIDs: Set<ObjectIdentifier> = []
+    private let placeholderPageController = ReaderPageCurlPlaceholderViewController()
 
     override var turnPageType: ReaderTurnPageType {
         .pageCurl
@@ -14,6 +15,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
             transitionStyle: .pageCurl,
             isDoubleSided: true
         )
+        seedPlaceholderPage()
     }
 
     @available(*, unavailable)
@@ -64,15 +66,16 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         reservedBackPageIDs.removeAll()
     }
 
-    func pageViewController(
-        _ pageViewController: UIPageViewController,
-        spineLocationFor orientation: UIInterfaceOrientation
-    ) -> UIPageViewController.SpineLocation {
+    override func readerSpineLocation(for orientation: UIInterfaceOrientation) -> UIPageViewController.SpineLocation {
         pageViewController.isDoubleSided = true
         return .min
     }
 
     private func page(for viewController: UIViewController, delta: Int) -> UIViewController? {
+        if viewController === placeholderPageController {
+            return nil
+        }
+
         if let contentPage = viewController as? ReaderPageViewController {
             return mirroredBackPage(from: contentPage)
         }
@@ -106,6 +109,22 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         backPagePool.append(page)
         reservedBackPageIDs.insert(ObjectIdentifier(page))
         return page
+    }
+
+    private func seedPlaceholderPage() {
+        pageViewController.setViewControllers(
+            [placeholderPageController],
+            direction: .forward,
+            animated: false
+        )
+    }
+}
+
+@MainActor
+private final class ReaderPageCurlPlaceholderViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
     }
 }
 

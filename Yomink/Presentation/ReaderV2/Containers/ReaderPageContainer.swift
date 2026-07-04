@@ -104,6 +104,10 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         currentPageModel = pageModel
     }
 
+    func readerSpineLocation(for orientation: UIInterfaceOrientation) -> UIPageViewController.SpineLocation {
+        .min
+    }
+
     func readerViewControllerBefore(_ viewController: UIViewController) -> UIViewController? {
         guard let pageController = viewController as? ReaderPageViewController else {
             return nil
@@ -187,5 +191,13 @@ extension ReaderPageContainer: UIPageViewControllerDataSource, UIPageViewControl
         transitionCompleted completed: Bool
     ) {
         readerDidFinishPageTurn(in: pageViewController, transitionCompleted: completed)
+    }
+
+    @objc(pageViewController:spineLocationForInterfaceOrientation:)
+    func pageViewController(
+        _ pageViewController: UIPageViewController,
+        spineLocationFor orientation: UIInterfaceOrientation
+    ) -> UIPageViewController.SpineLocation {
+        readerSpineLocation(for: orientation)
     }
 }
