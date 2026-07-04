@@ -137,6 +137,9 @@ class ReaderPageContainer: UIViewController, ReaderContainerProtocol {
         onPageTurnCompleted?(pageModel)
     }
 
+    func readerWillTransition(to pendingViewControllers: [UIViewController]) {
+    }
+
     func prioritizeReturnGesture(_ returnGesture: UIGestureRecognizer) {
         guard prioritizedReturnGesture !== returnGesture else {
             return
@@ -193,6 +196,13 @@ extension ReaderPageContainer: UIPageViewControllerDataSource, UIPageViewControl
         transitionCompleted completed: Bool
     ) {
         readerDidFinishPageTurn(in: pageViewController, transitionCompleted: completed)
+    }
+
+    func pageViewController(
+        _ pageViewController: UIPageViewController,
+        willTransitionTo pendingViewControllers: [UIViewController]
+    ) {
+        readerWillTransition(to: pendingViewControllers)
     }
 
     @objc(pageViewController:spineLocationForInterfaceOrientation:)

@@ -6,6 +6,8 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
     private var reservedBackPageIDs: Set<ObjectIdentifier> = []
     private var preparedBackPages: [ObjectIdentifier: ReaderPageCurlBackViewController] = [:]
     private var scheduledBackPagePreparationID: ObjectIdentifier?
+    private var scheduledBackPagePreparationToken = 0
+    private var isPageCurlTransitionActive = false
     private var currentTheme = ReaderTheme.standard
     private let placeholderPageController = ReaderPageCurlPlaceholderViewController()
 
@@ -28,7 +30,10 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        scheduleCurrentBackPagePreparation()
+        guard !isPageCurlTransitionActive else {
+            return
+        }
+        scheduleCurrentBackPagePreparation(after: 0.08)
     }
 
     override func apply(theme: ReaderTheme) {
@@ -59,7 +64,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
             ) { [weak self] _ in
                 self?.reservedBackPageIDs.removeAll()
                 self?.refreshPrioritizedReturnGesture()
-                self?.scheduleBackPagePreparation(for: pageController)
+                self?.scheduleBackPagePreparation(for: pageController, after: 0.18)
             }
         } else {
             pageViewController.setViewControllers(
@@ -68,7 +73,7 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
                 animated: animated
             )
             refreshPrioritizedReturnGesture()
-            scheduleBackPagePreparation(for: pageController)
+            scheduleBackPagePreparation(for: pageController, after: 0.05)
         }
     }
 
@@ -80,18 +85,19 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         page(for: viewController, delta: 1)
     }
 
+    override func readerWillTransition(to pendingViewControllers: [UIViewController]) {
+        isPageCurlTransitionActive = true
+        scheduledBackPagePreparationToken += 1
+    }
+
     override func readerDidFinishPageTurn(
         in pageViewController: UIPageViewController,
         transitionCompleted completed: Bool
     ) {
         super.readerDidFinishPageTurn(in: pageViewController, transitionCompleted: completed)
         reservedBackPageIDs.removeAll()
-        guard completed else {
-            scheduleCurrentBackPagePreparation()
-            return
-        }
-
-        settleCompletedPageTurn()
+        isPageCurlTransitionActive = false
+        scheduleCurrentBackPagePreparation(after: completed ? 0.22 : 0.08)
     }
 
     override func readerSpineLocation(for orientation: UIInterfaceOrientation) -> UIPageViewController.SpineLocation {
@@ -184,27 +190,45 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
         return page
     }
 
-    private func scheduleCurrentBackPagePreparation() {
+    private func scheduleCurrentBackPagePreparation(after delay: TimeInterval = 0.08) {
         guard let contentPage = currentPageController() else {
             return
         }
-        scheduleBackPagePreparation(for: contentPage)
+        scheduleBackPagePreparation(for: contentPage, after: delay)
     }
 
-    private func scheduleBackPagePreparation(for contentPage: ReaderPageViewController) {
+    private func scheduleBackPagePreparation(
+        for contentPage: ReaderPageViewController,
+        after delay: TimeInterval = 0.08
+    ) {
         let contentID = ObjectIdentifier(contentPage)
         guard preparedBackPages[contentID]?.mirroredImage == nil else {
             return
         }
 
         scheduledBackPagePreparationID = contentID
-        DispatchQueue.main.async { [weak self] in
+        scheduledBackPagePreparationToken += 1
+        let token = scheduledBackPagePreparationToken
+        let prepare = { [weak self, weak contentPage] in
             guard let self,
+                  let contentPage,
                   self.scheduledBackPagePreparationID == contentID,
+                  self.scheduledBackPagePreparationToken == token,
+                  !self.isPageCurlTransitionActive,
                   self.currentPageController() === contentPage else {
                 return
             }
             self.prepareBackPageIfPossible(for: contentPage)
+        }
+
+        if delay > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                prepare()
+            }
+        } else {
+            DispatchQueue.main.async {
+                prepare()
+            }
         }
     }
 
@@ -221,30 +245,6 @@ final class ReaderPageCurlContainer: ReaderPageContainer {
             reservesPage: false,
             afterScreenUpdates: false
         )
-    }
-
-    private func settleCompletedPageTurn() {
-        guard let contentPage = currentPageController() else {
-            return
-        }
-
-        scheduledBackPagePreparationID = nil
-        DispatchQueue.main.async { [weak self] in
-            guard let self,
-                  self.currentPageController() === contentPage else {
-                return
-            }
-
-            self.pageViewController.setViewControllers(
-                [contentPage],
-                direction: .forward,
-                animated: false
-            )
-            self.reservedBackPageIDs.removeAll()
-            self.prunePreparedBackPages(keeping: [ObjectIdentifier(contentPage)])
-            self.refreshPrioritizedReturnGesture()
-            self.scheduleBackPagePreparation(for: contentPage)
-        }
     }
 
     private func prunePreparedBackPages(keeping contentIDs: Set<ObjectIdentifier>) {
